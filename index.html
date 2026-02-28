@@ -702,6 +702,7 @@
     </div>
     <button class="btn-print-detail" id="btn-print-detail">🖨 Print</button>
   </div>
+  <div id="detail-confirm-bar" style="padding:8px 16px 0;"></div>
   <div id="detail-scroll"></div>
 </div>
 
@@ -2075,17 +2076,15 @@ function renderDetail(rec) {
   // ── DELIVERY CONFIRMATION BANNER ────────────────────────────────────────
   const CONFIRM_SUPS = ['ABCO', 'BEK', 'TRIMARK'];
   const hasConfirmableSups = Object.keys(rec.suppliers || {}).some(s => CONFIRM_SUPS.includes(s));
+  const confirmBar = document.getElementById('detail-confirm-bar');
+  confirmBar.innerHTML = '';
 
   if (hasConfirmableSups) {
-    const delivBanner = document.createElement('div');
-    delivBanner.style.cssText = 'margin:12px 16px 0;';
-
     if (rec.deliveryConfirmed) {
-      // Show confirmation summary
       const missing = (rec.missingItems || []);
       if (missing.length > 0) {
-        delivBanner.innerHTML = `
-          <div style="background:#450a0a;border:1.5px solid #f87171;border-radius:14px;padding:12px 14px;margin-bottom:8px;">
+        confirmBar.innerHTML = `
+          <div style="background:#450a0a;border:1.5px solid #f87171;border-radius:14px;padding:12px 14px;margin-bottom:4px;">
             <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;color:#f87171;letter-spacing:1px;margin-bottom:8px;">🔴 ${missing.length} MISSING ITEM${missing.length>1?'S':''} — FOLLOW UP WITH VENDOR</div>
             ${missing.map(m => `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid rgba(248,113,113,0.2);">
               <div style="color:#fca5a5;font-size:13px;">${m.name}</div>
@@ -2096,24 +2095,23 @@ function renderDetail(rec) {
             </button>
           </div>`;
       } else {
-        delivBanner.innerHTML = `
-          <div style="background:#052e16;border:1.5px solid #16a34a;border-radius:14px;padding:12px 14px;margin-bottom:8px;">
+        confirmBar.innerHTML = `
+          <div style="background:#052e16;border:1.5px solid #16a34a;border-radius:14px;padding:10px 14px;margin-bottom:4px;">
             <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;color:#4ade80;letter-spacing:1px;">✅ DELIVERY CONFIRMED — ALL ITEMS RECEIVED</div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:4px;">Confirmed ${new Date(rec.confirmedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:2px;">Confirmed ${new Date(rec.confirmedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
           </div>`;
       }
     } else {
-      delivBanner.innerHTML = `
+      confirmBar.innerHTML = `
         <button onclick="openDeliveryConfirmation('${rec.id}')" style="
           width:100%;height:48px;border-radius:14px;
           background:#0f172a;border:1.5px solid #3b82f6;
           color:#60a5fa;font-family:ui-monospace,'SF Mono','Courier New',monospace;
           font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;
-          display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+          display:flex;align-items:center;justify-content:center;gap:8px;">
           📦 CONFIRM DELIVERY — CHECK ITEMS IN
         </button>`;
     }
-    scroll.appendChild(delivBanner);
   }
 
   if (rec.globalNote) {
