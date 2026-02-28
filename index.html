@@ -442,12 +442,31 @@
     }
     .sheet-title { color: #f2f2f7; font-family: ui-monospace, 'SF Mono', 'Courier New', monospace; font-size: 17px; font-weight: 800; margin-bottom: 8px; }
     .sheet-sub { color: #8e8e93; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; font-size: 15px; line-height: 1.55; margin-bottom: 24px; }
-    .btn-confirm {
-      width: 100%; height: 56px; border-radius: 16px; border: none;
-      background: #4ade80; color: #000;
-      font-family: ui-monospace, 'SF Mono', 'Courier New', monospace; font-size: 16px; font-weight: 800; letter-spacing: 0.8px;
+    .tally-key {
+      height: 56px; border-radius: 12px; border: none;
+      background: #2c2c2e; color: #e5e5e7;
+      font-family: ui-monospace, 'SF Mono', 'Courier New', monospace;
+      font-size: 22px; font-weight: 600; cursor: pointer;
+      transition: background 0.1s; user-select: none;
     }
-    .btn-confirm:active { transform: scale(0.98); }
+    .tally-key:active { background: #48484a; }
+    .tally-key-add {
+      background: #7c3aed; color: #fff; font-size: 15px; letter-spacing: 0.5px;
+    }
+    .tally-key-add:active { background: #6d28d9; }
+    .tally-key-back { background: #1c1c1e; color: #a78bfa; font-size: 20px; }
+    .tally-key-back:active { background: #2c2c2e; }
+    .btn-confirm {
+      width: 100%; height: 64px; border-radius: 18px; border: none;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      color: #fff;
+      font-family: ui-monospace, 'SF Mono', 'Courier New', monospace;
+      font-size: 18px; font-weight: 800; letter-spacing: 1px;
+      box-shadow: 0 4px 20px rgba(124,58,237,0.45);
+      transition: transform 0.1s, box-shadow 0.1s;
+      cursor: pointer;
+    }
+    .btn-confirm:active { transform: scale(0.97); box-shadow: 0 2px 8px rgba(124,58,237,0.3); }
     .btn-cancel {
       width: 100%; height: 50px; border-radius: 16px; border: none;
       background: transparent; color: #8e8e93;
@@ -763,43 +782,41 @@
     <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:20px;">
 
       <!-- DOCK -->
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;color:#c084fc;letter-spacing:1px;">🚢 DOCK</div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px;">Receiving area · separate with spaces</div>
-          </div>
-          <div id="tally-dock-sub" style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:700;color:#a78bfa;min-width:36px;text-align:right;">0</div>
-        </div>
-        <input id="tally-dock" type="text" inputmode="decimal" placeholder="e.g. 8  2  3  2"
-          style="width:100%;box-sizing:border-box;height:46px;padding:0 14px;border-radius:10px;border:2px solid #3b0764;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:700;outline:none;letter-spacing:2px;">
+      <!-- Location selector tabs -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button id="tally-tab-dock" onclick="tallySetTab('dock')" style="flex:1;height:48px;border-radius:10px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;">🚢 DOCK<br><span id="tally-tab-dock-val" style="font-size:15px;letter-spacing:1px;">0</span></button>
+        <button id="tally-tab-closet" onclick="tallySetTab('closet')" style="flex:1;height:48px;border-radius:10px;border:2px solid #3b0764;background:#1c1c1e;color:#a78bfa;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;">🚪 CLOSET<br><span id="tally-tab-closet-val" style="font-size:15px;letter-spacing:1px;">0</span></button>
+        <button id="tally-tab-restaurant" onclick="tallySetTab('restaurant')" style="flex:1;height:48px;border-radius:10px;border:2px solid #3b0764;background:#1c1c1e;color:#a78bfa;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;">🍽️ FLOOR<br><span id="tally-tab-restaurant-val" style="font-size:15px;letter-spacing:1px;">0</span></button>
       </div>
 
-      <!-- CLOSET -->
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;color:#c084fc;letter-spacing:1px;">🚪 CLOSET</div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px;">Storage area · separate with spaces</div>
-          </div>
-          <div id="tally-closet-sub" style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:700;color:#a78bfa;min-width:36px;text-align:right;">0</div>
-        </div>
-        <input id="tally-closet" type="text" inputmode="decimal" placeholder="e.g. 12  5"
-          style="width:100%;box-sizing:border-box;height:46px;padding:0 14px;border-radius:10px;border:2px solid #3b0764;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:700;outline:none;letter-spacing:2px;">
+      <!-- Current entry display -->
+      <div style="background:#1c1c1e;border:2px solid #7c3aed;border-radius:12px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;color:#636366;letter-spacing:1px;" id="tally-entry-label">ENTERING: DOCK</div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:32px;font-weight:700;color:#c084fc;min-width:60px;text-align:right;" id="tally-entry-display">_</div>
       </div>
 
-      <!-- RESTAURANT -->
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;color:#c084fc;letter-spacing:1px;">🍽️ RESTAURANT</div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px;">Floor + coolers · separate with spaces</div>
-          </div>
-          <div id="tally-restaurant-sub" style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:700;color:#a78bfa;min-width:36px;text-align:right;">0</div>
-        </div>
-        <input id="tally-restaurant" type="text" inputmode="decimal" placeholder="e.g. 24  6"
-          style="width:100%;box-sizing:border-box;height:46px;padding:0 14px;border-radius:10px;border:2px solid #3b0764;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:700;outline:none;letter-spacing:2px;">
+      <!-- Keypad -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
+        <button class="tally-key" onclick="tallyKey('7')">7</button>
+        <button class="tally-key" onclick="tallyKey('8')">8</button>
+        <button class="tally-key" onclick="tallyKey('9')">9</button>
+        <button class="tally-key" onclick="tallyKey('4')">4</button>
+        <button class="tally-key" onclick="tallyKey('5')">5</button>
+        <button class="tally-key" onclick="tallyKey('6')">6</button>
+        <button class="tally-key" onclick="tallyKey('1')">1</button>
+        <button class="tally-key" onclick="tallyKey('2')">2</button>
+        <button class="tally-key" onclick="tallyKey('3')">3</button>
+        <button class="tally-key tally-key-add" onclick="tallyKey('+')">+  ADD</button>
+        <button class="tally-key" onclick="tallyKey('0')">0</button>
+        <button class="tally-key tally-key-back" onclick="tallyKey('back')">⌫</button>
       </div>
+      <!-- Reset active location -->
+      <button onclick="tallyResetTab()" style="width:100%;height:40px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;letter-spacing:0.5px;cursor:pointer;margin-bottom:4px;" id="tally-reset-btn">✕  RESET DOCK TO 0</button>
+
+      <!-- Hidden inputs kept for data storage compatibility -->
+      <input id="tally-dock" type="hidden">
+      <input id="tally-closet" type="hidden">
+      <input id="tally-restaurant" type="hidden">
 
     </div>
 
@@ -809,7 +826,7 @@
       <div id="tally-total" style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:28px;font-weight:700;color:#a78bfa;">0</div>
     </div>
 
-    <button class="btn-confirm" onclick="confirmTally()" style="background:#7c3aed;border-color:#7c3aed;">✓  SET COUNT</button>
+    <button class="btn-confirm" onclick="confirmTally()">✦  SET COUNT</button>
     <button class="btn-cancel" onclick="closeTallyModal()">Cancel</button>
   </div>
 </div>
@@ -948,47 +965,50 @@ const DEFAULT_SUPPLIERS = {
     schedule:"Monthly — after inventory",
     contact:"James Hawley · James.Hawley@trimarkusa.com",
     items:[
-      {id:"tri-1", name:"Rocks glasses",       pack:"case", par:72,  unitCost:9.59},
-      {id:"tri-2", name:"Collins glasses",      pack:"case", par:72,  unitCost:9.59},
-      {id:"tri-3", name:"Beer Glass",           pack:"case", par:48,  unitCost:5.17},
-      {id:"tri-4", name:"Tea Glass",            pack:"case", par:400, unitCost:3.54},
-      {id:"tri-5", name:"Champagne glasses",    pack:"case", par:36,  unitCost:12.27},
-      {id:"tri-6", name:"Martini glasses",      pack:"case", par:100, unitCost:9.38},
-      {id:"tri-7", name:"Cordial glasses",      pack:"case", par:24,  unitCost:3.42},
-      {id:"tri-8", name:"Brandy snifters",      pack:"case", par:12,  unitCost:2.47},
-      {id:"tri-9", name:"Port wine glasses",    pack:"case", par:12,  unitCost:5.40},
-      {id:"tri-10",name:"Whiskey glasses",      pack:"case", par:12,  unitCost:11.25},
-      {id:"tri-11",name:"Wine glasses",         pack:"case", par:124, unitCost:5.77},
-      {id:"tri-12",name:"Espresso Cup",         pack:"case", par:12,  unitCost:2.05},
-      {id:"tri-13",name:"Espresso Saucer",      pack:"case", par:12,  unitCost:0.80},
-      {id:"tri-14",name:"Cappuccino cup",       pack:"case", par:60,  unitCost:1.01},
-      {id:"tri-15",name:"Cappuccino saucer",    pack:"case", par:48,  unitCost:0.80},
-      {id:"tri-16",name:"Latte Cup",            pack:"case", par:24,  unitCost:15.94},
-      {id:"tri-17",name:"Latte Saucer",         pack:"case", par:12,  unitCost:0.80},
-      {id:"tri-18",name:"Coffee Mugs",          pack:"case", par:48,  unitCost:2.44},
-      {id:"tri-19",name:'Salad Plate 11"',      pack:"case", par:100, unitCost:29.04},
-      {id:"tri-20",name:"Chksal bowls",         pack:"case", par:72,  unitCost:18.91},
-      {id:"tri-21",name:"Bird bowl",            pack:"case", par:56,  unitCost:32.17},
-      {id:"tri-22",name:'Ala plate 10"',        pack:"case", par:150, unitCost:20.62},
-      {id:"tri-23",name:"Platter plates",       pack:"case", par:100, unitCost:38.96},
-      {id:"tri-24",name:"Thai plates",          pack:"case", par:60,  unitCost:27.67},
-      {id:"tri-25",name:"Soup bowl",            pack:"case", par:84,  unitCost:8.59},
-      {id:"tri-26",name:"Chili bowl",           pack:"case", par:36,  unitCost:5.50},
-      {id:"tri-27",name:"Spin bowl",            pack:"case", par:84,  unitCost:9.08},
-      {id:"tri-28",name:"Gravy Boats",          pack:"case", par:24,  unitCost:34.46},
-      {id:"tri-29",name:'Key Lime pie plate',   pack:"case", par:24,  unitCost:34.99},
-      {id:"tri-30",name:"Metal ramekin",        pack:"case", par:72,  unitCost:7.48},
-      {id:"tri-31",name:"Tip plate",            pack:"case", par:250, unitCost:3.29},
-      {id:"tri-32",name:"Fork",                 pack:"case", par:500, unitCost:3.08},
-      {id:"tri-33",name:"Knife",                pack:"case", par:500, unitCost:4.25},
-      {id:"tri-34",name:"Steak knife",          pack:"case", par:50,  unitCost:14.92},
-      {id:"tri-35",name:"Spoon",                pack:"case", par:144, unitCost:2.34},
-      {id:"tri-36",name:"Iced tea spoons",      pack:"case", par:144, unitCost:1.97},
-      {id:"tri-37",name:"Coffee spoons",        pack:"case", par:48,  unitCost:1.49},
-      {id:"tri-38",name:"S & P mills",          pack:"each", par:60,  unitCost:46.00},
-      {id:"tri-39",name:"Waiter Aprons",        pack:"each", par:5,   unitCost:37.00},
-      {id:"tri-40",name:"Chefs hats",           pack:"each", par:15,  unitCost:13.00},
-      {id:"tri-41",name:"Pate Knives",          pack:"each", par:36,  unitCost:10.22},
+      {id:"tri-1", name:"Rocks Glasses",         pack:"12/cs",    par:72,  unitCost:9.59,  caseQty:12},
+      {id:"tri-2", name:"Collins Glass",          pack:"12/cs",    par:72,  unitCost:9.59,  caseQty:12},
+      {id:"tri-3", name:"Beer Glass",             pack:"24/cs",    par:48,  unitCost:5.17,  caseQty:24},
+      {id:"tri-4", name:"Tea Glass",              pack:"1 dz/cs",  par:400, unitCost:3.54,  caseQty:12},
+      {id:"tri-5", name:"Champagne Glass",        pack:"12/cs",    par:36,  unitCost:12.27, caseQty:12},
+      {id:"tri-6", name:"Martini Glass",          pack:"12/cs",    par:100, unitCost:9.38,  caseQty:12},
+      {id:"tri-7", name:"Cordial Glass",          pack:"12/cs",    par:24,  unitCost:3.42,  caseQty:12},
+      {id:"tri-8", name:"Brandy Snifters",        pack:"1 dz",     par:12,  unitCost:2.47,  caseQty:12},
+      {id:"tri-9", name:"Port Wine Glass",        pack:"24/cs",    par:12,  unitCost:5.40,  caseQty:24},
+      {id:"tri-10",name:"Whiskey Glass",          pack:"2 dz/cs",  par:12,  unitCost:11.25, caseQty:24},
+      {id:"tri-11",name:"Wine Glass",             pack:"2 dz/cs",  par:124, unitCost:5.77,  caseQty:24},
+      {id:"tri-44",name:"Bar Mixing Glass",       pack:"4/cs",     par:4,   unitCost:0,     caseQty:4},
+      {id:"tri-19",name:'Salad Plate 11"',        pack:"12/cs",    par:100, unitCost:29.04, caseQty:12},
+      {id:"tri-20",name:"Chksal Bowl",            pack:"6/cs",     par:72,  unitCost:18.91, caseQty:6},
+      {id:"tri-21",name:"Bird Bowl",              pack:"6/cs",     par:56,  unitCost:32.17, caseQty:6},
+      {id:"tri-22",name:'Ala Plate 10"',          pack:"24/cs",    par:150, unitCost:20.62, caseQty:24},
+      {id:"tri-23",name:"Platter Plate",          pack:"12/cs",    par:100, unitCost:38.96, caseQty:12},
+      {id:"tri-24",name:"Thai Plate",             pack:"6/cs",     par:60,  unitCost:27.67, caseQty:6},
+      {id:"tri-13",name:"Espresso Saucer",        pack:"36/cs",    par:12,  unitCost:0.80,  caseQty:36},
+      {id:"tri-15",name:"Cappuccino Saucer",      pack:"36/cs",    par:48,  unitCost:0.80,  caseQty:36},
+      {id:"tri-17",name:"Latte Saucer",           pack:"36/cs",    par:12,  unitCost:0.80,  caseQty:36},
+      {id:"tri-25",name:"Soup Bowl",              pack:"36/cs",    par:84,  unitCost:8.59,  caseQty:36},
+      {id:"tri-26",name:"Chili Bowl",             pack:"36/cs",    par:36,  unitCost:5.50,  caseQty:36},
+      {id:"tri-14",name:"Cappuccino Cup",         pack:"36/cs",    par:60,  unitCost:1.01,  caseQty:36},
+      {id:"tri-12",name:"Espresso Cup",           pack:"6/cs",     par:12,  unitCost:2.05,  caseQty:6},
+      {id:"tri-16",name:"Latte Cup",              pack:"6/cs",     par:24,  unitCost:15.94, caseQty:6},
+      {id:"tri-18",name:"Coffee Mugs",            pack:"3 dz/cs",  par:48,  unitCost:2.44,  caseQty:36},
+      {id:"tri-30",name:"Metal Ramekin (Boat)",   pack:"24/cs",    par:72,  unitCost:7.48,  caseQty:24},
+      {id:"tri-28",name:"Gravy Boats",            pack:"6/cs",     par:24,  unitCost:34.46, caseQty:6},
+      {id:"tri-31",name:"Tip Plate",              pack:"36/cs",    par:250, unitCost:3.29,  caseQty:36},
+      {id:"tri-27",name:"Spin Bowl",              pack:"2 dz/cs",  par:84,  unitCost:9.08,  caseQty:24},
+      {id:"tri-29",name:"Key Lime Pie Plate",     pack:"each",     par:24,  unitCost:34.99, caseQty:1},
+      {id:"tri-32",name:"Fork",                   pack:"36/cs",    par:500, unitCost:3.08,  caseQty:36},
+      {id:"tri-33",name:"Knife",                  pack:"1 dz",     par:500, unitCost:4.25,  caseQty:12},
+      {id:"tri-34",name:"Steak Knife",            pack:"1 dz",     par:50,  unitCost:14.92, caseQty:12},
+      {id:"tri-35",name:"Spoon",                  pack:"36/cs",    par:144, unitCost:2.34,  caseQty:36},
+      {id:"tri-36",name:"Iced Teaspoons",         pack:"36/cs",    par:144, unitCost:1.97,  caseQty:36},
+      {id:"tri-37",name:"Coffee Spoons",          pack:"1 pk/12",  par:48,  unitCost:1.49,  caseQty:12},
+      {id:"tri-38",name:"S & P Mills",            pack:"2/cs",     par:60,  unitCost:46.00, caseQty:2},
+      {id:"tri-42",name:"Nutra Clear",            pack:"each",     par:1,   unitCost:0,     caseQty:1, inventoryOnly:true},
+      {id:"tri-43",name:"Firewood",               pack:"each",     par:1,   unitCost:0,     caseQty:1, inventoryOnly:true},
+      {id:"tri-39",name:"Waiter Aprons",          pack:"each",     par:5,   unitCost:37.00, caseQty:1, inventoryOnly:true},
+      {id:"tri-40",name:"Chef Hats",              pack:"each",     par:15,  unitCost:13.00, caseQty:1, inventoryOnly:true},
+      {id:"tri-41",name:"Pate Knives",            pack:"1 dz",     par:36,  unitCost:10.22, caseQty:12},
     ]
   }
 };
@@ -1325,6 +1345,9 @@ function renderOrderView() {
   }
 
   sup.items.forEach(item => {
+    // inventoryOnly items (e.g. Nutra Clear, Firewood) only appear in inventory count, never in order view
+    if (item.inventoryOnly && state.trimarkView !== 'inventory') return;
+
     const ik  = ikey(state.activeSupp, item.id);
     const oh  = state.onHand[ik] ?? '';
     const oq  = state.orderQty[ik] ?? '';
@@ -1389,15 +1412,15 @@ function renderOrderView() {
         const ohVal = parseFloat(e.target.value);
         const parVal = parseFloat(item.par);
         if (!isNaN(ohVal) && !isNaN(parVal) && e.target.value !== '') {
-          // For Trimark: order = par - ending + (begin - ending = usage portion to restore)
-          // Actually: order = par - ending (simple par-based ordering; usage is tracked separately)
-          const suggested = Math.max(0, parVal - ohVal);
-          // Round to sensible precision (whole numbers unless par is fractional)
-          const rounded = parVal % 1 === 0 ? Math.ceil(suggested) : Math.round(suggested * 4) / 4;
+          const neededPcs = Math.max(0, parVal - ohVal);
+          // For Trimark: convert to cases; for others: use pieces
+          const suggested = (state.activeSupp === 'TRIMARK' && item.caseQty > 1)
+            ? Math.ceil(neededPcs / item.caseQty)
+            : (parVal % 1 === 0 ? Math.ceil(neededPcs) : Math.round(neededPcs * 4) / 4);
           const currentOq = state.orderQty[ik] ?? '';
           // Only fill if field is empty or was previously auto-filled (not manually edited)
           if (currentOq === '' || state._autoFilled?.[ik]) {
-            state.orderQty[ik] = rounded > 0 ? String(rounded) : '';
+            state.orderQty[ik] = suggested > 0 ? String(suggested) : '';
             if (!state._autoFilled) state._autoFilled = {};
             state._autoFilled[ik] = true;
             // Update the order qty input visually
@@ -1604,7 +1627,7 @@ function showTrimarkHelp() {
       ${[
         ['🟣 STEP 1', 'Open Inventory Mode', 'Tap the purple 📋 INVENTORY COUNT button at the top of the Trimark tab.'],
         ['🟣 STEP 2', 'Check BEGIN numbers', 'BEGIN = last month\'s ending count. Should already be filled in purple. If empty, enter manually.'],
-        ['🟣 STEP 3', 'Count each item', 'Tap the purple TAP / COUNT cell. A window opens for 3 locations:\n🚢 Dock  🚪 Closet  🍽️ Restaurant\nType numbers separated by spaces e.g.  8  2  4  and the app adds them up.'],
+        ['🟣 STEP 3', 'Count each item', 'Tap the purple TAP / COUNT cell. A window opens for 3 locations:\n🚢 Dock  🚪 Closet  🍽️ Restaurant\nType numbers separated by + e.g.  8+2+4  and the app adds them up.'],
         ['🟣 STEP 4', 'Read the results', 'USED = how many were lost or broken this month.\nLOSS $ = dollar value of what was lost.\nORDER = how many to order to get back to par.'],
         ['🟣 STEP 5', 'Place the order', 'Tap 📋 INVENTORY COUNT again to go back to ORDER view. Review yellow order quantities. Tap 💾 SAVE.'],
         ['🟣 STEP 6', 'Email James', 'After saving, tap the purple 📧 Email James? prompt at the bottom. Your email app will open with everything pre-filled. Just tap SEND. ✅'],
@@ -1741,7 +1764,9 @@ function renderTrimarkInventory(listEl, sup) {
     const usagePos = usage !== null ? Math.max(0, usage) : null;
     const brkgCost = usagePos !== null ? usagePos * (item.unitCost || 0) : null;
     const parVal = parseFloat(item.par) || 0;
-    const orderQty = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
+    const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
+    const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
+    const orderLabel = orderQty !== null && orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : null;
     const isLow = hasEnd && !isNaN(endVal) && endVal < parVal;
     const isCrit = hasEnd && !isNaN(endVal) && endVal <= 0;
 
@@ -1797,8 +1822,9 @@ function renderTrimarkInventory(listEl, sup) {
         state.onHand[ik] = totalVal;
         const pv = parseFloat(totalVal);
         if (!isNaN(pv)) {
-          const suggested = Math.max(0, parVal - pv);
-          state.orderQty[ik] = suggested > 0 ? String(Math.ceil(suggested)) : '';
+          const neededPcs = Math.max(0, parVal - pv);
+          const caseSuggested = item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : Math.ceil(neededPcs);
+          state.orderQty[ik] = caseSuggested > 0 ? String(caseSuggested) : '';
           if (!state._autoFilled) state._autoFilled = {};
           state._autoFilled[ik] = true;
         } else {
@@ -1825,9 +1851,9 @@ function renderTrimarkInventory(listEl, sup) {
     // Order qty display
     const orderCol = document.createElement('div');
     orderCol.className = 'tri-order-' + item.id;
-    orderCol.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:16px;font-weight:700;';
+    orderCol.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:14px;font-weight:700;';
     orderCol.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
-    orderCol.textContent = orderQty !== null ? (orderQty > 0 ? '+'+orderQty : '✓') : '—';
+    orderCol.textContent = orderQty !== null ? (orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : '✓') : '—';
 
     row.appendChild(nameDiv);
     row.appendChild(begCol);
@@ -1868,7 +1894,8 @@ function refreshTriRow(row, item, ik, listEl, sup) {
   const usagePos = usage !== null ? Math.max(0, usage) : null;
   const brkgCost = usagePos !== null ? usagePos * (item.unitCost || 0) : null;
   const parVal = parseFloat(item.par) || 0;
-  const orderQty = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
+  const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
+  const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
 
   const usageEl = listEl.querySelector('.tri-usage-' + item.id);
   if (usageEl) {
@@ -1877,7 +1904,7 @@ function refreshTriRow(row, item, ik, listEl, sup) {
   }
   const orderEl = listEl.querySelector('.tri-order-' + item.id);
   if (orderEl) {
-    orderEl.textContent = orderQty !== null ? (orderQty > 0 ? '+'+orderQty : '✓') : '—';
+    orderEl.textContent = orderQty !== null ? (orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : '✓') : '—';
     orderEl.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
   }
   // Update summary bar
@@ -2277,7 +2304,10 @@ function doSave() {
       const begV = parseFloat(beg), ohV = parseFloat(oh);
       const usageCalc = sn === 'TRIMARK' && beg !== '' && oh !== '' && !isNaN(begV) && !isNaN(ohV) ? String(Math.max(0, begV - ohV)) : '';
       if (oh !== '' || oq !== '' || nt !== '') {
-        acc.push({name:it.name, pack:it.pack, par:it.par, onHand:oh, orderQty:oq, note:nt, status:getStatus(oh, it.par),
+        acc.push({name:it.name, pack:it.pack, par:it.par, onHand:oh,
+          orderQty: it.inventoryOnly ? '' : oq,  // never save an order qty for inventory-only items
+          note:nt, status:getStatus(oh, it.par),
+          ...(it.inventoryOnly ? {inventoryOnly:true} : {}),
           ...(brk !== '' && brk !== '0' ? {breakage: brk} : {}),
           ...(beg !== '' ? {begin:beg} : {}),
           ...(usageCalc !== '' && usageCalc !== '0' ? {usage:usageCalc} : {}),
@@ -2336,7 +2366,7 @@ function doSave() {
 
   // If TRIMARK had items ordered, show email prompt
   const triItems = snap.suppliers['TRIMARK'] || [];
-  const triOrdered = triItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  const triOrdered = triItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
   if (triOrdered.length > 0) {
     setTimeout(() => showTrimarkEmailPrompt(triOrdered), abcoOrdered.length > 0 ? 1400 : 600);
   }
@@ -2466,7 +2496,7 @@ function openDeliveryConfirmation(recId) {
   Object.entries(rec.suppliers || {}).forEach(([sn, items]) => {
     if (!CONFIRM_SUPS.includes(sn)) return;
     items.forEach(it => {
-      if (it.orderQty && it.orderQty !== '' && it.orderQty !== '0') {
+      if (it.orderQty && it.orderQty !== '' && it.orderQty !== '0' && !it.inventoryOnly) {
         orderedItems.push({...it, supplier: sn});
       }
     });
@@ -2837,97 +2867,117 @@ function openPrint(rec) {
     ? new Date(rec.deliveryDate).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'})
     : null;
   const allItems = Object.values(rec.suppliers||{}).flat();
-  const orderedItems = allItems.filter(i => i.orderQty && i.orderQty !== '');
+  const orderedItems = allItems.filter(i => i.orderQty && i.orderQty !== '' && !i.inventoryOnly);
   const critItems = allItems.filter(i => i.status === 'critical');
   const lowItems  = allItems.filter(i => i.status === 'low');
 
-  const supBlocks = Object.entries(rec.suppliers||{}).map(([sn, items]) => {
-    const sup = state.catalog[sn]||DEFAULT_SUPPLIERS[sn];
-    const ordered = items.filter(i => i.orderQty && i.orderQty !== '');
+  // ── Compact attention bar ──────────────────────────────────────────────
+  const alertSec = (critItems.length || lowItems.length) ? `
+  <div style="margin-bottom:20px;padding:8px 14px;background:#fff7ed;border-left:4px solid #f97316;border-radius:0 8px 8px 0;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <span style="font-family:monospace;font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px;white-space:nowrap">⚠ ATTENTION</span>
+    ${critItems.map(i=>`<span style="font-size:11px;color:#dc2626;font-weight:700">🔴 ${i.name} (${i.onHand||'0'} on hand)</span>`).join('')}
+    ${lowItems.map(i=>`<span style="font-size:11px;color:#d97706">🟡 ${i.name} (${i.onHand||'0'} / par ${i.par})</span>`).join('')}
+  </div>` : '';
+
+  const noteSec = rec.globalNote ? `<div style="margin-bottom:20px;padding:10px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0">
+    <span style="font-family:monospace;font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px">📝 NOTE  </span>
+    <span style="font-size:12px;color:#1c1917">${rec.globalNote}</span>
+  </div>` : '';
+
+  // ── Per-supplier pages ─────────────────────────────────────────────────
+  const supBlocks = Object.entries(rec.suppliers||{}).map(([sn, items], si) => {
+    const sup = state.catalog[sn] || DEFAULT_SUPPLIERS[sn];
+    const ordered = items.filter(i => i.orderQty && i.orderQty !== '' && !i.inventoryOnly);
     if (!ordered.length) return '';
-    const rows = ordered.map((item,idx) => {
-      const sc = item.status==='critical'?'#dc2626':item.status==='low'?'#d97706':'#16a34a';
-      const sl = item.status==='critical'?'⚠ ASAP':item.status==='low'?'↓ Low':'✓ OK';
-      const bg = idx%2===0?'#f9fafb':'#fff';
-      const begCell = sn==='TRIMARK' ? `<td style="padding:8px 10px;font-size:12px;color:#a78bfa;border-bottom:1px solid #e5e7eb;text-align:center">${item.begin||'—'}</td>` : '';
-      const usedCell = sn==='TRIMARK' ? `<td style="padding:8px 10px;font-size:12px;font-weight:700;color:#f87171;border-bottom:1px solid #e5e7eb;text-align:center">${item.usage?'-'+item.usage:'—'}</td>` : '';
-      const lossCell = sn==='TRIMARK' ? `<td style="padding:8px 10px;font-size:12px;color:#f87171;border-bottom:1px solid #e5e7eb;text-align:center">${item.brkgCost?'$'+item.brkgCost:'—'}</td>` : '';
-      const triColspan = sn==='TRIMARK' ? 8 : 5;
+
+    const isTri = sn === 'TRIMARK';
+    const rows = ordered.map((item, idx) => {
+      const sc = item.status==='critical' ? '#dc2626' : item.status==='low' ? '#d97706' : '#16a34a';
+      const sl = item.status==='critical' ? '⚠ ASAP' : item.status==='low' ? '↓ Low' : '✓';
+      const bg = idx % 2 === 0 ? '#f9fafb' : '#fff';
+
+      // For Trimark: show cases, for others: show pieces
+      const oqDisplay = isTri && item.caseQty > 1
+        ? `${item.orderQty} cs`
+        : item.orderQty;
+
+      const begCell   = isTri ? `<td style="padding:7px 10px;font-size:12px;color:#7c3aed;border-bottom:1px solid #e5e7eb;text-align:center">${item.begin||'—'}</td>` : '';
+      const usedCell  = isTri ? `<td style="padding:7px 10px;font-size:12px;font-weight:700;color:#dc2626;border-bottom:1px solid #e5e7eb;text-align:center">${item.usage ? '-'+item.usage : '—'}</td>` : '';
+      const lossCell  = isTri ? `<td style="padding:7px 10px;font-size:12px;color:#dc2626;border-bottom:1px solid #e5e7eb;text-align:center">${item.brkgCost ? '$'+item.brkgCost : '—'}</td>` : '';
+      const noteSpan  = isTri ? 8 : 5;
+
       return `<tr style="background:${bg}">
-        <td style="padding:8px 10px;font-size:13px;border-bottom:1px solid #e5e7eb">${item.name}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.pack}</td>
+        <td style="padding:7px 10px;font-size:13px;border-bottom:1px solid #e5e7eb">${item.name}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.pack}</td>
         ${begCell}${usedCell}${lossCell}
-        <td style="padding:8px 10px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.onHand||'—'}</td>
-        <td style="padding:8px 10px;font-size:13px;font-weight:700;border-bottom:1px solid #e5e7eb;text-align:center">${item.orderQty}</td>
-        <td style="padding:8px 10px;font-size:11px;font-weight:700;color:${sc};border-bottom:1px solid #e5e7eb;text-align:center">${sl}</td>
-      </tr>${item.note?`<tr style="background:${bg}"><td colspan="${triColspan}" style="padding:2px 10px 8px;font-size:11px;color:#92400e;font-style:italic;border-bottom:1px solid #e5e7eb">↳ ${item.note}</td></tr>`:''}`
+        <td style="padding:7px 10px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.onHand||'—'}</td>
+        <td style="padding:7px 10px;font-size:14px;font-weight:800;border-bottom:1px solid #e5e7eb;text-align:center;color:#111">${oqDisplay}</td>
+        <td style="padding:7px 10px;font-size:11px;font-weight:700;color:${sc};border-bottom:1px solid #e5e7eb;text-align:center">${sl}</td>
+      </tr>${item.note ? `<tr style="background:${bg}"><td colspan="${noteSpan}" style="padding:2px 10px 7px;font-size:11px;color:#92400e;font-style:italic;border-bottom:1px solid #e5e7eb">↳ ${item.note}</td></tr>` : ''}`;
     }).join('');
-    const hasBrkCol = sn === 'TRIMARK';
-    return `<div style="margin-bottom:24px;break-inside:avoid">
-      <div style="background:${sup?.color||'#333'};color:#fff;padding:10px 14px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between">
-        <span style="font-family:monospace;font-size:14px;font-weight:700;letter-spacing:1px">${sn}</span>
-        <span style="font-size:11px;opacity:0.7">${ordered.length} item${ordered.length!==1?'s':''} ordered</span>
+
+    const pageBreak = si > 0 ? 'page-break-before:always;padding-top:24px;' : '';
+
+    return `<div style="${pageBreak}margin-bottom:28px;">
+      <div style="background:${sup?.color||'#1f2937'};color:#fff;padding:10px 16px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:1px">${sn}</span>
+        <span style="font-size:11px;opacity:0.75">${ordered.length} item${ordered.length!==1?'s':''} · ${sup?.contact||''}</span>
       </div>
       <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-top:none">
         <thead><tr style="background:#f3f4f6">
-          <th style="padding:7px 10px;font-size:10px;color:#6b7280;text-align:left;font-family:monospace;border-bottom:2px solid #e5e7eb">ITEM</th>
-          <th style="padding:7px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">PACK</th>
-          ${hasBrkCol?'<th style="padding:7px 10px;font-size:10px;color:#a78bfa;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">BEGIN</th><th style="padding:7px 10px;font-size:10px;color:#f87171;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">USED</th><th style="padding:7px 10px;font-size:10px;color:#f87171;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">LOSS $</th>':''}
-          <th style="padding:7px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">ENDING</th>
-          <th style="padding:7px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">ORDER QTY</th>
-          <th style="padding:7px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">STATUS</th>
+          <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:left;font-family:monospace;border-bottom:2px solid #e5e7eb">ITEM</th>
+          <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">PACK</th>
+          ${isTri ? `
+          <th style="padding:6px 10px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">BEGIN</th>
+          <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">USED</th>
+          <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">LOSS $</th>` : ''}
+          <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">ON HAND</th>
+          <th style="padding:6px 10px;font-size:10px;color:#111;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">${isTri ? 'ORDER (cs)' : 'ORDER QTY'}</th>
+          <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">STATUS</th>
         </tr></thead>
         <tbody>${rows}</tbody>
-      </table></div>`;
+      </table>
+    </div>`;
   }).join('');
 
-  const alertSec = (critItems.length||lowItems.length) ? `<div style="margin-bottom:24px;padding:14px 16px;background:#fff7ed;border:2px solid #fed7aa;border-radius:10px;break-inside:avoid">
-    <div style="font-family:monospace;font-size:11px;font-weight:700;color:#92400e;letter-spacing:1px;margin-bottom:10px">⚠ ATTENTION REQUIRED</div>
-    ${critItems.length?`<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:4px">🔴 CRITICAL (${critItems.length})</div>${critItems.map(i=>`<div style="font-size:12px;color:#7f1d1d;padding:2px 0 2px 12px">• ${i.name} — on hand: ${i.onHand||'0'}</div>`).join('')}</div>`:''}
-    ${lowItems.length?`<div><div style="font-size:11px;font-weight:700;color:#d97706;margin-bottom:4px">🟡 LOW STOCK (${lowItems.length})</div>${lowItems.map(i=>`<div style="font-size:12px;color:#78350f;padding:2px 0 2px 12px">• ${i.name} — on hand: ${i.onHand||'0'} / par ${i.par}</div>`).join('')}</div>`:''}
-  </div>` : '';
-
-  const noteSec = rec.globalNote ? `<div style="margin-bottom:24px;padding:14px 16px;background:#fefce8;border:2px solid #fde68a;border-radius:10px;break-inside:avoid">
-    <div style="font-family:monospace;font-size:11px;font-weight:700;color:#92400e;letter-spacing:1px;margin-bottom:8px">📝 ORDER NOTES</div>
-    <div style="font-size:13px;color:#1c1917;line-height:1.6">${rec.globalNote}</div>
-  </div>` : '';
-
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Bartlett's Order — ${dateStr}</title>
+  <title>Bartlett&#39;s Order — ${dateStr}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:24px;max-width:780px;margin:0 auto}
-    @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.5cm;size:A4}}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:24px;max-width:820px;margin:0 auto}
+    @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.2cm;size:A4}}
   </style></head><body>
-  <div class="no-print" style="text-align:right;margin-bottom:20px">
+  <div class="no-print" style="text-align:right;margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end">
     <button onclick="window.print()" style="padding:10px 24px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>
-    <button onclick="window.close()" style="padding:10px 20px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;margin-left:8px">✕ Close</button>
+    <button onclick="window.close()" style="padding:10px 20px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
   </div>
-  <div style="border-bottom:3px solid #16a34a;padding-bottom:16px;margin-bottom:24px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
-      <div><div style="font-size:22px;font-weight:700;color:#ef4444;letter-spacing:2px;font-family:monospace">BARTLETT'S</div>
-      <div style="font-size:11px;color:#6b7280;letter-spacing:2px;margin-top:2px;font-family:monospace">ORDER SUMMARY</div></div>
-      <div style="text-align:right"><div style="font-size:16px;font-weight:700">${dateStr}</div><div style="font-size:12px;color:#6b7280;margin-top:2px">Placed at ${timeStr}</div></div>
-    </div>
-    ${deliveryStr ? `
-    <div style="margin-top:14px;display:inline-flex;align-items:center;gap:10px;background:#f0fdf4;border:2px solid #16a34a;border-radius:10px;padding:10px 18px;">
-      <span style="font-size:22px;">🚚</span>
+
+  <!-- Header -->
+  <div style="border-bottom:3px solid #16a34a;padding-bottom:14px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
       <div>
-        <div style="font-family:monospace;font-size:11px;font-weight:700;color:#15803d;letter-spacing:1px;">EXPECTED DELIVERY</div>
-        <div style="font-size:18px;font-weight:800;color:#111;margin-top:2px;">${deliveryStr}</div>
+        <div style="font-size:22px;font-weight:700;color:#ef4444;letter-spacing:2px;font-family:monospace">BARTLETT&#39;S</div>
+        <div style="font-size:10px;color:#6b7280;letter-spacing:2px;margin-top:2px;font-family:monospace">ORDER SUMMARY</div>
       </div>
-    </div>` : ''}
-    <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap">
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 14px;text-align:center"><div style="font-size:18px;font-weight:700;color:#16a34a;font-family:monospace">${orderedItems.length}</div><div style="font-size:10px;color:#6b7280;font-family:monospace">ITEMS ORDERED</div></div>
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 14px;text-align:center"><div style="font-size:18px;font-weight:700;color:#16a34a;font-family:monospace">${Object.keys(rec.suppliers||{}).length}</div><div style="font-size:10px;color:#6b7280;font-family:monospace">SUPPLIERS</div></div>
-      ${critItems.length?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;text-align:center"><div style="font-size:18px;font-weight:700;color:#dc2626;font-family:monospace">${critItems.length}</div><div style="font-size:10px;color:#6b7280;font-family:monospace">CRITICAL</div></div>`:''}
-      ${lowItems.length?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 14px;text-align:center"><div style="font-size:18px;font-weight:700;color:#d97706;font-family:monospace">${lowItems.length}</div><div style="font-size:10px;color:#6b7280;font-family:monospace">LOW STOCK</div></div>`:''}
+      <div style="text-align:right">
+        <div style="font-size:15px;font-weight:700">${dateStr}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">Placed at ${timeStr}</div>
+        ${deliveryStr ? `<div style="margin-top:6px;font-size:12px;font-weight:700;color:#15803d">🚚 Delivery: ${deliveryStr}</div>` : ''}
+      </div>
+    </div>
+    <!-- Summary pills -->
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#16a34a;font-family:monospace">${orderedItems.length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">ITEMS</div></div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#16a34a;font-family:monospace">${Object.keys(rec.suppliers||{}).length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">SUPPLIERS</div></div>
+      ${critItems.length ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#dc2626;font-family:monospace">${critItems.length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">CRITICAL</div></div>` : ''}
+      ${lowItems.length ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#d97706;font-family:monospace">${lowItems.length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">LOW</div></div>` : ''}
     </div>
   </div>
+
   ${alertSec}${noteSec}${supBlocks}
-  <div style="margin-top:32px;padding-top:14px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
-    <div style="font-size:10px;color:#9ca3af;font-family:monospace">© 2025 Oscar Rivas · Bartlett's Restaurant · All rights reserved</div>
-    <div style="font-size:10px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
+  <div style="margin-top:28px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2025 Oscar Rivas · Bartlett&#39;s Restaurant</div>
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
   </div></body></html>`;
 
   const blob = new Blob([html], {type:'text/html'});
@@ -3003,11 +3053,11 @@ const MUST_KNOW = [
     isGeneral: true,
     notes: [
       '1️⃣ Enter ON HAND counts for every item you check',
-      '2️⃣ ORDER qty auto-fills (par minus on hand) — adjust if needed',
+      '2️⃣ ORDER qty auto-fills — for TRIMARK it shows CASES, for others it shows units',
       '3️⃣ Add item notes with ✎ for anything staff should know',
       '4️⃣ Tap ✎ EDIT in top bar to update item names, pack sizes, or pars',
       '5️⃣ Hit 💾 SAVE when done — this locks the order to history',
-      '6️⃣ Print from History tab to post for the team',
+      '6️⃣ Print from History tab to post for the team — each supplier prints on its own page',
     ]
   },
   {
@@ -3046,10 +3096,10 @@ const MUST_KNOW = [
       '🔵 STEP 1 — Go to the History tab at the bottom of the screen',
       `🔵 STEP 2 — Find today\'s ABCO order and tap on it to open it`,
       '🔵 STEP 3 — Tap the blue 📦 CONFIRM DELIVERY button at the top',
-      '🔵 STEP 4 — A checklist appears showing every item that was ordered. Every item starts out with a green checkmark ✓ meaning it arrived.',
-      '🔵 STEP 5 — If something did NOT arrive, tap the green checkmark to uncheck it. It will turn red.',
-      '🔵 STEP 6 — When done checking, tap the green CONFIRM DELIVERY button at the bottom',
-      '✅ The app will save everything. If any items were missing, a red reminder banner will appear at the top of the screen until the vendor fixes the shortage.',
+      '🔵 STEP 4 — A checklist appears showing every item ordered. Every item starts with ✓ meaning it arrived.',
+      '🔵 STEP 5 — If something did NOT arrive, tap the checkmark to uncheck it. It turns red.',
+      '🔵 STEP 6 — Tap CONFIRM DELIVERY when done',
+      '✅ Missing items get flagged with a red banner reminder until the vendor fixes the shortage.',
       '⚠️ Always confirm deliveries the same day they arrive — do not wait.',
     ]
   },
@@ -3119,6 +3169,8 @@ const MUST_KNOW = [
       `⏱️ Lead time can be 1–2 weeks — never wait until you\'re out`,
       '📋 After inventory: pull counts, compare to par, send one combined order',
       '💜 Tip plates: 250 par — guests take them, losses are normal',
+      '📦 ORDER QUANTITIES ARE IN CASES — the ORDER column shows how many cases to order, not individual pieces',
+      '🚫 Nutra Clear, Firewood, Waiter Aprons, and Chef Hats are counted in inventory but NOT ordered through James',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '📦 HOW TO CONFIRM A TRIMARK DELIVERY',
       `When James\'s order arrives (usually 1–2 weeks after emailing):`,
@@ -3136,45 +3188,52 @@ const MUST_KNOW = [
     notes: [
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟣 STEP 1 — OPEN INVENTORY MODE',
-      'Go to the TRIMARK tab at the top of the screen. Tap the purple 📋 INVENTORY COUNT button. The screen will switch to show all items with BEGIN and COUNT columns.',
+      'Go to the TRIMARK tab. Tap the purple 📋 INVENTORY COUNT button. The screen switches to show all items with BEGIN and COUNT columns.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟣 STEP 2 — CHECK YOUR BEGIN NUMBERS',
-      `The BEGIN column shows last month\'s ending count. These should already be filled in purple. ✅ If they\'re there — great, move on. ⚠️ If they\'re empty — last month\'s data was cleared, enter the counts manually from the previous paper sheet.`,
+      `The BEGIN column shows last month\'s ending count — already filled in purple. ✅ If they\'re there, move on. ⚠️ If empty, enter the counts manually from the previous paper sheet.`,
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      '🟣 STEP 3 — COUNT EVERY ITEM',
-      'Walk through the restaurant with this screen open. For each item, tap the COUNT cell. A window will pop up showing 3 locations:',
+      '🟣 STEP 3 — COUNT EVERY ITEM USING THE KEYPAD',
+      'For each item, tap the COUNT cell. A window opens with an in-app keypad — no system keyboard. At the top are 3 location tabs:',
       '🚢 DOCK — anything in the receiving area',
       '🚪 CLOSET — anything in dry storage or shelves',
-      '🍽️ RESTAURANT — everything on the floor, in coolers, behind the bar',
-      'Type your counts separated by spaces. Example: you find rocks glasses in 3 spots — type  8  5  12  and the app adds them up to 25 for you automatically.',
+      '🍽️ FLOOR — everything on the floor, in coolers, behind the bar',
+      'Tap the location tab you want to enter, type a number on the keypad, then tap + ADD. The number gets added to that location\'s total. Tap another location tab to switch. Tap ✦ SET COUNT when all locations are done.',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🔧 HOW TO FIX A TALLY MISTAKE',
+      `Made a mistake while counting? No problem — you can correct any location before saving:`,
+      '🔵 STEP 1 — Tap the COUNT cell for the item you need to fix',
+      '🔵 STEP 2 — Tap the location tab that has the wrong number (e.g. 🚪 CLOSET)',
+      `🔵 STEP 3 — At the bottom you\'ll see a red button: ✕ RESET CLOSET (12 → 0). Tap it.`,
+      '🔵 STEP 4 — Type the correct number and tap + ADD',
+      '✅ The other locations are not affected. Tap ✦ SET COUNT when done.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟣 STEP 4 — READ THE NUMBERS',
-      'After entering each COUNT the row will show:',
+      'After entering each COUNT the row shows:',
       '🔴 USED — how many were used or broken this month (Begin minus Count)',
-      '💸 LOSS $ — dollar value of what was lost (shown under the item name)',
-      '🟡 ORDER — how many we need to order to get back to par',
+      '💸 LOSS $ — dollar value of what was lost',
+      '🟡 ORDER — how many CASES to order to get back to par',
       `✅ CHECK MARK — means we\'re at or above par, no order needed`,
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟣 STEP 5 — PLACE THE ORDER',
-      'Tap the 📋 INVENTORY COUNT button again to go back to the ORDER view. You will see all items that need ordering already filled in yellow. Review the quantities. When everything looks right, tap 💾 SAVE.',
+      'Tap the 📋 INVENTORY COUNT button again to go back to ORDER view. All items needing cases are filled in yellow. Review, then tap 💾 SAVE.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟣 STEP 6 — SEND EMAIL TO JAMES',
-      `After saving, a purple 📧 Email James? prompt will pop up at the bottom of the screen. Tap OPEN EMAIL. Your mail app will open with the full order already written out — James\'s email, subject line, and all items listed. Just tap SEND. Done! ✅`,
+      `After saving, a purple 📧 Email James? prompt pops up. Tap OPEN EMAIL. Your mail app opens with the full order written out — James\'s email, subject line, and all items with case quantities. Tap SEND. Done! ✅`,
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '⚠️ IMPORTANT REMINDERS',
-      `• Count EVERY item — even if you think it\'s fine. Surprises are expensive.`,
-      '• If something seems way off (like 0 rocks glasses) double-check before saving.',
+      `• Count EVERY item including Nutra Clear, Firewood, Aprons, and Chef Hats — they\'re inventory-only and won\'t appear in the order.`,
+      '• If something seems way off double-check before saving.',
       `• The app resets automatically after saving — next month\'s BEGIN will be tonight\'s COUNT.`,
-      '• If you need to fix a mistake after saving, go to History, find the order, and note the correction.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🔧 HOW TO FIX A WRONG BEGIN NUMBER',
-      'Made a mistake last month and the BEGIN numbers are off? No problem. Here is how to correct them:',
-      '🔵 STEP 1 — Go to the TRIMARK tab and tap the purple 📋 INVENTORY COUNT button',
+      'Made a mistake last month and the BEGIN numbers are off? Here is how to correct them:',
+      '🔵 STEP 1 — Go to TRIMARK tab and tap 📋 INVENTORY COUNT',
       '🔵 STEP 2 — Find the item with the wrong BEGIN number',
-      '🔵 STEP 3 — Tap directly on the purple BEGIN number — it is an editable field, just type over it',
-      '🔵 STEP 4 — Type the correct number and tap Done on the keyboard',
-      '✅ The USED and LOSS $ columns will recalculate instantly. No extra save needed — it saves automatically.',
-      '⚠️ If you are not sure what the correct number was, go to the History tab and find last month\'s Trimark order. The COUNT you entered is shown there.',
+      '🔵 STEP 3 — Tap directly on the purple BEGIN number — it is editable, just type over it',
+      '🔵 STEP 4 — Type the correct number and tap Done',
+      '✅ USED and LOSS $ recalculate instantly. Saves automatically.',
+      '⚠️ Not sure of the correct number? Check the History tab — last month\'s COUNT is shown there.',
     ]
   },
   {
@@ -3184,33 +3243,24 @@ const MUST_KNOW = [
     notes: [
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟡 WHAT IS THE ELECTRICAL TAB?',
-      `The ELECTRICAL tab is where you manage lightbulb orders for the restaurant. Every bulb type used at Bartlett\'s is listed there with the location where it belongs — so you always know exactly which bulb goes where.`,
+      `The ELECTRICAL tab manages lightbulb orders. Every bulb type used at Bartlett\'s is listed with its location in the restaurant.`,
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      '🟡 STEP 1 — SET UP YOUR VENDOR (do this first, only once)',
-      `Before you can send orders you need to add your supplier\'s information. Here is how:`,
+      '🟡 STEP 1 — SET UP YOUR VENDOR (one time only)',
       '• Go to the ELECTRICAL tab',
-      '• At the top of the screen you will see a yellow ✎ EDIT VENDOR button',
-      '• Tap it — a window will open asking for 3 things:',
-      '  1. Vendor / Company Name (the name of the store or supplier)',
-      '  2. Contact Name (the person you deal with)',
-      '  3. Email Address (where the order gets sent)',
-      '• Fill in all three and tap SAVE VENDOR INFO',
-      '✅ You only have to do this once. From now on, every electrical order will go to that email automatically.',
+      '• Tap the yellow ✎ EDIT VENDOR button at the top',
+      '• Enter: Vendor Name, Contact Name, and Email Address',
+      '• Tap SAVE VENDOR INFO',
+      '✅ From now on every electrical order goes to that email automatically.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟡 STEP 2 — COUNT YOUR BULBS',
-      'Walk through the restaurant. For each bulb type, check how many spares you have in storage. Type that number in the ON HAND column next to the bulb.',
-      'The ORDER column will auto-fill to show how many you need to get back to par.',
+      'For each bulb type, enter how many spares you have in storage in the ON HAND column. The ORDER column auto-fills with how many you need.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟡 STEP 3 — PLACE THE ORDER',
-      'When you are done counting, tap 💾 SAVE. After saving, a yellow 💡 Email Electrical Vendor? prompt will pop up at the bottom of the screen.',
-      '• Tap OPEN EMAIL',
-      '• Your email app opens with the full order already written — vendor email, subject line, and all items listed with quantities and locations',
-      '• Tap SEND ✅',
+      'Tap 💾 SAVE. A yellow 💡 Email Electrical Vendor? prompt appears. Tap OPEN EMAIL → SEND. ✅',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      '⚠️ IMPORTANT NOTES',
-      '• The location shown under each bulb name tells you exactly where in the restaurant it is used — use this when replacing bulbs',
-      '• Par levels are the minimum number of spare bulbs to keep in storage at all times',
-      '• Unit costs are not set yet — they will be added in a future update',
+      '⚠️ NOTES',
+      '• The location under each bulb name tells you where it is used in the restaurant',
+      '• Par levels = minimum spare bulbs to keep in storage at all times',
     ]
   },
   {
@@ -3372,13 +3422,125 @@ function checkInstallPrompt() {
 // ─── LOCATION TALLY MODAL ──────────────────────────────────────────────────
 let _tallyItemId = null;
 let _tallyOnEndInput = null;
+let _tallyTab = 'dock';
+let _tallyEntry = '';
+let _tallyTotals = { dock: 0, closet: 0, restaurant: 0 };
 
-// Parse a field like "8  2  3  2" → sum of all valid numbers
 function parseTallyField(val) {
-  return (val.match(/[\d.]+/g) || [])
-    .map(n => parseFloat(n) || 0)
-    .reduce((a, b) => a + b, 0);
+  return (val.match(/[\d.]+/g) || []).map(n => parseFloat(n) || 0).reduce((a, b) => a + b, 0);
 }
+
+function tallyResetTab() {
+  _tallyTotals[_tallyTab] = 0;
+  _tallyEntry = '';
+  _tallyUpdateDisplay();
+}
+
+function tallySetTab(tab) {
+  if (_tallyEntry !== '') tallyCommitEntry();
+  _tallyTab = tab;
+  _tallyEntry = '';
+  _tallyUpdateDisplay();
+}
+
+function tallyKey(k) {
+  if (k === 'back') {
+    _tallyEntry = _tallyEntry.slice(0, -1);
+  } else if (k === '+') {
+    tallyCommitEntry();
+    return;
+  } else {
+    if (_tallyEntry.length >= 4) return;
+    _tallyEntry += k;
+  }
+  _tallyUpdateDisplay();
+}
+
+function tallyCommitEntry() {
+  const n = parseInt(_tallyEntry, 10) || 0;
+  if (n > 0) {
+    _tallyTotals[_tallyTab] += n;
+    const tabVal = document.getElementById('tally-tab-' + _tallyTab + '-val');
+    if (tabVal) { tabVal.style.color = '#4ade80'; setTimeout(() => { tabVal.style.color = ''; }, 400); }
+  }
+  _tallyEntry = '';
+  _tallyUpdateDisplay();
+}
+
+function _tallyUpdateDisplay() {
+  const disp = document.getElementById('tally-entry-display');
+  const label = document.getElementById('tally-entry-label');
+  const resetBtn = document.getElementById('tally-reset-btn');
+  const labels = { dock: '🚢 DOCK', closet: '🚪 CLOSET', restaurant: '🍽️ FLOOR' };
+  if (disp) disp.textContent = _tallyEntry === '' ? '_' : _tallyEntry;
+  if (label) label.textContent = 'ENTERING: ' + (labels[_tallyTab] || '');
+  if (resetBtn) {
+    const tabLabel = { dock: 'DOCK', closet: 'CLOSET', restaurant: 'FLOOR' }[_tallyTab] || '';
+    const cur = _tallyTotals[_tallyTab] || 0;
+    resetBtn.textContent = cur > 0 ? `✕  RESET ${tabLabel} (${cur} → 0)` : `✕  RESET ${tabLabel} TO 0`;
+    resetBtn.style.color = cur > 0 ? '#f87171' : '#636366';
+    resetBtn.style.borderColor = cur > 0 ? '#7f1d1d' : '#3a3a3c';
+  }
+
+  ['dock', 'closet', 'restaurant'].forEach(loc => {
+    const el = document.getElementById('tally-tab-' + loc + '-val');
+    const btn = document.getElementById('tally-tab-' + loc);
+    if (el) el.textContent = _tallyTotals[loc] || '0';
+    if (btn) {
+      const active = loc === _tallyTab;
+      btn.style.background = active ? '#7c3aed' : '#1c1c1e';
+      btn.style.color = active ? '#fff' : '#a78bfa';
+      btn.style.borderColor = active ? '#7c3aed' : '#3b0764';
+    }
+  });
+
+  ['dock', 'closet', 'restaurant'].forEach(loc => {
+    const el = document.getElementById('tally-' + loc);
+    if (el) el.value = String(_tallyTotals[loc]);
+  });
+
+  const total = _tallyTotals.dock + _tallyTotals.closet + _tallyTotals.restaurant;
+  const totalEl = document.getElementById('tally-total');
+  if (totalEl) { totalEl.textContent = total; totalEl.style.color = total > 0 ? '#a78bfa' : '#48484a'; }
+}
+
+function openTallyModal(item, onConfirm) {
+  _tallyItemId = item.id;
+  _tallyOnEndInput = onConfirm;
+  _tallyTab = 'dock';
+  _tallyEntry = '';
+  const saved = state.trimarkTally[item.id] || {};
+  _tallyTotals = { dock: saved.dock || 0, closet: saved.closet || 0, restaurant: saved.restaurant || 0 };
+  document.getElementById('tally-item-name').textContent = item.name;
+  document.getElementById('tally-item-sub').textContent = 'par ' + item.par + (item.unitCost ? ' · $' + item.unitCost.toFixed(2) + ' ea' : '');
+  _tallyUpdateDisplay();
+  document.getElementById('tally-modal').style.display = 'flex';
+}
+
+function updateTallyTotal() { _tallyUpdateDisplay(); }
+
+function closeTallyModal() {
+  if (_tallyEntry !== '') tallyCommitEntry();
+  document.getElementById('tally-modal').style.display = 'none';
+  _tallyItemId = null;
+  _tallyOnEndInput = null;
+}
+
+function confirmTally() {
+  if (_tallyEntry !== '') tallyCommitEntry();
+  const d = _tallyTotals.dock, c = _tallyTotals.closet, r = _tallyTotals.restaurant;
+  const total = d + c + r;
+  if (_tallyItemId) {
+    state.trimarkTally[_tallyItemId] = { dock: d, closet: c, restaurant: r, dockRaw: String(d), closetRaw: String(c), restaurantRaw: String(r) };
+    saveTrimarkTally();
+  }
+  if (_tallyOnEndInput) _tallyOnEndInput(String(total));
+  document.getElementById('tally-modal').style.display = 'none';
+  _tallyItemId = null; _tallyOnEndInput = null;
+  showToast('🚢' + d + '  🚪' + c + '  🍽️' + r + '  =  ' + total);
+}
+
+// ─── PIN LOCK ──────────────────────────────────────────────────────────────
 
 function openElectricalVendorEdit() {
   const sup = state.catalog['ELECTRICAL'] || DEFAULT_SUPPLIERS['ELECTRICAL'];
@@ -3432,80 +3594,6 @@ function saveElectricalVendor() {
   renderItems();
   showToast('✅ Vendor info saved');
 }
-
-function openTallyModal(item, onConfirm) {
-  _tallyItemId = item.id;
-  _tallyOnEndInput = onConfirm;
-
-  const tally = state.trimarkTally[item.id] || {};
-  document.getElementById('tally-item-name').textContent = item.name;
-  document.getElementById('tally-item-sub').textContent = 'par ' + item.par + (item.unitCost ? ' · $' + item.unitCost.toFixed(2) + ' ea' : '');
-
-  // Restore previous raw string values if saved, otherwise blank
-  document.getElementById('tally-dock').value       = tally.dockRaw       || '';
-  document.getElementById('tally-closet').value     = tally.closetRaw     || '';
-  document.getElementById('tally-restaurant').value = tally.restaurantRaw || '';
-
-  updateTallyTotal();
-  document.getElementById('tally-modal').style.display = 'flex';
-  setTimeout(() => {
-    const d = document.getElementById('tally-dock');
-    if (!d.value) d.focus(); 
-    else document.getElementById('tally-restaurant').focus();
-  }, 100);
-}
-
-function updateTallyTotal() {
-  const d = parseTallyField(document.getElementById('tally-dock').value);
-  const c = parseTallyField(document.getElementById('tally-closet').value);
-  const r = parseTallyField(document.getElementById('tally-restaurant').value);
-
-  document.getElementById('tally-dock-sub').textContent       = d || '0';
-  document.getElementById('tally-closet-sub').textContent     = c || '0';
-  document.getElementById('tally-restaurant-sub').textContent = r || '0';
-
-  const total = d + c + r;
-  const el = document.getElementById('tally-total');
-  el.textContent = total;
-  el.style.color = total > 0 ? '#a78bfa' : '#48484a';
-}
-
-function closeTallyModal() {
-  document.getElementById('tally-modal').style.display = 'none';
-  _tallyItemId = null;
-  _tallyOnEndInput = null;
-}
-
-function confirmTally() {
-  const dockRaw       = document.getElementById('tally-dock').value.trim();
-  const closetRaw     = document.getElementById('tally-closet').value.trim();
-  const restaurantRaw = document.getElementById('tally-restaurant').value.trim();
-
-  const d = parseTallyField(dockRaw);
-  const c = parseTallyField(closetRaw);
-  const r = parseTallyField(restaurantRaw);
-  const total = d + c + r;
-
-  // Save raw strings so they restore next time, plus computed totals
-  if (_tallyItemId) {
-    state.trimarkTally[_tallyItemId] = {
-      dock: d, closet: c, restaurant: r,
-      dockRaw, closetRaw, restaurantRaw
-    };
-    saveTrimarkTally();
-  }
-
-  if (_tallyOnEndInput) _tallyOnEndInput(String(total));
-  closeTallyModal();
-  showToast(`${d} dock + ${c} closet + ${r} restaurant = ${total}`, 'ok');
-}
-
-// Live total update as user types in tally modal
-document.addEventListener('DOMContentLoaded', () => {
-  ['tally-dock','tally-closet','tally-restaurant'].forEach(id => {
-    document.getElementById(id).addEventListener('input', updateTallyTotal);
-  });
-});
 
 // ─── PIN LOCK ──────────────────────────────────────────────────────────────
 const PIN_HASH_KEY = 'bartletts-pin-hash-v1';
