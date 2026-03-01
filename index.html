@@ -814,6 +814,9 @@
       <!-- Reset active location -->
       <button onclick="tallyResetTab()" style="width:100%;height:40px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;letter-spacing:0.5px;cursor:pointer;margin-bottom:4px;" id="tally-reset-btn">✕  RESET DOCK TO 0</button>
 
+      <!-- Audit log -->
+      <div id="tally-log" style="max-height:96px;overflow-y:auto;border-radius:10px;background:#0a0a0a;border:1px solid #1c1c1e;margin-bottom:4px;display:none;"></div>
+
       <!-- Hidden inputs kept for data storage compatibility -->
       <input id="tally-dock" type="hidden">
       <input id="tally-closet" type="hidden">
@@ -977,7 +980,6 @@ const DEFAULT_SUPPLIERS = {
       {id:"tri-9", name:"Port Wine Glass",        pack:"24/cs",    par:12,  unitCost:5.40,  caseQty:24},
       {id:"tri-10",name:"Whiskey Glass",          pack:"2 dz/cs",  par:12,  unitCost:11.25, caseQty:24},
       {id:"tri-11",name:"Wine Glass",             pack:"2 dz/cs",  par:124, unitCost:5.77,  caseQty:24},
-      {id:"tri-44",name:"Bar Mixing Glass",       pack:"4/cs",     par:4,   unitCost:0,     caseQty:4},
       {id:"tri-19",name:'Salad Plate 11"',        pack:"12/cs",    par:100, unitCost:29.04, caseQty:12},
       {id:"tri-20",name:"Chksal Bowl",            pack:"6/cs",     par:72,  unitCost:18.91, caseQty:6},
       {id:"tri-21",name:"Bird Bowl",              pack:"6/cs",     par:56,  unitCost:32.17, caseQty:6},
@@ -1010,6 +1012,7 @@ const DEFAULT_SUPPLIERS = {
       {id:"tri-39",name:"Waiter Aprons",          pack:"each",     par:5,   unitCost:37.00, caseQty:1, inventoryOnly:true},
       {id:"tri-40",name:"Chef Hats",              pack:"each",     par:15,  unitCost:13.00, caseQty:1, inventoryOnly:true},
       {id:"tri-41",name:"Pate Knives",            pack:"1 dz",     par:36,  unitCost:10.22, caseQty:12},
+      {id:"tri-44",name:"Bar Mixing Glass",       pack:"4/cs",     par:4,   unitCost:0,     caseQty:4},
     ]
   }
 };
@@ -1876,6 +1879,11 @@ function buildTriSummaryHTML(summary) {
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;color:#f87171;">
       💸 loss: $${summary.totalBrkgCost.toFixed(2)}
     </span>
+    <button onclick="openTrimarkInventoryReport()" style="
+      padding:4px 12px;border-radius:12px;border:1px solid #7c3aed;
+      background:transparent;color:#c084fc;
+      font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;
+      cursor:pointer;">📋 REPORT</button>
     <button onclick="clearTrimarkInventory()" style="
       padding:4px 12px;border-radius:12px;border:1px solid #636366;
       background:transparent;color:#636366;
@@ -1923,6 +1931,314 @@ function clearTrimarkInventory() {
   showToast('Month reset — enter new beginning counts', 'warn');
   renderOrderView();
 }
+
+function openTrimarkInventoryReport(e, recId) {
+  // Works in two modes:
+  // 1. Live: openTrimarkInventoryReport() — uses current state
+  // 2. History: openTrimarkInventoryReport(null, recId) — uses saved record
+  const isHistory = !!recId;
+  const rec = isHistory ? state.history.find(r => r.id === recId) : null;
+  const sup = state.catalog['TRIMARK'];
+  if (!sup) return;
+
+  const now = isHistory ? new Date(rec.date) : new Date();
+  const dateStr = now.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const timeStr = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+  const monthStr = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+
+  // Build item data — from history record or live state
+  const itemData = sup.items.map(item => {
+    if (isHistory) {
+      const saved = (rec.suppliers?.['TRIMARK'] || []).find(i => i.name === item.name) || {};
+      return {
+        name: item.name,
+        par: item.par,
+        unitCost: item.unitCost,
+        caseQty: item.caseQty,
+        inventoryOnly: item.inventoryOnly,
+        pack: item.pack,
+        beg: saved.begin ?? '',
+        end: saved.onHand ?? '',
+        usage: saved.usage ?? null,
+        brkgCost: saved.brkgCost ?? null,
+        orderQty: saved.orderQty ?? '',
+        tally: null, // no tally breakdown in history
+      };
+    } else {
+      const ik = ikey('TRIMARK', item.id);
+      const beg = state.trimarkBegin[item.id] ?? '';
+      const end = state.onHand[ik] ?? '';
+      const begV = parseFloat(beg), endV = parseFloat(end);
+      const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? Math.max(0, begV - endV) : null;
+      const brkgCost = usage !== null ? usage * (item.unitCost || 0) : null;
+      const parVal = parseFloat(item.par) || 0;
+      const neededPcs = end !== '' && !isNaN(endV) ? Math.max(0, parVal - endV) : null;
+      const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
+      return {
+        name: item.name, par: item.par, unitCost: item.unitCost,
+        caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
+        beg, end, usage, brkgCost, orderQty,
+        tally: state.trimarkTally[item.id] || null,
+      };
+    }
+  });
+
+  let totalLoss = 0, itemsWithCount = 0, itemsNeedOrder = 0;
+
+  const rows = itemData.map((item, idx) => {
+    const { beg, end, usage, brkgCost, orderQty, tally } = item;
+    const endV = parseFloat(end);
+    const usageN = usage !== null ? parseFloat(usage) : null;
+    const lossN = brkgCost !== null ? parseFloat(brkgCost) : (usageN !== null ? usageN * (item.unitCost || 0) : null);
+    const parVal = parseFloat(item.par) || 0;
+    const hasEnd = end !== '';
+    const isLow = hasEnd && !isNaN(endV) && endV < parVal;
+    const isCrit = hasEnd && !isNaN(endV) && endV <= 0;
+
+    // For history records, orderQty is already a string; for live it's a number
+    const orderDisplay = item.inventoryOnly ? '—'
+      : (orderQty !== null && orderQty !== '' && orderQty !== '0')
+        ? (isHistory ? orderQty + (item.caseQty > 1 ? ' cs' : '') : (orderQty > 0 ? '+'+orderQty+'cs' : '✓'))
+        : (hasEnd ? '✓' : '—');
+
+    if (hasEnd) itemsWithCount++;
+    if (!item.inventoryOnly && orderQty && orderQty !== '0' && orderQty !== '') itemsNeedOrder++;
+    if (lossN) totalLoss += lossN;
+
+    const bg = idx % 2 === 0 ? '#f9fafb' : '#fff';
+    const statusColor = isCrit ? '#dc2626' : isLow ? '#d97706' : '#16a34a';
+    const statusLabel = isCrit ? '⚠ CRIT' : isLow ? '↓ LOW' : hasEnd ? '✓' : '—';
+    const tallyStr = tally && (tally.dock || tally.closet || tally.restaurant)
+      ? `<div style="font-size:9px;color:#9ca3af;margin-top:1px">🚢${tally.dock||0} 🚪${tally.closet||0} 🍽️${tally.restaurant||0}</div>` : '';
+
+    return `<tr style="background:${bg}">
+      <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;">
+        ${item.name}
+        ${item.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;margin-left:4px;font-style:italic">count only</span>' : ''}
+        ${tallyStr}
+      </td>
+      <td style="padding:7px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb;">${beg || '—'}</td>
+      <td style="padding:7px 8px;font-size:13px;font-weight:700;color:#111;text-align:center;border-bottom:1px solid #e5e7eb;">${end || '—'}</td>
+      <td style="padding:7px 8px;font-size:12px;font-weight:700;color:${usageN > 0 ? '#dc2626' : '#6b7280'};text-align:center;border-bottom:1px solid #e5e7eb;">${usageN !== null ? (usageN > 0 ? '-'+usageN : '0') : '—'}</td>
+      <td style="padding:7px 8px;font-size:12px;color:${lossN > 0 ? '#dc2626' : '#6b7280'};text-align:center;border-bottom:1px solid #e5e7eb;">${lossN !== null ? (lossN > 0 ? '$'+lossN.toFixed(2) : '—') : '—'}</td>
+      <td style="padding:7px 8px;font-size:13px;font-weight:800;text-align:center;border-bottom:1px solid #e5e7eb;color:${(orderQty > 0 || (isHistory && orderQty && orderQty !== '0')) ? '#d97706' : '#16a34a'}">${orderDisplay}</td>
+      <td style="padding:7px 8px;font-size:11px;font-weight:700;color:${statusColor};text-align:center;border-bottom:1px solid #e5e7eb;">${statusLabel}</td>
+    </tr>`;
+  }).join('');
+
+  const historyNote = isHistory ? `<div style="margin-bottom:16px;padding:8px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0;font-family:monospace;font-size:11px;color:#92400e;">📅 Historical record — ${dateStr} at ${timeStr}</div>` : '';
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bartlett&#39;s — Trimark Inventory ${monthStr}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:24px;max-width:860px;margin:0 auto}
+    @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.2cm;size:A4 landscape}}
+  </style></head><body>
+  <div class="no-print" style="text-align:right;margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="window.print()" style="padding:10px 24px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>
+    <button onclick="window.close()" style="padding:10px 20px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div style="border-bottom:3px solid #7c3aed;padding-bottom:14px;margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:22px;font-weight:700;color:#ef4444;letter-spacing:2px;font-family:monospace">BARTLETT&#39;S</div>
+        <div style="font-size:13px;font-weight:700;color:#7c3aed;letter-spacing:2px;margin-top:2px;font-family:monospace">TRIMARK INVENTORY REPORT</div>
+        <div style="font-size:11px;color:#6b7280;font-family:monospace;margin-top:2px;">${monthStr}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:14px;font-weight:700">${dateStr}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${isHistory ? 'Historical record' : 'Generated at '+timeStr}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+      <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#7c3aed;font-family:monospace">${itemsWithCount}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">ITEMS COUNTED</div></div>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#d97706;font-family:monospace">${itemsNeedOrder}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">NEED ORDER</div></div>
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#dc2626;font-family:monospace">$${totalLoss.toFixed(2)}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">TOTAL LOSS</div></div>
+    </div>
+  </div>
+  ${historyNote}
+  <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;">
+    <thead>
+      <tr style="background:#f5f3ff;">
+        <th style="padding:7px 8px;font-size:10px;color:#7c3aed;text-align:left;font-family:monospace;border-bottom:2px solid #ddd6fe;">ITEM</th>
+        <th style="padding:7px 8px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">BEGIN</th>
+        <th style="padding:7px 8px;font-size:10px;color:#111;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">COUNT</th>
+        <th style="padding:7px 8px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">USED</th>
+        <th style="padding:7px 8px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">LOSS $</th>
+        <th style="padding:7px 8px;font-size:10px;color:#d97706;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">ORDER (cs)</th>
+        <th style="padding:7px 8px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">STATUS</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2025 Oscar Rivas · Bartlett&#39;s Restaurant</div>
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
+  </div>
+  </body></html>`;
+
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (!w) { const a = document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function openHistoryEditCounts(recId) {
+  const rec = state.history.find(r => r.id === recId);
+  if (!rec) return;
+  const triItems = rec.suppliers?.['TRIMARK'] || [];
+  if (!triItems.length) return;
+
+  const existing = document.getElementById('hist-edit-modal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'hist-edit-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9600;display:flex;align-items:flex-end;';
+
+  // Working copy of item data
+  const edits = triItems.map(it => ({
+    name: it.name,
+    begin: it.begin ?? '',
+    onHand: it.onHand ?? '',
+    inventoryOnly: !!it.inventoryOnly,
+    unitCost: it.unitCost ?? 0,
+    par: it.par,
+    pack: it.pack,
+    orderQty: it.orderQty ?? '',
+    note: it.note ?? '',
+    status: it.status ?? '',
+    usage: it.usage ?? '',
+    brkgCost: it.brkgCost ?? '',
+  }));
+
+  function recalc(e) {
+    const begV = parseFloat(e.begin), endV = parseFloat(e.onHand);
+    const hasBeg = e.begin !== '', hasEnd = e.onHand !== '';
+    const usage = (hasBeg && hasEnd && !isNaN(begV) && !isNaN(endV)) ? Math.max(0, begV - endV) : null;
+    e.usage = usage !== null ? String(usage) : '';
+    e.brkgCost = (usage !== null && e.unitCost) ? (usage * e.unitCost).toFixed(2) : '';
+    // Recalc order qty using catalog caseQty
+    const catItem = (state.catalog['TRIMARK']?.items || []).find(ci => ci.name === e.name);
+    const caseQty = catItem?.caseQty || 1;
+    const parVal = parseFloat(e.par) || 0;
+    if (hasEnd && !isNaN(endV) && !e.inventoryOnly) {
+      const needed = Math.max(0, parVal - endV);
+      const cs = caseQty > 1 ? Math.ceil(needed / caseQty) : needed;
+      e.orderQty = cs > 0 ? String(cs) : '';
+    }
+    e.status = (hasEnd && !isNaN(endV))
+      ? (endV <= 0 ? 'critical' : endV < parseFloat(e.par) ? 'low' : 'ok')
+      : '';
+  }
+
+  function buildModal() {
+    const rows = edits.map((e, i) => `
+      <div style="padding:12px 16px;border-bottom:1px solid #1c1c1e;${i%2===0?'background:#0d0d0d;':''}">
+        <div style="font-family:-apple-system,sans-serif;font-size:14px;color:#e5e5e7;font-weight:600;margin-bottom:8px;">
+          ${e.name}
+          ${e.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;font-style:italic;margin-left:6px;">count only</span>' : ''}
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end;">
+          <div style="flex:1;">
+            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#7c3aed;letter-spacing:1px;margin-bottom:4px;">BEGIN</div>
+            <input type="number" inputmode="numeric"
+              value="${e.begin}"
+              onchange="histEditChange(${i},'begin',this.value)"
+              style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3b0764;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,'SF Mono',monospace;font-size:15px;font-weight:700;text-align:center;padding:0 8px;">
+          </div>
+          <div style="flex:1;">
+            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#e5e5e7;letter-spacing:1px;margin-bottom:4px;">COUNT</div>
+            <input type="number" inputmode="numeric"
+              value="${e.onHand}"
+              onchange="histEditChange(${i},'onHand',this.value)"
+              style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#e5e5e7;font-family:ui-monospace,'SF Mono',monospace;font-size:15px;font-weight:700;text-align:center;padding:0 8px;">
+          </div>
+          <div style="flex:1;text-align:center;">
+            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#f87171;letter-spacing:1px;margin-bottom:4px;">USED</div>
+            <div style="height:38px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,'SF Mono',monospace;font-size:15px;font-weight:700;color:${e.usage > 0 ? '#f87171' : '#48484a'};">
+              ${e.usage !== '' ? (e.usage > 0 ? '-'+e.usage : '0') : '—'}
+            </div>
+          </div>
+          ${!e.inventoryOnly ? `<div style="flex:1;text-align:center;">
+            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;margin-bottom:4px;">ORDER</div>
+            <div style="height:38px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,'SF Mono',monospace;font-size:13px;font-weight:800;color:${e.orderQty > 0 ? '#fbbf24' : '#48484a'};">
+              ${e.orderQty > 0 ? '+'+e.orderQty+'cs' : (e.onHand !== '' ? '✓' : '—')}
+            </div>
+          </div>` : ''}
+        </div>
+        ${e.brkgCost > 0 ? `<div style="margin-top:5px;font-family:ui-monospace,'SF Mono',monospace;font-size:10px;color:#f87171;">💸 loss: $${e.brkgCost}</div>` : ''}
+      </div>`).join('');
+
+    overlay.innerHTML = `
+      <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid #1c1c1e;flex-shrink:0;">
+          <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 12px;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:13px;font-weight:700;color:#c084fc;letter-spacing:1px;">✎ EDIT INVENTORY COUNTS</div>
+              <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:10px;color:#636366;margin-top:2px;">
+                ${new Date(rec.date).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} · TRIMARK
+              </div>
+            </div>
+            <button onclick="document.getElementById('hist-edit-modal').remove()" style="width:32px;height:32px;border-radius:16px;background:#2c2c2e;border:none;color:#636366;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>
+          </div>
+          <div style="margin-top:8px;padding:7px 10px;background:#2e1065;border-radius:8px;font-family:ui-monospace,'SF Mono',monospace;font-size:10px;color:#a78bfa;line-height:1.5;">
+            ⚠ Changes here update the saved record permanently. USED and ORDER recalculate automatically.
+          </div>
+        </div>
+        <div style="overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;">
+          ${rows}
+        </div>
+        <div style="padding:16px 20px;border-top:1px solid #1c1c1e;flex-shrink:0;padding-bottom:max(16px,env(safe-area-inset-bottom));display:flex;gap:10px;">
+          <button onclick="document.getElementById('hist-edit-modal').remove()" style="flex:1;height:48px;border-radius:14px;background:transparent;border:1.5px solid #3a3a3c;color:#636366;font-family:ui-monospace,'SF Mono',monospace;font-size:13px;font-weight:700;cursor:pointer;">Cancel</button>
+          <button onclick="saveHistoryEditCounts('${recId}')" style="flex:2;height:48px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;color:#fff;font-family:ui-monospace,'SF Mono',monospace;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">✦ SAVE CORRECTIONS</button>
+        </div>
+      </div>`;
+  }
+
+  window._histEdits = edits;
+  window._histEditRecId = recId;
+
+  window.histEditChange = (idx, field, val) => {
+    window._histEdits[idx][field] = val;
+    recalc(window._histEdits[idx]);
+    buildModal(); // rebuild to show recalculated values
+  };
+
+  document.body.appendChild(overlay);
+  buildModal();
+}
+
+window.saveHistoryEditCounts = function(recId) {
+  const rec = state.history.find(r => r.id === recId);
+  if (!rec) return;
+  const edits = window._histEdits;
+
+  // Write corrected values back into the record
+  rec.suppliers['TRIMARK'] = edits.map(e => ({
+    name: e.name, pack: e.pack, par: e.par,
+    onHand: e.onHand,
+    begin: e.begin,
+    usage: e.usage,
+    brkgCost: e.brkgCost,
+    orderQty: e.orderQty,
+    note: e.note,
+    status: e.status,
+    ...(e.inventoryOnly ? {inventoryOnly: true} : {}),
+  }));
+
+  // Persist
+  lsSet('bartletts-orders-v3', state.history);
+  fbSaveRecord(rec);
+
+  document.getElementById('hist-edit-modal')?.remove();
+  showToast('✅ Corrections saved');
+  renderDetail(rec); // refresh the detail view
+};
 
 function clearAllBreakage() {
   state.breakage = {};
@@ -2069,6 +2385,31 @@ function renderDetail(rec) {
 
   const printBtn = document.getElementById('btn-print-detail');
   printBtn.onclick = () => openPrint(rec);
+
+  // Add Trimark-specific buttons to header if this record has Trimark data
+  const trimarkItems = rec.suppliers?.['TRIMARK'] || [];
+  const hasTrimarkInventory = trimarkItems.some(i => i.begin || i.onHand);
+  let extraBtns = document.getElementById('detail-extra-btns');
+  if (!extraBtns) {
+    extraBtns = document.createElement('div');
+    extraBtns.id = 'detail-extra-btns';
+    extraBtns.style.cssText = 'display:flex;gap:6px;padding:0 16px 8px;flex-wrap:wrap;';
+    document.getElementById('detail-confirm-bar').before(extraBtns);
+  }
+  extraBtns.innerHTML = '';
+  if (hasTrimarkInventory) {
+    extraBtns.innerHTML = `
+      <button onclick="openTrimarkInventoryReport(null, '${rec.id}')" style="
+        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #7c3aed;
+        background:transparent;color:#c084fc;
+        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+        cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY REPORT</button>
+      <button onclick="openHistoryEditCounts('${rec.id}')" style="
+        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #3a3a3c;
+        background:transparent;color:#a3a3a3;
+        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+        cursor:pointer;letter-spacing:0.5px;">✎ EDIT COUNTS</button>`;
+  }
 
   const scroll = document.getElementById('detail-scroll');
   scroll.innerHTML = '';
@@ -2509,13 +2850,41 @@ function openDeliveryConfirmation(recId) {
   overlay.id = 'delivery-confirm-modal';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9500;display:flex;align-items:flex-end;';
 
-  // Track checked state
   const checked = {};
-  orderedItems.forEach(it => { checked[it.supplier+'|'+it.name] = true; }); // default all received
+  orderedItems.forEach(it => { checked[it.supplier+'|'+it.name] = true; });
 
-  function buildContent() {
-    const supColors = {ABCO:'#1e4d35',BEK:'#0f172a',TRIMARK:'#3b0764'};
-    const rows = orderedItems.map(it => {
+  const supColors = {ABCO:'#1e4d35',BEK:'#0f172a',TRIMARK:'#3b0764'};
+
+  // Build static shell once
+  overlay.innerHTML = `
+    <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:16px 20px;border-bottom:1px solid #1c1c1e;flex-shrink:0;">
+        <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 14px;"></div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#60a5fa;letter-spacing:1px;margin-bottom:4px;">📦 CONFIRM DELIVERY</div>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;font-size:13px;color:#636366;">
+          Check off each item as it arrives. Uncheck anything missing.
+        </div>
+      </div>
+      <div style="overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;" id="delivery-confirm-list">
+        <div style="padding:6px 16px;background:#0a0a0a;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:1;">
+          <button onclick="toggleAllDelivery(true)" style="background:transparent;border:none;color:#4ade80;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;padding:6px 0;">✓ ALL RECEIVED</button>
+          <button onclick="toggleAllDelivery(false)" style="background:transparent;border:none;color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;padding:6px 0;">✗ CLEAR ALL</button>
+        </div>
+        <div id="delivery-rows"></div>
+      </div>
+      <div style="padding:16px 20px;border-top:1px solid #1c1c1e;flex-shrink:0;padding-bottom:max(16px,env(safe-area-inset-bottom));">
+        <div id="delivery-missing-warn"></div>
+        <div style="display:flex;gap:10px;">
+          <button onclick="document.getElementById('delivery-confirm-modal').remove()" style="flex:1;height:48px;border-radius:14px;background:transparent;border:1.5px solid #3a3a3c;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;">Cancel</button>
+          <button onclick="saveDeliveryConfirmation('${recId}')" style="flex:2;height:48px;border-radius:14px;background:#16a34a;border:none;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">✓ CONFIRM DELIVERY</button>
+        </div>
+      </div>
+    </div>`;
+
+  function renderRows() {
+    const rowsEl = document.getElementById('delivery-rows');
+    if (!rowsEl) return;
+    rowsEl.innerHTML = orderedItems.map(it => {
       const k = it.supplier+'|'+it.name;
       const isChecked = checked[k];
       return `<div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1c1c1e;background:${isChecked?'transparent':'rgba(220,38,38,0.08)'};">
@@ -2537,49 +2906,60 @@ function openDeliveryConfirmation(recId) {
       </div>`;
     }).join('');
 
+    // Update warning and confirm button only — no scroll reset
     const uncheckedCount = orderedItems.filter(it => !checked[it.supplier+'|'+it.name]).length;
-
-    overlay.innerHTML = `
-      <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
-        <div style="padding:16px 20px;border-bottom:1px solid #1c1c1e;flex-shrink:0;">
-          <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 14px;"></div>
-          <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#60a5fa;letter-spacing:1px;margin-bottom:4px;">📦 CONFIRM DELIVERY</div>
-          <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;font-size:13px;color:#636366;">
-            Check off each item as it arrives. Uncheck anything missing.
-          </div>
-        </div>
-        <div style="overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;" id="delivery-confirm-list">
-          <div style="padding:6px 16px;background:#0a0a0a;display:flex;justify-content:space-between;align-items:center;">
-            <button onclick="toggleAllDelivery(true)" style="background:transparent;border:none;color:#4ade80;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;padding:6px 0;">✓ ALL RECEIVED</button>
-            <button onclick="toggleAllDelivery(false)" style="background:transparent;border:none;color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;padding:6px 0;">✗ CLEAR ALL</button>
-          </div>
-          ${rows}
-        </div>
-        <div style="padding:16px 20px;border-top:1px solid #1c1c1e;flex-shrink:0;padding-bottom:max(16px,env(safe-area-inset-bottom));">
-          ${uncheckedCount > 0 ? `<div style="background:#450a0a;border:1px solid #f87171;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;color:#f87171;font-weight:700;">
-            ⚠️ ${uncheckedCount} item${uncheckedCount>1?'s are':' is'} unchecked — will be flagged as MISSING
-          </div>` : ''}
-          <div style="display:flex;gap:10px;">
-            <button onclick="document.getElementById('delivery-confirm-modal').remove()" style="flex:1;height:48px;border-radius:14px;background:transparent;border:1.5px solid #3a3a3c;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;">Cancel</button>
-            <button onclick="saveDeliveryConfirmation('${recId}')" style="flex:2;height:48px;border-radius:14px;background:#16a34a;border:none;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">✓ CONFIRM DELIVERY</button>
-          </div>
-        </div>
-      </div>`;
+    const warnEl = document.getElementById('delivery-missing-warn');
+    if (warnEl) {
+      warnEl.innerHTML = uncheckedCount > 0 ? `
+        <div style="background:#450a0a;border:1px solid #f87171;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;color:#f87171;font-weight:700;">
+          ⚠️ ${uncheckedCount} item${uncheckedCount>1?'s are':' is'} unchecked — will be flagged as MISSING
+        </div>` : '';
+    }
   }
 
   window._deliveryChecked = checked;
   window._deliveryItems = orderedItems;
-  buildContent();
-  document.body.appendChild(overlay);
 
   window.toggleDeliveryCheck = (k) => {
     window._deliveryChecked[k] = !window._deliveryChecked[k];
-    buildContent();
+    // Update only the tapped row + warning, no full rebuild
+    const rowsEl = document.getElementById('delivery-rows');
+    if (rowsEl) {
+      const divs = rowsEl.querySelectorAll('div[onclick]');
+      divs.forEach(div => {
+        if (div.getAttribute('onclick') === `toggleDeliveryCheck('${k}')`) {
+          const row = div.parentElement;
+          const isChecked = window._deliveryChecked[k];
+          row.style.background = isChecked ? 'transparent' : 'rgba(220,38,38,0.08)';
+          div.style.background = isChecked ? '#16a34a' : 'transparent';
+          div.style.borderColor = isChecked ? '#16a34a' : '#3a3a3c';
+          div.textContent = isChecked ? '✓' : '';
+          const nameEl = row.querySelector('div[style*="font-size:14px"]');
+          if (nameEl) {
+            nameEl.style.color = isChecked ? '#e5e5e7' : '#636366';
+            nameEl.style.textDecoration = isChecked ? '' : 'line-through';
+          }
+        }
+      });
+    }
+    // Just update the warning
+    const uncheckedCount = orderedItems.filter(it => !window._deliveryChecked[it.supplier+'|'+it.name]).length;
+    const warnEl = document.getElementById('delivery-missing-warn');
+    if (warnEl) {
+      warnEl.innerHTML = uncheckedCount > 0 ? `
+        <div style="background:#450a0a;border:1px solid #f87171;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;color:#f87171;font-weight:700;">
+          ⚠️ ${uncheckedCount} item${uncheckedCount>1?'s are':' is'} unchecked — will be flagged as MISSING
+        </div>` : '';
+    }
   };
+
   window.toggleAllDelivery = (val) => {
     orderedItems.forEach(it => { window._deliveryChecked[it.supplier+'|'+it.name] = val; });
-    buildContent();
+    renderRows(); // full re-render ok here since user tapped a button not scrolling
   };
+
+  document.body.appendChild(overlay);
+  renderRows();
 }
 
 function saveDeliveryConfirmation(recId) {
@@ -3423,15 +3803,19 @@ let _tallyOnEndInput = null;
 let _tallyTab = 'dock';
 let _tallyEntry = '';
 let _tallyTotals = { dock: 0, closet: 0, restaurant: 0 };
+let _tallyLog = []; // audit trail: [{loc, n, runningTotals}]
 
 function parseTallyField(val) {
   return (val.match(/[\d.]+/g) || []).map(n => parseFloat(n) || 0).reduce((a, b) => a + b, 0);
 }
 
 function tallyResetTab() {
+  // Remove log entries for this tab and recalculate totals
+  _tallyLog = _tallyLog.filter(e => e.loc !== _tallyTab);
   _tallyTotals[_tallyTab] = 0;
   _tallyEntry = '';
   _tallyUpdateDisplay();
+  _tallyUpdateLog();
 }
 
 function tallySetTab(tab) {
@@ -3458,11 +3842,42 @@ function tallyCommitEntry() {
   const n = parseInt(_tallyEntry, 10) || 0;
   if (n > 0) {
     _tallyTotals[_tallyTab] += n;
+    // Record in audit log
+    _tallyLog.push({ loc: _tallyTab, n, totals: { ..._tallyTotals } });
+    _tallyUpdateLog();
     const tabVal = document.getElementById('tally-tab-' + _tallyTab + '-val');
     if (tabVal) { tabVal.style.color = '#4ade80'; setTimeout(() => { tabVal.style.color = ''; }, 400); }
   }
   _tallyEntry = '';
   _tallyUpdateDisplay();
+}
+
+function tallyRemoveLogEntry(idx) {
+  const entry = _tallyLog[idx];
+  if (!entry) return;
+  // Remove the entry and recalculate totals from scratch
+  _tallyLog.splice(idx, 1);
+  _tallyTotals = { dock: 0, closet: 0, restaurant: 0 };
+  _tallyLog.forEach(e => { _tallyTotals[e.loc] += e.n; });
+  _tallyUpdateDisplay();
+  _tallyUpdateLog();
+}
+
+function _tallyUpdateLog() {
+  const logEl = document.getElementById('tally-log');
+  if (!logEl) return;
+  if (_tallyLog.length === 0) { logEl.style.display = 'none'; return; }
+  logEl.style.display = 'block';
+  const icons = { dock: '🚢', closet: '🚪', restaurant: '🍽️' };
+  logEl.innerHTML = _tallyLog.map((e, i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #1c1c1e;${i===_tallyLog.length-1?'border-bottom:none;':''}">
+      <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;color:#636366;">#${i+1} ${icons[e.loc]}</span>
+      <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#c084fc;">+${e.n}</span>
+      <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;">🚢${e.totals.dock} 🚪${e.totals.closet} 🍽️${e.totals.restaurant}</span>
+      <button onclick="tallyRemoveLogEntry(${i})" style="background:transparent;border:none;color:#f87171;font-size:14px;cursor:pointer;padding:2px 6px;line-height:1;">✕</button>
+    </div>`).join('');
+  // Auto-scroll to bottom so latest entry is visible
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 function _tallyUpdateDisplay() {
@@ -3507,11 +3922,17 @@ function openTallyModal(item, onConfirm) {
   _tallyOnEndInput = onConfirm;
   _tallyTab = 'dock';
   _tallyEntry = '';
+  _tallyLog = [];
   const saved = state.trimarkTally[item.id] || {};
   _tallyTotals = { dock: saved.dock || 0, closet: saved.closet || 0, restaurant: saved.restaurant || 0 };
+  // Seed log with existing saved values so they're visible
+  if (saved.dock)       _tallyLog.push({ loc:'dock',       n: saved.dock,       totals:{ dock: saved.dock, closet: 0, restaurant: 0 } });
+  if (saved.closet)     _tallyLog.push({ loc:'closet',     n: saved.closet,     totals:{ dock: saved.dock||0, closet: saved.closet, restaurant: 0 } });
+  if (saved.restaurant) _tallyLog.push({ loc:'restaurant', n: saved.restaurant, totals:{ dock: saved.dock||0, closet: saved.closet||0, restaurant: saved.restaurant } });
   document.getElementById('tally-item-name').textContent = item.name;
   document.getElementById('tally-item-sub').textContent = 'par ' + item.par + (item.unitCost ? ' · $' + item.unitCost.toFixed(2) + ' ea' : '');
   _tallyUpdateDisplay();
+  _tallyUpdateLog();
   document.getElementById('tally-modal').style.display = 'flex';
 }
 
