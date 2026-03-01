@@ -14,14 +14,18 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.5                                           │
+  │  CURRENT VERSION: v1.7                                           │
   │  FILE: index.html                                                │
-  │  LAST UPDATED: 2026-02-26                                        │
+  │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
 
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.7 — 2026-03-01
+  · February 2026 beginning inventory preloaded from RestOp_Breakage_report_1.xlsx
+  · All 41 Trimark items updated with Feb 2026 Begin counts (extracted from Excel formulas)
 
   v1.5 — 2026-02-26
   · Full Trimark step-by-step guide added to Must Know tab (6 steps with emojis)
@@ -625,7 +629,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.5</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.7</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -809,6 +813,7 @@
         <button class="tally-key" onclick="tallyKey('3')">3</button>
         <button class="tally-key tally-key-add" onclick="tallyKey('+')">+  ADD</button>
         <button class="tally-key" onclick="tallyKey('0')">0</button>
+        <button class="tally-key" onclick="tallyKey('.')">.</button>
         <button class="tally-key tally-key-back" onclick="tallyKey('back')">⌫</button>
       </div>
       <!-- Reset active location -->
@@ -1133,49 +1138,49 @@ function loadPersistedData() {
   if (beg) {
     state.trimarkBegin = beg;
   } else {
-    // Pre-loaded from December 2025 ending counts (breakage report)
+    // Pre-loaded from February 2026 beginning counts (RestOp_Breakage_report_1.xlsx)
     state.trimarkBegin = {
-      'tri-1':  97,   // Rocks glasses
-      'tri-2':  100,  // Collins glasses
-      'tri-3':  99,   // Beer Glass
-      'tri-4':  439,  // Tea Glass
-      'tri-5':  46,   // Champagne glasses
-      'tri-6':  161,  // Martini glasses
-      'tri-7':  53,   // Cordial glasses
+      'tri-1':  68,   // Rocks glasses
+      'tri-2':  97,   // Collins glasses
+      'tri-3':  86,   // Beer Glass
+      'tri-4':  392,  // Tea Glass
+      'tri-5':  37,   // Champagne glasses
+      'tri-6':  111,  // Martini glasses
+      'tri-7':  49,   // Cordial glasses
       'tri-8':  31,   // Brandy snifters
       'tri-9':  33,   // Port wine glasses
-      'tri-10': 22,   // Whiskey glasses
-      'tri-11': 160,  // Wine glasses
+      'tri-10': 21,   // Whiskey glasses
+      'tri-11': 130,  // Wine glasses
       'tri-12': 14,   // Espresso Cup
       'tri-13': 9,    // Espresso Saucer
-      'tri-14': 85,   // Cappuccino cup
-      'tri-15': 92,   // Cappuccino saucer
-      'tri-16': 20,   // Latte Cup
+      'tri-14': 83,   // Cappuccino cup
+      'tri-15': 91,   // Cappuccino saucer
+      'tri-16': 13,   // Latte Cup
       'tri-17': 15,   // Latte Saucer
-      'tri-18': 66,   // Coffee Mugs
-      'tri-19': 155,  // Salad Plate 11"
-      'tri-20': 108,  // Chksal bowls
+      'tri-18': 63,   // Coffee Mugs
+      'tri-19': 152,  // Salad Plate 11"
+      'tri-20': 107,  // Chksal bowls
       'tri-21': 98,   // Bird bowl
-      'tri-22': 190,  // Ala plate 10"
-      'tri-23': 124,  // Platter plates
-      'tri-24': 74,   // Thai plates
-      'tri-25': 94,   // Soup bowl
-      'tri-26': 77,   // Chili bowl
-      'tri-27': 102,  // Spin bowl
+      'tri-22': 253,  // Ala plate 10"
+      'tri-23': 119,  // Platter plates
+      'tri-24': 71,   // Thai plates
+      'tri-25': 95,   // Soup bowl
+      'tri-26': 78,   // Chili bowl
+      'tri-27': 94,   // Spin bowl
       'tri-28': 37,   // Gravy Boats
       'tri-29': 30,   // Key Lime pie plate
-      'tri-30': 108,  // Metal ramekin
-      'tri-31': 413,  // Tip plate
-      'tri-32': 593,  // Fork
-      'tri-33': 612,  // Knife
-      'tri-34': 91,   // Steak knife
-      'tri-35': 127,  // Spoon
-      'tri-36': 165,  // Iced tea spoons
-      'tri-37': 68,   // Coffee spoons
-      'tri-38': 86,   // S & P mills
-      'tri-39': 33,   // Waiter Aprons
-      'tri-40': 30,   // Chefs hats
-      'tri-41': 39,   // Pate Knives
+      'tri-30': 95,   // Metal ramekin
+      'tri-31': 410,  // Tip plate
+      'tri-32': 571,  // Fork
+      'tri-33': 600,  // Knife
+      'tri-34': 97,   // Steak knife
+      'tri-35': 202,  // Spoon
+      'tri-36': 153,  // Iced tea spoons
+      'tri-37': 59,   // Coffee spoons
+      'tri-38': 83,   // S & P mills
+      'tri-39': 31,   // Waiter Aprons
+      'tri-40': 11,   // Chefs hats
+      'tri-41': 36,   // Pate Knives
     };
     saveTrimarkBegin();
   }
@@ -1765,8 +1770,8 @@ function renderTrimarkInventory(listEl, sup) {
     const hasBeg = begRaw !== undefined && begRaw !== '';
     const hasEnd = endRaw !== '';
     const usage = (hasBeg && hasEnd && !isNaN(begVal) && !isNaN(endVal)) ? begVal - endVal : null;
-    const usagePos = usage !== null ? Math.max(0, usage) : null;
-    const brkgCost = usagePos !== null ? usagePos * (item.unitCost || 0) : null;
+    const usagePos = usage; // allow negative (gain) — no clamp
+    const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
     const parVal = parseFloat(item.par) || 0;
     const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
     const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
@@ -1849,8 +1854,8 @@ function renderTrimarkInventory(listEl, sup) {
     const usageCol = document.createElement('div');
     usageCol.className = 'tri-usage-' + item.id;
     usageCol.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:16px;font-weight:700;';
-    usageCol.style.color = usagePos !== null && usagePos > 0 ? '#f87171' : '#48484a';
-    usageCol.textContent = usagePos !== null ? (usagePos > 0 ? '-'+usagePos : '0') : '—';
+    usageCol.style.color = usagePos !== null ? (usagePos > 0 ? '#f87171' : usagePos < 0 ? '#4ade80' : '#48484a') : '#48484a';
+    usageCol.textContent = usagePos !== null ? (usagePos > 0 ? '-'+usagePos : usagePos < 0 ? '+'+Math.abs(usagePos) : '0') : '—';
 
     // Order qty display
     const orderCol = document.createElement('div');
@@ -1900,16 +1905,16 @@ function refreshTriRow(row, item, ik, listEl, sup) {
   const hasBeg = begRaw !== undefined && begRaw !== '';
   const hasEnd = endRaw !== '';
   const usage = (hasBeg && hasEnd && !isNaN(begVal) && !isNaN(endVal)) ? begVal - endVal : null;
-  const usagePos = usage !== null ? Math.max(0, usage) : null;
-  const brkgCost = usagePos !== null ? usagePos * (item.unitCost || 0) : null;
+  const usagePos = usage; // no clamp — allow gains
+  const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
   const parVal = parseFloat(item.par) || 0;
   const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
   const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
 
   const usageEl = listEl.querySelector('.tri-usage-' + item.id);
   if (usageEl) {
-    usageEl.textContent = usagePos !== null ? (usagePos > 0 ? '-'+usagePos : '0') : '—';
-    usageEl.style.color = usagePos !== null && usagePos > 0 ? '#f87171' : '#48484a';
+    usageEl.textContent = usagePos !== null ? (usagePos > 0 ? '-'+usagePos : usagePos < 0 ? '+'+Math.abs(usagePos) : '0') : '—';
+    usageEl.style.color = usagePos !== null ? (usagePos > 0 ? '#f87171' : usagePos < 0 ? '#4ade80' : '#48484a') : '#48484a';
   }
   const orderEl = listEl.querySelector('.tri-order-' + item.id);
   if (orderEl) {
@@ -1969,8 +1974,8 @@ function openTrimarkInventoryReport(e, recId) {
       const beg = state.trimarkBegin[item.id] ?? '';
       const end = state.onHand[ik] ?? '';
       const begV = parseFloat(beg), endV = parseFloat(end);
-      const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? Math.max(0, begV - endV) : null;
-      const brkgCost = usage !== null ? usage * (item.unitCost || 0) : null;
+      const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? begV - endV : null;
+      const brkgCost = usage !== null && usage > 0 ? (usage * (item.unitCost || 0)) : null;
       const parVal = parseFloat(item.par) || 0;
       const neededPcs = end !== '' && !isNaN(endV) ? Math.max(0, parVal - endV) : null;
       const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
@@ -2003,13 +2008,19 @@ function openTrimarkInventoryReport(e, recId) {
 
     if (hasEnd) itemsWithCount++;
     if (!item.inventoryOnly && orderQty && orderQty !== '0' && orderQty !== '') itemsNeedOrder++;
-    if (lossN) totalLoss += lossN;
+    if (lossN && lossN > 0) totalLoss += lossN;
 
     const bg = idx % 2 === 0 ? '#f9fafb' : '#fff';
     const statusColor = isCrit ? '#dc2626' : isLow ? '#d97706' : '#16a34a';
     const statusLabel = isCrit ? '⚠ CRIT' : isLow ? '↓ LOW' : hasEnd ? '✓' : '—';
     const tallyStr = tally && (tally.dock || tally.closet || tally.restaurant)
       ? `<div style="font-size:9px;color:#9ca3af;margin-top:1px">🚢${tally.dock||0} 🚪${tally.closet||0} 🍽️${tally.restaurant||0}</div>` : '';
+
+    const usageDisplay = usageN !== null
+      ? (usageN > 0 ? `<span style="color:#dc2626">-${usageN}</span>`
+        : usageN < 0 ? `<span style="color:#16a34a">+${Math.abs(usageN)}</span>`
+        : '0')
+      : '—';
 
     return `<tr style="background:${bg}">
       <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;">
@@ -2019,8 +2030,8 @@ function openTrimarkInventoryReport(e, recId) {
       </td>
       <td style="padding:7px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb;">${beg || '—'}</td>
       <td style="padding:7px 8px;font-size:13px;font-weight:700;color:#111;text-align:center;border-bottom:1px solid #e5e7eb;">${end || '—'}</td>
-      <td style="padding:7px 8px;font-size:12px;font-weight:700;color:${usageN > 0 ? '#dc2626' : '#6b7280'};text-align:center;border-bottom:1px solid #e5e7eb;">${usageN !== null ? (usageN > 0 ? '-'+usageN : '0') : '—'}</td>
-      <td style="padding:7px 8px;font-size:12px;color:${lossN > 0 ? '#dc2626' : '#6b7280'};text-align:center;border-bottom:1px solid #e5e7eb;">${lossN !== null ? (lossN > 0 ? '$'+lossN.toFixed(2) : '—') : '—'}</td>
+      <td style="padding:7px 8px;font-size:12px;font-weight:700;text-align:center;border-bottom:1px solid #e5e7eb;">${usageDisplay}</td>
+      <td style="padding:7px 8px;font-size:12px;color:${lossN > 0 ? '#dc2626' : '#6b7280'};text-align:center;border-bottom:1px solid #e5e7eb;">${lossN !== null && lossN > 0 ? '$'+lossN.toFixed(2) : '—'}</td>
       <td style="padding:7px 8px;font-size:13px;font-weight:800;text-align:center;border-bottom:1px solid #e5e7eb;color:${(orderQty > 0 || (isHistory && orderQty && orderQty !== '0')) ? '#d97706' : '#16a34a'}">${orderDisplay}</td>
       <td style="padding:7px 8px;font-size:11px;font-weight:700;color:${statusColor};text-align:center;border-bottom:1px solid #e5e7eb;">${statusLabel}</td>
     </tr>`;
@@ -2503,9 +2514,9 @@ function renderDetail(rec) {
             <div class="detail-val-label">BEGIN</div>
             <div class="detail-val" style="color:#a78bfa">${item.begin}</div>
           </div>` : ''}
-          ${item.usage ? `<div class="detail-val-col">
+          ${item.usage !== undefined && item.usage !== '' ? `<div class="detail-val-col">
             <div class="detail-val-label">USED</div>
-            <div class="detail-val" style="color:#f87171">-${item.usage}</div>
+            <div class="detail-val" style="color:${parseFloat(item.usage) > 0 ? '#f87171' : '#4ade80'}">${parseFloat(item.usage) > 0 ? '-'+item.usage : '+'+Math.abs(parseFloat(item.usage))}</div>
           </div>` : ''}
           ${item.brkgCost ? `<div class="detail-val-col">
             <div class="detail-val-label">LOSS</div>
@@ -2641,7 +2652,7 @@ function doSave() {
       const brk = sn === 'TRIMARK' ? (state.breakage[it.id] ?? '') : '';
       const beg = sn === 'TRIMARK' ? (state.trimarkBegin[it.id] ?? '') : '';
       const begV = parseFloat(beg), ohV = parseFloat(oh);
-      const usageCalc = sn === 'TRIMARK' && beg !== '' && oh !== '' && !isNaN(begV) && !isNaN(ohV) ? String(Math.max(0, begV - ohV)) : '';
+      const usageCalc = sn === 'TRIMARK' && beg !== '' && oh !== '' && !isNaN(begV) && !isNaN(ohV) ? String(begV - ohV) : '';
       if (oh !== '' || oq !== '' || nt !== '') {
         acc.push({name:it.name, pack:it.pack, par:it.par, onHand:oh,
           orderQty: it.inventoryOnly ? '' : oq,  // never save an order qty for inventory-only items
@@ -3391,7 +3402,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.5</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.7</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">February 2026 · Bartlett&#39;s Order Management</div>
 
@@ -3831,17 +3842,21 @@ function tallyKey(k) {
   } else if (k === '+') {
     tallyCommitEntry();
     return;
+  } else if (k === '.') {
+    if (_tallyEntry.includes('.')) return; // only one decimal
+    if (_tallyEntry === '') _tallyEntry = '0';
+    _tallyEntry += '.';
   } else {
-    if (_tallyEntry.length >= 4) return;
+    if (_tallyEntry.length >= 6) return;
     _tallyEntry += k;
   }
   _tallyUpdateDisplay();
 }
 
 function tallyCommitEntry() {
-  const n = parseInt(_tallyEntry, 10) || 0;
+  const n = parseFloat(_tallyEntry) || 0;
   if (n > 0) {
-    _tallyTotals[_tallyTab] += n;
+    _tallyTotals[_tallyTab] = parseFloat((_tallyTotals[_tallyTab] + n).toFixed(2));
     // Record in audit log
     _tallyLog.push({ loc: _tallyTab, n, totals: { ..._tallyTotals } });
     _tallyUpdateLog();
