@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.7                                           │
+  │  CURRENT VERSION: v1.10                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,26 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.10 — 2026-03-01
+  · Fixed Trimark case calculation — caseQty now always read from defaults even if stored catalog was from older version
+  · Catalog load (localStorage + Firebase) now merges with DEFAULT_SUPPLIERS so no fields are ever missing
+  · All 5 order-qty calculation sites now use (item.caseQty || 1) instead of checking caseQty > 1 directly
+  · ORDER column in Trimark order view now shows "ORDER cs" label for case-pack items
+  · Trimark case inputs round up to whole case on blur (Math.ceil) — no more decimal cases
+
+  v1.9 — 2026-03-01
+  · New dedicated 📦 Inventory tab — shows all Trimark inventory records in one place
+  · Current month card pinned at top with live counted/total items and quick buttons
+  · Past records grouped by month — each shows items counted, cases to order, $ loss
+  · PAR column added to inventory/breakage report (between ITEM and BEGIN)
+  · Inventory tab links directly to VIEW REPORT and EDIT COUNTS without going through History
+
+  v1.8 — 2026-03-01
+  · Real-time Firebase sync expanded to ALL state: trimarkBegin, trimarkTally, breakage, catalog, live order (onHand/orderQty/itemNotes)
+  · Previously only order history was synced — now all devices share the same data instantly
+  · Debounced writes (400–600ms) prevent write storms on fast typing
+  · Echo-guard (fbIgnoreRemote) prevents a device from re-applying its own writes
 
   v1.7 — 2026-03-01
   · February 2026 beginning inventory preloaded from RestOp_Breakage_report_1.xlsx
@@ -629,7 +649,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.7</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.10</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -668,6 +688,12 @@
       <div id="mustknow-scroll" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
 
+    <!-- INVENTORY VIEW -->
+    <div id="view-inventory" style="flex:1;display:none;flex-direction:column;overflow:hidden;">
+      <div id="inventory-header" style="padding:10px 16px 6px;border-bottom:1px solid #1c1c1e;flex-shrink:0;"></div>
+      <div id="inventory-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
+    </div>
+
   </div>
 
   <!-- Copyright Footer -->
@@ -691,6 +717,10 @@
     <button class="tab-btn" id="tab-mustknow" onclick="switchTab('mustknow')">
       <span class="tab-emoji">📌</span>
       <span class="tab-label">Must Know</span>
+    </button>
+    <button class="tab-btn" id="tab-inventory" onclick="switchTab('inventory')">
+      <span class="tab-emoji">📦</span>
+      <span class="tab-label">Inventory</span>
     </button>
   </div>
 
@@ -1054,9 +1084,9 @@ const FB_CONFIG = {
 };
 let fbDb = null;
 let fbSyncStatus = 'offline'; // 'offline' | 'syncing' | 'synced' | 'error'
+let fbIgnoreRemote = false;   // guard: prevents echo when we wrote the change ourselves
 
 function initFirebase() {
-  // If firebase SDK hasn't loaded yet (e.g. slow network), retry after delay
   if (typeof firebase === 'undefined') {
     console.warn('Firebase SDK not loaded yet, retrying in 2s…');
     fbSyncStatus = 'syncing';
@@ -1067,12 +1097,12 @@ function initFirebase() {
   try {
     if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
     fbDb = firebase.database();
-    // Listen for history changes from any device
+
+    // ── ORDER HISTORY ──────────────────────────────────────────────
     fbDb.ref('history').on('value', snap => {
       const data = snap.val();
       if (data) {
         const incoming = Object.values(data).sort((a,b) => new Date(b.date) - new Date(a.date));
-        // Merge with local — keep all unique by date+id
         const merged = mergeHistory(state.history, incoming);
         state.history = merged;
         lsSet('bartletts-orders-v3', state.history);
@@ -1080,11 +1110,71 @@ function initFirebase() {
       }
       fbSyncStatus = 'synced';
       updateSyncBadge();
-    }, err => {
-      console.warn('Firebase sync error:', err);
-      fbSyncStatus = 'error';
-      updateSyncBadge();
-    });
+    }, err => { console.warn('Firebase history error:', err); fbSyncStatus = 'error'; updateSyncBadge(); });
+
+    // ── TRIMARK BEGIN INVENTORY ────────────────────────────────────
+    fbDb.ref('trimarkBegin').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') {
+        state.trimarkBegin = data;
+        lsSet('bartletts-trimark-begin-v1', data);
+        if (state.activeSupp === 'TRIMARK') render();
+      }
+    }, err => console.warn('FB trimarkBegin error:', err));
+
+    // ── TRIMARK TALLY ──────────────────────────────────────────────
+    fbDb.ref('trimarkTally').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') {
+        state.trimarkTally = data;
+        lsSet('bartletts-trimark-tally-v1', data);
+        if (state.activeSupp === 'TRIMARK' && state.trimarkView === 'inventory') render();
+      }
+    }, err => console.warn('FB trimarkTally error:', err));
+
+    // ── BREAKAGE ───────────────────────────────────────────────────
+    fbDb.ref('breakage').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') {
+        state.breakage = data;
+        lsSet('bartletts-breakage-v1', data);
+      }
+    }, err => console.warn('FB breakage error:', err));
+
+    // ── CATALOG (item pars, prices, pack sizes) ────────────────────
+    fbDb.ref('catalog').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') {
+        for (const sn of SUP_NAMES) {
+          if (data[sn]?.items) {
+            const defaultItems = DEFAULT_SUPPLIERS[sn]?.items || [];
+            state.catalog[sn].items = data[sn].items.map(storedItem => {
+              const def = defaultItems.find(d => d.id === storedItem.id || d.name === storedItem.name) || {};
+              return { ...def, ...storedItem };
+            });
+          }
+        }
+        lsSet('bartletts-catalog-v1', data);
+        render();
+      }
+    }, err => console.warn('FB catalog error:', err));
+
+    // ── ON-HAND & ORDER QTY (live order editing) ───────────────────
+    fbDb.ref('liveOrder').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data) {
+        if (data.onHand)   { state.onHand   = data.onHand;   }
+        if (data.orderQty) { state.orderQty = data.orderQty; }
+        if (data.itemNotes){ state.itemNotes= data.itemNotes;}
+        render();
+      }
+    }, err => console.warn('FB liveOrder error:', err));
+
     fbSyncStatus = 'syncing';
     updateSyncBadge();
   } catch(e) {
@@ -1103,9 +1193,21 @@ function mergeHistory(local, remote) {
   return Array.from(map.values()).sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 365);
 }
 
+// ── Generic debounced FB writer ──────────────────────────────────────────
+const fbWriteTimers = {};
+function fbWrite(path, data, debounceMs = 600) {
+  clearTimeout(fbWriteTimers[path]);
+  fbWriteTimers[path] = setTimeout(() => {
+    if (!fbDb) return;
+    fbIgnoreRemote = true;
+    fbDb.ref(path).set(data).catch(e => console.warn('FB write error:', e)).finally(() => {
+      setTimeout(() => { fbIgnoreRemote = false; }, 300);
+    });
+  }, debounceMs);
+}
+
 function fbSaveRecord(rec) {
   if (!fbDb) return;
-  // Use a sanitized key from the date
   const key = 'rec_' + new Date(rec.date).getTime();
   rec.id = rec.id || key;
   fbDb.ref('history/' + rec.id).set(rec).catch(e => console.warn('FB save error:', e));
@@ -1128,7 +1230,15 @@ function loadPersistedData() {
   const cat = lsGet('bartletts-catalog-v1');
   if (cat) {
     for (const sn of SUP_NAMES) {
-      if (cat[sn]?.items) state.catalog[sn].items = cat[sn].items;
+      if (cat[sn]?.items) {
+        // Merge stored items with defaults — stored fields win, but missing fields
+        // (like caseQty added in later versions) fall back to the default item
+        const defaultItems = DEFAULT_SUPPLIERS[sn]?.items || [];
+        state.catalog[sn].items = cat[sn].items.map(storedItem => {
+          const def = defaultItems.find(d => d.id === storedItem.id || d.name === storedItem.name) || {};
+          return { ...def, ...storedItem }; // default fills gaps, stored values win
+        });
+      }
     }
   }
 
@@ -1190,20 +1300,32 @@ function loadPersistedData() {
 
 function saveBreakage() {
   lsSet('bartletts-breakage-v1', state.breakage);
+  fbWrite('breakage', state.breakage);
 }
 
 function saveTrimarkBegin() {
   lsSet('bartletts-trimark-begin-v1', state.trimarkBegin);
+  fbWrite('trimarkBegin', state.trimarkBegin);
 }
 
 function saveTrimarkTally() {
   lsSet('bartletts-trimark-tally-v1', state.trimarkTally);
+  fbWrite('trimarkTally', state.trimarkTally);
 }
 
 function saveCatalog() {
   const toStore = {};
   for (const sn of SUP_NAMES) toStore[sn] = { items: state.catalog[sn].items };
   lsSet('bartletts-catalog-v1', toStore);
+  fbWrite('catalog', toStore);
+}
+
+function saveLiveOrder() {
+  fbWrite('liveOrder', {
+    onHand:    state.onHand,
+    orderQty:  state.orderQty,
+    itemNotes: state.itemNotes,
+  }, 400);
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────
@@ -1234,6 +1356,7 @@ function render() {
   if (state.tab === 'order') renderOrderView();
   else if (state.tab === 'history') renderHistoryView();
   else if (state.tab === 'mustknow') renderMustKnow();
+  else if (state.tab === 'inventory') renderInventoryTab();
   renderTabBar();
 }
 
@@ -1273,6 +1396,7 @@ function renderOrderView() {
   document.getElementById('view-order').style.display = 'flex';
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'none';
+  document.getElementById('view-inventory').style.display = 'none';
 
   const sup = state.catalog[state.activeSupp];
   const defSup = DEFAULT_SUPPLIERS[state.activeSupp];
@@ -1423,8 +1547,9 @@ function renderOrderView() {
         if (!isNaN(ohVal) && !isNaN(parVal) && e.target.value !== '') {
           const neededPcs = Math.max(0, parVal - ohVal);
           // For Trimark: convert to cases; for others: use pieces
-          const suggested = (state.activeSupp === 'TRIMARK' && item.caseQty > 1)
-            ? Math.ceil(neededPcs / item.caseQty)
+          const _caseQty1 = (state.activeSupp === 'TRIMARK') ? (item.caseQty || 1) : 1;
+          const suggested = (state.activeSupp === 'TRIMARK')
+            ? Math.ceil(neededPcs / _caseQty1)
             : (parVal % 1 === 0 ? Math.ceil(neededPcs) : Math.round(neededPcs * 4) / 4);
           const currentOq = state.orderQty[ik] ?? '';
           // Only fill if field is empty or was previously auto-filled (not manually edited)
@@ -1454,6 +1579,7 @@ function renderOrderView() {
         // Update tab badge
         updateTabBadge(state.activeSupp);
         updateSupInfo();
+        saveLiveOrder();
       });
       ohCol.appendChild(ohInp);
       inner.appendChild(ohCol);
@@ -1461,9 +1587,10 @@ function renderOrderView() {
       // Order qty input
       const oqCol = document.createElement('div');
       oqCol.className = 'inp-col';
-      oqCol.innerHTML = `<span class="inp-label">ORDER</span>`;
+      const _isTriCs = state.activeSupp === 'TRIMARK' && (item.caseQty || 1) > 1;
+      oqCol.innerHTML = `<span class="inp-label">ORDER${_isTriCs ? ' <span style="color:#f97316;font-size:9px">cs</span>' : ''}</span>`;
       const oqInp = document.createElement('input');
-      oqInp.type = 'number'; oqInp.inputMode = 'decimal';
+      oqInp.type = 'number'; oqInp.inputMode = _isTriCs ? 'numeric' : 'decimal';
       oqInp.className = 'inp-field oq-input';
       oqInp.value = oq; oqInp.placeholder = '—';
       oqInp.style.cssText = `border-color:${oq !== '' ? '#f97316' : '#2c2c2e'};color:${oq !== '' ? '#f97316' : '#fff'};font-weight:${oq !== '' ? 700 : 400}`;
@@ -1480,7 +1607,22 @@ function renderOrderView() {
         oqInp.style.borderColor = v ? '#f97316' : '#2c2c2e';
         oqInp.style.color = v ? '#f97316' : '#fff';
         oqInp.style.fontWeight = v ? '700' : '400';
+        saveLiveOrder();
       });
+      // For Trimark case items: round to whole number on blur
+      if (_isTriCs) {
+        oqInp.addEventListener('blur', e => {
+          const raw = parseFloat(e.target.value);
+          if (!isNaN(raw) && raw > 0) {
+            const rounded = String(Math.ceil(raw));
+            if (rounded !== e.target.value) {
+              e.target.value = rounded;
+              state.orderQty[ik] = rounded;
+              saveLiveOrder();
+            }
+          }
+        });
+      }
       oqCol.appendChild(oqInp);
       inner.appendChild(oqCol);
 
@@ -1510,7 +1652,7 @@ function renderOrderView() {
       ta.className = 'note-textarea';
       ta.rows = 2; ta.value = nt;
       ta.placeholder = 'Note for this item…';
-      ta.addEventListener('input', e => { state.itemNotes[ik] = e.target.value; });
+      ta.addEventListener('input', e => { state.itemNotes[ik] = e.target.value; saveLiveOrder(); });
       drawer.appendChild(ta);
       row.appendChild(drawer);
       setTimeout(() => ta.focus(), 50);
@@ -1773,9 +1915,10 @@ function renderTrimarkInventory(listEl, sup) {
     const usagePos = usage; // allow negative (gain) — no clamp
     const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
     const parVal = parseFloat(item.par) || 0;
+    const _caseQtyRow = item.caseQty || 1;
     const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
-    const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
-    const orderLabel = orderQty !== null && orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : null;
+    const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _caseQtyRow) : null;
+    const orderLabel = orderQty !== null && orderQty > 0 ? ('+'+orderQty+(_caseQtyRow > 1 ? 'cs' : '')) : null;
     const isLow = hasEnd && !isNaN(endVal) && endVal < parVal;
     const isCrit = hasEnd && !isNaN(endVal) && endVal <= 0;
 
@@ -1832,7 +1975,8 @@ function renderTrimarkInventory(listEl, sup) {
         const pv = parseFloat(totalVal);
         if (!isNaN(pv)) {
           const neededPcs = Math.max(0, parVal - pv);
-          const caseSuggested = item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : Math.ceil(neededPcs);
+          const _caseQtyTally = item.caseQty || 1;
+          const caseSuggested = Math.ceil(neededPcs / _caseQtyTally);
           state.orderQty[ik] = caseSuggested > 0 ? String(caseSuggested) : '';
           if (!state._autoFilled) state._autoFilled = {};
           state._autoFilled[ik] = true;
@@ -1977,8 +2121,9 @@ function openTrimarkInventoryReport(e, recId) {
       const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? begV - endV : null;
       const brkgCost = usage !== null && usage > 0 ? (usage * (item.unitCost || 0)) : null;
       const parVal = parseFloat(item.par) || 0;
+      const _caseQtyRpt = item.caseQty || 1;
       const neededPcs = end !== '' && !isNaN(endV) ? Math.max(0, parVal - endV) : null;
-      const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
+      const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _caseQtyRpt) : null;
       return {
         name: item.name, par: item.par, unitCost: item.unitCost,
         caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
@@ -2022,12 +2167,15 @@ function openTrimarkInventoryReport(e, recId) {
         : '0')
       : '—';
 
+    const parDisplay = item.par ? String(item.par) : '—';
+    const isUnderPar = hasEnd && !isNaN(endV) && endV < parseFloat(item.par||0);
     return `<tr style="background:${bg}">
       <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;">
         ${item.name}
         ${item.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;margin-left:4px;font-style:italic">count only</span>' : ''}
         ${tallyStr}
       </td>
+      <td style="padding:7px 8px;font-size:11px;color:#6b21a8;text-align:center;border-bottom:1px solid #e5e7eb;font-family:monospace;font-weight:700;">${parDisplay}</td>
       <td style="padding:7px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb;">${beg || '—'}</td>
       <td style="padding:7px 8px;font-size:13px;font-weight:700;color:#111;text-align:center;border-bottom:1px solid #e5e7eb;">${end || '—'}</td>
       <td style="padding:7px 8px;font-size:12px;font-weight:700;text-align:center;border-bottom:1px solid #e5e7eb;">${usageDisplay}</td>
@@ -2074,6 +2222,7 @@ function openTrimarkInventoryReport(e, recId) {
     <thead>
       <tr style="background:#f5f3ff;">
         <th style="padding:7px 8px;font-size:10px;color:#7c3aed;text-align:left;font-family:monospace;border-bottom:2px solid #ddd6fe;">ITEM</th>
+        <th style="padding:7px 8px;font-size:10px;color:#6b21a8;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">PAR</th>
         <th style="padding:7px 8px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">BEGIN</th>
         <th style="padding:7px 8px;font-size:10px;color:#111;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">COUNT</th>
         <th style="padding:7px 8px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">USED</th>
@@ -2138,7 +2287,8 @@ function openHistoryEditCounts(recId) {
     const parVal = parseFloat(e.par) || 0;
     if (hasEnd && !isNaN(endV) && !e.inventoryOnly) {
       const needed = Math.max(0, parVal - endV);
-      const cs = caseQty > 1 ? Math.ceil(needed / caseQty) : needed;
+      const _cqEdit = caseQty || 1;
+      const cs = Math.ceil(needed / _cqEdit);
       e.orderQty = cs > 0 ? String(cs) : '';
     }
     e.status = (hasEnd && !isNaN(endV))
@@ -2263,6 +2413,7 @@ function renderHistoryView() {
   document.getElementById('view-order').style.display = 'none';
   document.getElementById('view-history').style.display = 'flex';
   document.getElementById('view-mustknow').style.display = 'none';
+  document.getElementById('view-inventory').style.display = 'none';
   document.getElementById('hist-detail').classList.remove('show');
 
   if (state.selectedRec) {
@@ -3122,6 +3273,141 @@ function openElectricalEmail() {
 }
 
 
+// ─── INVENTORY TAB ────────────────────────────────────────────────────────
+function renderInventoryTab() {
+  document.getElementById('view-order').style.display = 'none';
+  document.getElementById('view-history').style.display = 'none';
+  document.getElementById('view-mustknow').style.display = 'none';
+  document.getElementById('view-inventory').style.display = 'flex';
+
+  const sup = state.catalog['TRIMARK'];
+
+  // ── HEADER ───────────────────────────────────────────────────────────────
+  const hdr = document.getElementById('inventory-header');
+  hdr.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#c084fc;letter-spacing:1px;">📦 TRIMARK INVENTORY</div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:2px;">Records by month · Tap to view or print</div>
+      </div>
+      <button onclick="openTrimarkInventoryReport()" style="height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 CURRENT COUNT</button>
+    </div>`;
+
+  const listEl = document.getElementById('inventory-list');
+  listEl.innerHTML = '';
+
+  // ── CURRENT MONTH LIVE CARD ──────────────────────────────────────────────
+  const now = new Date();
+  const curMonthLabel = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  const countedItems = sup ? sup.items.filter(i => {
+    const ik = ikey('TRIMARK', i.id);
+    return (state.onHand[ik] ?? '') !== '';
+  }).length : 0;
+  const totalItems = sup ? sup.items.length : 0;
+
+  const liveCard = document.createElement('div');
+  liveCard.style.cssText = 'margin:12px 16px 4px;background:linear-gradient(135deg,#2d1b69,#1c0d3b);border:1.5px solid #7c3aed;border-radius:14px;padding:14px 16px;';
+  liveCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+      <div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;color:#a78bfa;letter-spacing:1.5px;margin-bottom:2px;">CURRENT MONTH</div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:800;color:#f2f2f7;">${curMonthLabel}</div>
+      </div>
+      <div style="background:rgba(124,58,237,0.3);border-radius:8px;padding:4px 10px;text-align:center;">
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:18px;font-weight:800;color:#c084fc;">${countedItems}<span style="font-size:11px;color:#7c3aed;">/${totalItems}</span></div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#7c3aed;letter-spacing:1px;">COUNTED</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="openTrimarkInventoryReport()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #7c3aed;background:rgba(124,58,237,0.2);color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 VIEW REPORT</button>
+      <button onclick="switchTab('order');state.activeSupp='TRIMARK';state.trimarkView='inventory';render();" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#a3a3a3;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">✏️ EDIT COUNTS</button>
+    </div>`;
+  listEl.appendChild(liveCard);
+
+  // ── PAST RECORDS — grouped by month ──────────────────────────────────────
+  const invRecords = state.history.filter(r => {
+    const triItems = r.suppliers?.['TRIMARK'] || [];
+    return triItems.some(i => i.begin !== undefined || i.onHand !== undefined);
+  });
+
+  if (!invRecords.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'text-align:center;padding:40px 20px;color:#48484a;font-family:ui-monospace,monospace;font-size:12px;';
+    empty.innerHTML = '<div style="font-size:32px;margin-bottom:8px;">📭</div>No saved inventory records yet.<br>Save a Trimark order to create one.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  // Group by month
+  const months = new Map();
+  invRecords.forEach(rec => {
+    const d = new Date(rec.date);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const label = d.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+    if (!months.has(key)) months.set(key, {label, key, records:[]});
+    months.get(key).records.push(rec);
+  });
+
+  const sectionHdr = document.createElement('div');
+  sectionHdr.style.cssText = 'padding:14px 16px 6px;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:10px;font-weight:700;color:#48484a;letter-spacing:1.5px;';
+  sectionHdr.textContent = 'PAST RECORDS';
+  listEl.appendChild(sectionHdr);
+
+  months.forEach(({label, key, records}) => {
+    // Month group header
+    const groupHdr = document.createElement('div');
+    groupHdr.style.cssText = 'padding:8px 16px 4px;display:flex;align-items:center;justify-content:space-between;background:#000;position:sticky;top:0;z-index:5;border-bottom:1px solid #1c1c1e;';
+    groupHdr.innerHTML = `
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;color:#f2f2f7;">${label}</div>
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;">${records.length} record${records.length>1?'s':''}</div>`;
+    listEl.appendChild(groupHdr);
+
+    records.forEach(rec => {
+      const d = new Date(rec.date);
+      const triItems = rec.suppliers?.['TRIMARK'] || [];
+      const counted = triItems.filter(i => i.onHand !== undefined && i.onHand !== '').length;
+      const needOrder = triItems.filter(i => i.orderQty && i.orderQty !== '0' && i.orderQty !== '').length;
+      const totalLoss = triItems.reduce((sum, i) => sum + (parseFloat(i.brkgCost) || 0), 0);
+
+      const card = document.createElement('div');
+      card.style.cssText = 'margin:6px 16px;background:#1c1c1e;border:1px solid #2c2c2e;border-radius:12px;padding:12px 14px;';
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div>
+            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#f2f2f7;">
+              ${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
+            </div>
+            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px;">
+              ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <div style="background:#1a1a2e;border:1px solid #3b0764;border-radius:8px;padding:4px 8px;text-align:center;">
+              <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#c084fc;">${counted}</div>
+              <div style="font-family:ui-monospace,monospace;font-size:8px;color:#7c3aed;">ITEMS</div>
+            </div>
+            ${needOrder > 0 ? `<div style="background:#1c1100;border:1px solid #78350f;border-radius:8px;padding:4px 8px;text-align:center;">
+              <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#fbbf24;">${needOrder}</div>
+              <div style="font-family:ui-monospace,monospace;font-size:8px;color:#d97706;">ORDER</div>
+            </div>` : ''}
+            ${totalLoss > 0 ? `<div style="background:#1c0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:4px 8px;text-align:center;">
+              <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#f87171;">$${totalLoss.toFixed(0)}</div>
+              <div style="font-family:ui-monospace,monospace;font-size:8px;color:#dc2626;">LOSS</div>
+            </div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="openTrimarkInventoryReport(null,'${rec.id}')" style="flex:1;height:34px;border-radius:9px;border:1.5px solid #7c3aed;background:transparent;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 VIEW REPORT</button>
+          <button onclick="openHistoryEditCounts('${rec.id}')" style="height:34px;padding:0 12px;border-radius:9px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;">✎ EDIT</button>
+        </div>`;
+      listEl.appendChild(card);
+    });
+  });
+
+  const spacer = document.createElement('div'); spacer.style.height = '80px';
+  listEl.appendChild(spacer);
+}
+
 function openMonthReport(monthKey) {
   const [year, month] = monthKey.split('-').map(Number);
   const records = state.history.filter(r => {
@@ -3402,7 +3688,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.7</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.10</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">February 2026 · Bartlett&#39;s Order Management</div>
 
@@ -3684,6 +3970,7 @@ function renderMustKnow() {
   document.getElementById('view-order').style.display = 'none';
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'flex';
+  document.getElementById('view-inventory').style.display = 'none';
 
   const scroll = document.getElementById('mustknow-scroll');
   scroll.innerHTML = '';
@@ -3783,6 +4070,7 @@ function switchTab(tab) {
   document.getElementById('view-order').style.display = 'none';
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'none';
+  document.getElementById('view-inventory').style.display = 'none';
   document.getElementById('hist-detail').classList.remove('show');
   render();
 }
