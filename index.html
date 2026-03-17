@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.10                                           │
+  │  CURRENT VERSION: v1.26                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,121 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.26 — 2026-03-16
+  · Fixed delete button not working — event was bubbling to sheet overlay and clearing editingItem before deleteItem() ran
+  · Replaced confirm() dialog with two-tap inline confirmation (mobile Safari blocks confirm())
+  · First tap turns button red with "TAP AGAIN TO CONFIRM DELETE", second tap deletes
+  · Auto-resets after 3 seconds if not confirmed
+
+  v1.25 — 2026-03-16
+  · 🗑 DELETE ITEM button added to the edit sheet — tap ✎ Edit on any supplier, tap an item, then DELETE ITEM
+  · Confirms before deleting — cannot be undone
+  · Clears any on-hand / order qty / notes for the deleted item immediately
+  · Syncs deletion to Firebase via saveCatalog
+
+  v1.24 — 2026-03-16
+  · 💬 RESEND SMS TO HAL button added to ABCO order detail in History
+  · 📥 RE-DOWNLOAD BEK CSV button added to BEK order detail in History
+  · Both buttons appear automatically when the record has ordered items for that supplier
+  · Resend uses same format as original — no need to re-enter anything
+
+  v1.23 — 2026-03-16
+  · ABCO SMS format updated — each item on its own line, blank line every 3 items
+  · Format: -x{qty} {name} per line, groups of 3 separated by blank line
+
+  v1.22 — 2026-03-16
+  · BEK catalog fully rebuilt from Paper_List.xlsx — 72 items with real item numbers, pack sizes, pars, unit costs
+  · Each BEK item now stores itemNum (BEK's catalog number) used to generate the upload CSV
+  · After saving a BEK order: blue 📥 BEK ORDER READY prompt appears instead of SMS
+  · Tap DOWNLOAD → generates CSV in exact BEK portal format (Item#, Each, Quantity)
+  · File named BEK-Order-MM-DD-YYYY.csv — ready to upload directly to BEK's website
+  · ABCO flow unchanged — still SMS to Hal
+
+  v1.21 — 2026-03-16
+  · ABCO/BEK monthly report now shows CASES USED column (this month vs prev month with % badge)
+  · ABCO/BEK never show LOSS $ column — that's Trimark-only
+  · Monthly report column count adjusted: ABCO/BEK = 6 cols (name, pack, cases used, on hand, order, status)
+  · Full debug sweep passed: all function definitions verified, Firebase paths consistent,
+    state fields all initialized, localStorage get/set keys perfectly matched, template literals balanced
+
+  v1.20 — 2026-03-16
+  · EOM report now includes Section 2 — Usage & Order Trends table
+  · Per-item comparison: USED this month vs last month vs last year (when available)
+  · Per-item comparison: LOSS $ this month vs last month
+  · Per-item comparison: ORDER qty this month vs last month + last year note
+  · Color-coded badges: red triangle = worse than prior, green triangle = improved, flat arrow = no change
+  · Trend section only appears when learning data has prior period to compare against
+  · Sections renumbered: 1 Inventory, 2 Trends, 3 Breakage, 4 Reorder
+  · Learning entries now store onHand, begin, usage, brkgCost, par per order for richer future analysis
+  · Snapshot items now store itemId for reliable cross-record matching
+
+  v1.19 — 2026-03-16
+  · Learning engine rebuilt as multi-signal v2 with 6 prediction signals:
+    1. Exponential recency-weighted avg — recent orders decay-weighted, not flat average
+    2. Trend slope — linear regression over last 12 orders, projects direction forward
+    3. Day-of-week pattern — BEK/ABCO orders vary by which day you order (Mon vs Thu etc)
+    4. Monthly seasonality — same month in prior years, weighted by recency
+    5. Week-of-month pattern — first/second/third/fourth week ordering behavior
+    6. Consistency bonus — low variance = more reliable = higher confidence score
+  · Signal blending is context-aware: Trimark (monthly) leans on seasonal+week-of-month, BEK/ABCO lean on DOW+trend
+  · Confidence now factors in data quantity + signal diversity + consistency, not just data count
+  · Suggestion banner shows trend direction (↑↑ trending up / ↓ trending down / → stable) and signals used
+  · Suggestion qtys are now editable directly in the banner before applying
+  · History window expanded to 104 orders (2 years) for better seasonal modeling
+  · New week-of-month field recorded on every order for richer future analysis
+
+  v1.18 — 2026-03-16
+  · Learning data now syncs to Firebase — all devices merge their history on startup and after every save
+  · Merge strategy: deduplicates by date, combines all devices, keeps last 52 orders per item
+  · On startup: any locally-accumulated learning data is pushed to Firebase automatically
+  · Suggestion engine live: weighted average (recent orders count more) + seasonal boost (same month prior years)
+  · Confidence levels: ●●● high (8+ data points), ●●○ medium (4+), ●○○ low (shown but not surfaced)
+  · Suggestion banner appears when switching to a supplier tab with empty order fields
+  · APPLY fills all empty order qty fields with suggested amounts — never overwrites manual entries
+  · Banner auto-dismisses after 15 seconds if ignored
+
+  v1.17 — 2026-03-16
+  · BEGIN and ADD are now both editable inputs in the inventory view
+  · START updates live as you type in either BEGIN or ADD — no need to save and reload
+  · ADD input saves to Firebase immediately on change, syncs across devices
+
+  v1.16 — 2026-03-16
+  · ADD column: after confirming Trimark delivery, a review modal opens with each item's ADD units pre-filled (cases × caseQty)
+  · All ADD amounts are editable before applying — tap Apply to update BEGIN with delivery additions
+  · Skip button available if you don't want to apply additions yet
+  · Inventory view now shows 8 columns: PAR | BEGIN | ADD | START | COUNT | USED | ORDER
+  · START = BEGIN + ADD, shown in blue — this is the real number you count against
+  · EOM report includes ADD and START columns between BEGIN and COUNT
+  · ADD and START also saved to history records for future reference
+
+  v1.15 — 2026-03-16
+  · Nutra Clear and Firewood added back to EOM boss report
+  · Bar Mixing Glass remains excluded
+
+  v1.14 — 2026-03-16
+  · EOM report now always uses DEFAULT_SUPPLIERS item order — immune to catalog reordering from Firebase/localStorage
+  · Nutra Clear, Firewood, Bar Mixing Glass excluded from boss report (not in Oscar's EOM list)
+  · Live catalog par/cost edits still reflected — merges live values over default structure
+
+  v1.13 — 2026-03-16
+  · Inventory report rebuilt as full EOM report for boss presentations
+  · Section 1: Full inventory count table (PAR | BEGIN | COUNT | USED | LOSS$ | ORDER | STATUS)
+  · Section 2: Breakage & Loss Detail — only items with losses, sorted by $ impact, shows units lost / unit cost / % of par / total loss with grand total row
+  · Section 3: Reorder Summary — cases to order, total units, estimated cost per item
+  · Header summary tiles: items counted, items with loss, total loss $, need reorder
+  · "Prepared by: Oscar Rivas" and Confidential footer for professional presentation
+  · Rows with losses highlighted in light red in the full table for quick scanning
+
+  v1.12 — 2026-03-16
+  · PAR column added to inventory view — dedicated column between ITEM and BEGIN, shown in purple
+  · Unit cost moved to item subtext only (no longer duplicated with par)
+  · Fixed refreshTriRow to also use (caseQty || 1) for consistent case math
+
+  v1.11 — 2026-03-16
+  · Fixed BEK (and all suppliers) order not clearing on app reopen — doSave() now pushes empty state to Firebase so all devices clear immediately
+  · Added ✕ Clear button in header — appears only when the active supplier has data entered, clears on-hand + order qty for that supplier only
+  · Clear button asks for confirmation before wiping
 
   v1.10 — 2026-03-01
   · Fixed Trimark case calculation — caseQty now always read from defaults even if stored catalog was from older version
@@ -256,6 +371,13 @@
       display: flex; align-items: center; gap: 5px; transition: all 0.15s;
     }
     .btn-edit.active { border-color: #fbbf24; background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .btn-clear {
+      height: 40px; padding: 0 14px; border-radius: 20px;
+      border: 2px solid #3a3a3c; background: transparent; color: #636366;
+      font-family: ui-monospace, 'SF Mono', 'Courier New', monospace; font-size: 11px; font-weight: 700;
+      display: none; align-items: center; gap: 5px; transition: all 0.15s;
+    }
+    .btn-clear:active { border-color: #f87171; color: #f87171; }
 
     .btn-save {
       height: 40px; padding: 0 16px; border-radius: 20px; border: none;
@@ -649,13 +771,14 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.10</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.26</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
       <span class="date-chip" id="today-date"></span>
       <span id="sync-badge" title="Sync status" style="font-size:14px;cursor:default;">📵</span>
       <button class="btn-edit" id="btn-edit" onclick="toggleEditMode()">✎ Edit</button>
+      <button class="btn-clear" id="btn-clear" onclick="clearOrder()" title="Clear current order">✕ Clear</button>
       <button class="btn-save" id="btn-save" onclick="openSaveModal()">💾 SAVE</button>
     </div>
   </div>
@@ -803,6 +926,13 @@
     </div>
     <button class="btn-confirm" onclick="commitEdit()">✓  SAVE CHANGES</button>
     <button class="btn-cancel" onclick="cancelEdit()">Cancel</button>
+    <button onclick="event.stopPropagation();deleteItem()" style="
+      width:100%;height:44px;margin-top:8px;border-radius:14px;
+      border:1.5px solid #3a3a3c;background:transparent;
+      color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;
+      font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">
+      🗑 DELETE ITEM
+    </button>
   </div>
 </div>
 
@@ -908,52 +1038,78 @@ const DEFAULT_SUPPLIERS = {
     schedule:"Sun · Wed · Fri — before 4pm",
     contact:"BekEntree.com · Bartletts@bartlettsaustin.com",
     items:[
-      {id:"bek-1",name:"Metal bullets 3oz",pack:"12 ct",par:5},
-      {id:"bek-2",name:"Birthday Candles",pack:"12/24",par:0.5},
-      {id:"bek-3",name:"Thermometer Probe Wipes",pack:"200 ct",par:1},
-      {id:"bek-4",name:"Coffee Filters 1.5 gal",pack:"500 ct",par:0.25},
-      {id:"bek-5",name:'Patty Paper Square 5.5"',pack:"1000 ct",par:1},
-      {id:"bek-6",name:"Poly Gloves Large",pack:"10/100",par:8},
-      {id:"bek-7",name:"Poly Gloves Medium",pack:"10/100",par:2},
-      {id:"bek-8",name:"Nitrile Gloves Large",pack:"10/100",par:4},
-      {id:"bek-9",name:"Cheese Cloth",pack:"500 ft.",par:1},
-      {id:"bek-10",name:"Liner Pan Paper",pack:"1000 ct",par:0.25},
-      {id:"bek-11",name:'Wooden Skewers 4.5"',pack:"1000 ct",par:1},
-      {id:"bek-12",name:"Foil sheets 12 x 10.75",pack:"200 ct",par:1},
-      {id:"bek-13",name:"Use First Labels",pack:"—",par:1},
-      {id:"bek-14",name:"Day dots - MONDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-15",name:"Day dots - TUESDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-16",name:"Day dots - WEDNESDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-17",name:"Day dots - THURSDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-18",name:"Day dots - FRIDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-19",name:"Day dots - SATURDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-20",name:"Day dots - SUNDAY",pack:"1000 ROLL",par:1},
-      {id:"bek-21",name:"Day dots - Large Label",pack:"500 ct",par:2},
-      {id:"bek-22",name:"Portion Bags - essential",pack:"2000 ct",par:1},
-      {id:"bek-23",name:"Hand soap Safeguard",pack:"2/1gal",par:1},
-      {id:"bek-24",name:"Hand Soap (orange)",pack:"4/750ml",par:4},
-      {id:"bek-25",name:"Hand Sanitizer (clear)",pack:"4/750ml",par:4},
-      {id:"bek-26",name:"Glass Cleaner",pack:"12/32 oz",par:2},
-      {id:"bek-27",name:"Oven Cleaner",pack:"8 ct",par:4},
-      {id:"bek-28",name:"Green Scrub pads",pack:"20 ct",par:1},
-      {id:"bek-29",name:"Z fold paper towels",pack:"12/120 ct",par:1},
-      {id:"bek-30",name:"Charmin toilet paper",pack:"60ct",par:1},
-      {id:"bek-31",name:"Towel Roll non Perf 7.75 Wht",pack:"6/700 ft",par:4},
-      {id:"bek-32",name:"Toilet Seat Covers",pack:"20/250",par:2},
-      {id:"bek-33",name:"Bag paper sanitary recept",pack:"250 ct",par:0.5},
-      {id:"bek-34",name:"Clear straw wrapped",pack:"1/400",par:4},
-      {id:"bek-35",name:"Brown paper bag 8#",pack:"500 ea",par:0.25},
-      {id:"bek-36",name:"1 comp to go black 11x8",pack:"100 ct",par:2},
-      {id:"bek-37",name:"2 comp to go black 11x8",pack:"100 ct",par:2},
-      {id:"bek-38",name:"salad to go large 9x3",pack:"100 ct",par:2},
-      {id:"bek-39",name:"salad to go small 6x2.5",pack:"200 ct",par:1},
-      {id:"bek-40",name:"Lemon Wraps",pack:"10/100ct",par:2},
-      {id:"bek-41",name:"Bleach",pack:"6/1 gl",par:2},
-      {id:"bek-42",name:"Ajax cleanser",pack:"24 ct",par:2},
-      {id:"bek-43",name:"Plastic Aprons",pack:"6ct",par:1},
-      {id:"bek-44",name:"Mop Head",pack:"3 ct",par:2},
-      {id:"bek-45",name:"Water Softener Salt",pack:"1 lb",par:5},
-      {id:"bek-46",name:"Fryer Oil (Wed/Thu dump)",pack:"each",par:10},
+      {id:"bek-1",itemNum:928610,name:"Cup Sauce 3 Oz Ss",pack:"1 / 12 CT",par:5,unitCost:15.79},
+      {id:"bek-2",itemNum:102970,name:"Candle Birthday Asst Colors",pack:"12 / 24 CT",par:1,unitCost:8.95},
+      {id:"bek-3",itemNum:114429,name:"Bag Paper Groc Brn 8#",pack:"1 / 500 CT",par:0.25,unitCost:24.59},
+      {id:"bek-4",itemNum:885915,name:"Sanitizer Redi-san Rtu",pack:"6 / 1 QT",par:6,unitCost:39.94},
+      {id:"bek-5",itemNum:889162,name:"Mop Head #32 Pull Thru",pack:"1 / 3 CT",par:1,unitCost:29.89},
+      {id:"bek-6",itemNum:167297,name:"Soap Hand Anti Bacterial",pack:"2 / 1 GAL",par:0,unitCost:39.89},
+      {id:"bek-7",itemNum:885622,name:"Soap Hand Foam Antibacterial",pack:"4 / 1000 ML",par:4,unitCost:79.79},
+      {id:"bek-8",itemNum:885606,name:"Soap Hand Foam Luxury Berry",pack:"4 / 1000 ML",par:4,unitCost:61.74},
+      {id:"bek-9",itemNum:885610,name:"Sanitizer Hand Foaming W/aloe",pack:"4 / 1000 ML",par:4,unitCost:99.8},
+      {id:"bek-10",itemNum:169256,name:"Cleaner Glass & Multi Surface",pack:"8 / 32 OZ",par:2,unitCost:39.9},
+      {id:"bek-11",itemNum:885816,name:"Degreaser Orange Pro",pack:"6 / 1 QT",par:4,unitCost:52.69},
+      {id:"bek-12",itemNum:888075,name:"Pad Scouring Nylon 6x9in",pack:"1 / 15 CT",par:1,unitCost:12.75},
+      {id:"bek-13",itemNum:881036,name:"Towel Big Fold 1 Ply White",pack:"10 / 220 CT",par:2,unitCost:59.87},
+      {id:"bek-14",itemNum:881103,name:"Towel Roll Torkmatic 1 Ply",pack:"6 / 700 FT",par:1,unitCost:58.89},
+      {id:"bek-15",itemNum:873053,name:"Straw 7.75in Clear Wrapped",pack:"24 / 400 CT",par:1,unitCost:263.92},
+      {id:"bek-16",itemNum:189518,name:"Bag Sanitary Napkin Kraft",pack:"1 / 500 CT",par:0.5,unitCost:55.94},
+      {id:"bek-17",itemNum:118599,name:"Toilet Seat Cover 1/2 Fold",pack:"20 / 250 CT",par:2,unitCost:115.06},
+      {id:"bek-18",itemNum:779178,name:"Oil Canola Clear Fry",pack:"1 / 35 LB",par:10,unitCost:36.97},
+      {id:"bek-19",itemNum:872656,name:"Cont Plas Hngd 1-c Blk Clr",pack:"1 / 100 CT",par:2,unitCost:82.88},
+      {id:"bek-20",itemNum:872660,name:"Cont Plas Hngd 2-c Blk Clr",pack:"1 / 100 CT",par:2,unitCost:89.79},
+      {id:"bek-21",itemNum:819023,name:"Cont Plas Hngd 1-c Blk Clr",pack:"1 / 100 CT",par:2,unitCost:83.88},
+      {id:"bek-22",itemNum:819179,name:"Cont Plas Hngd 1-c Blk Clr",pack:"1 / 200 CT",par:1,unitCost:94.59},
+      {id:"bek-23",itemNum:144183,name:"Bleach Keith Ultra",pack:"6 / 1 GAL",par:2,unitCost:25.59},
+      {id:"bek-24",itemNum:885043,name:"Cleanser Ajax Scouring Powder",pack:"24 / 21 OZ",par:2,unitCost:41.47},
+      {id:"bek-25",itemNum:883597,name:"Apron Plastic 28x46 In",pack:"1 / 100 CT",par:0.75,unitCost:20.89},
+      {id:"bek-26",itemNum:171111,name:"Foil Sheet 10.75 X 12 In",pack:"12 / 200 CT",par:1,unitCost:8.59},
+      {id:"bek-27",itemNum:875178,name:"Paper Patty 5.5x5.5in",pack:"24 / 1000 CT",par:1,unitCost:9.89},
+      {id:"bek-28",itemNum:875476,name:"Liner Pan Liftoff Grease Proof",pack:"1 / 1000 CT",par:0.25,unitCost:59.89},
+      {id:"bek-29",itemNum:884054,name:"Skewer Wooden 4.5 X 11/16 In",pack:"10 / 1000 CT",par:3,unitCost:18.95},
+      {id:"bek-30",itemNum:900953,name:"Twine Butcher Roll 1680 Ft",pack:"1 / 2 LB",par:0.5,unitCost:0},
+      {id:"bek-31",itemNum:883960,name:"Glove Poly Med Clear",pack:"10 / 100 CT",par:2,unitCost:39.79},
+      {id:"bek-32",itemNum:883961,name:"Glove Poly Lg Clear",pack:"10 / 100 CT",par:8,unitCost:39.79},
+      {id:"bek-33",itemNum:883959,name:"Glove Poly Small Clear",pack:"10 / 100 CT",par:2,unitCost:38.47},
+      {id:"bek-34",itemNum:640212,name:"Filter Coffee/tea 1 1/2 Gal",pack:"1 / 500 CT",par:0.25,unitCost:24.95},
+      {id:"bek-35",itemNum:875027,name:"Bag Sandwich Poly Flip Top",pack:"1 / 2000 CT",par:1,unitCost:42.95},
+      {id:"bek-36",itemNum:878297,name:"Label 1 In Cold Temp Monday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-37",itemNum:878296,name:"Label 1 In Cold Temp Tuesday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-38",itemNum:878295,name:"Label 1 In Cold Temp Wednesday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-39",itemNum:878294,name:"Label 1 In Cold Temp Thursday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-40",itemNum:878293,name:"Label 1 In Cold Temp Friday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-41",itemNum:878284,name:"Label 1 In Cold Temp Saturday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-42",itemNum:878283,name:"Label 1 In Cold Temp Sunday",pack:"1 / 1000 CT",par:1,unitCost:11.97},
+      {id:"bek-43",itemNum:153307,name:"Label 2x3 Removable Universal",pack:"1 / 500 CT",par:3,unitCost:30.89},
+      {id:"bek-44",itemNum:878324,name:"Label 3 In Use First Orange",pack:"1 / 500 CT",par:1,unitCost:8.95},
+      {id:"bek-45",itemNum:130881,name:"Glove Nitrile Lg Pf Black",pack:"10 / 100 CT",par:2,unitCost:57.75},
+      {id:"bek-46",itemNum:104175,name:"Cup Plas 16 Oz Clear",pack:"20 / 50 CT",par:0.5,unitCost:123.59},
+      {id:"bek-47",itemNum:104435,name:"Lid Plas 12-24 Oz Straw Slot",pack:"10 / 100 CT",par:0.5,unitCost:45.59},
+      {id:"bek-48",itemNum:889004,name:"Broom Lobby Corn Blend",pack:"1 / 1 EA",par:2,unitCost:5.08},
+      {id:"bek-49",itemNum:885202,name:"Cleaner Glass Foam Aerosol",pack:"12 / 19 OZ",par:2,unitCost:67.79},
+      {id:"bek-50",itemNum:890435,name:"Wood Chip Apple",pack:"1 / 40 LB",par:0.25,unitCost:89.3},
+      {id:"bek-51",itemNum:890430,name:"Wood Chip Hickory",pack:"1 / 25 LB",par:0.25,unitCost:75.97},
+      {id:"bek-52",itemNum:877501,name:"Lemon Wrap W/ Elastic Band",pack:"10 / 100 CT",par:0.1,unitCost:149.89},
+      {id:"bek-53",itemNum:819019,name:"Cont Plas 8 Oz Rnd Deli Combo",pack:"5 / 48 CT",par:0.5,unitCost:0},
+      {id:"bek-54",itemNum:872532,name:"Box Bio Pak #1 Earth 5x4.5x2.5",pack:"1 / 450 CT",par:1,unitCost:105.11},
+      {id:"bek-55",itemNum:816280,name:"Box # 3 Bio Plus Earth",pack:"1 / 200 CT",par:1,unitCost:62.87},
+      {id:"bek-56",itemNum:815808,name:"Lid Plas 3.25 4 & 5.5oz Clear",pack:"12 / 100 CT",par:1,unitCost:0},
+      {id:"bek-57",itemNum:815801,name:"Cup Plas Souffle 3.25 Oz",pack:"5 / 250 CT",par:1,unitCost:0},
+      {id:"bek-58",itemNum:197143,name:"Film Roll 12x2000 Wrap",pack:"1 / 1 ROLL",par:1,unitCost:22.77},
+      {id:"bek-59",itemNum:877009,name:"Film 12x2000 Clear Wrap",pack:"1 / 1 ROLL",par:1,unitCost:19.89},
+      {id:"bek-60",itemNum:197297,name:"Film 18x2000 Clear Wrap",pack:"1 / 1 ROLL",par:1,unitCost:21.95},
+      {id:"bek-61",itemNum:129847,name:"Bag Paper Brown 60lb W/handles",pack:"1 / 250 CT",par:0.5,unitCost:77.34},
+      {id:"bek-62",itemNum:129795,name:"Bag Paper Kraft Shopper",pack:"1 / 250 CT",par:0.5,unitCost:64.31},
+      {id:"bek-63",itemNum:115617,name:"Bag Storage 1 Gal Zip 10.5x11",pack:"1 / 250 CT",par:1,unitCost:26.69},
+      {id:"bek-64",itemNum:875405,name:"Bag Reclosable Quart 7x8 Inch",pack:"1 / 500 CT",par:1,unitCost:47.3},
+      {id:"bek-65",itemNum:875323,name:"Bag Storage Reclose Zip 2 Gal",pack:"1 / 100 CT",par:1,unitCost:27.75},
+      {id:"bek-66",itemNum:188264,name:"Foil 18x500 Roll Heavy Duty",pack:"1 / 1 ROLL",par:1,unitCost:42.3},
+      {id:"bek-67",itemNum:182981,name:"Foil Roll 18x500 Heavy Duty",pack:"1 / 1 ROLL",par:1,unitCost:28.8},
+      {id:"bek-68",itemNum:185750,name:"Toilet Tissue 2-ply Soft Mega",pack:"1 / 18 CT",par:2,unitCost:23.97},
+      {id:"bek-69",itemNum:891011,name:"Dust Pan Lobby",pack:"1 / 1 EA",par:2,unitCost:15.76},
+      {id:"bek-70",itemNum:890500,name:"Cheesecloth White 36in X 60yd",pack:"1 / 1 EA",par:0.2,unitCost:129.89},
+      {id:"bek-71",itemNum:196251,name:"Thermometer Probe Wipes",pack:"1 / 100 CT",par:2,unitCost:4.95},
+      {id:"bek-72",itemNum:160902,name:"Salt Water Softener Crystals",pack:"1 / 50 LB",par:0,unitCost:8.98},
     ]
   },
   AMAZON: {
@@ -1069,7 +1225,8 @@ let state = {
   filterSup: 'ALL',
   catalog: JSON.parse(JSON.stringify(DEFAULT_SUPPLIERS)),
   breakage: {},           // tri item id → qty broken this month
-  trimarkBegin: {},       // tri item id → beginning inventory count
+  trimarkBegin: {},       // tri item id → beginning inventory count (last month ending)
+  trimarkAdd: {},         // tri item id → units added from delivery this month
   trimarkView: 'order',   // 'order' | 'inventory'
   trimarkTally: {},        // tri item id → {dock, closet, restaurant}
 };
@@ -1123,6 +1280,17 @@ function initFirebase() {
       }
     }, err => console.warn('FB trimarkBegin error:', err));
 
+    // ── TRIMARK ADD (delivery additions) ──────────────────────────────
+    fbDb.ref('trimarkAdd').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') {
+        state.trimarkAdd = data;
+        lsSet('bartletts-trimark-add-v1', data);
+        if (state.activeSupp === 'TRIMARK') render();
+      }
+    }, err => console.warn('FB trimarkAdd error:', err));
+
     // ── TRIMARK TALLY ──────────────────────────────────────────────
     fbDb.ref('trimarkTally').on('value', snap => {
       if (fbIgnoreRemote) return;
@@ -1162,6 +1330,25 @@ function initFirebase() {
         render();
       }
     }, err => console.warn('FB catalog error:', err));
+
+    // ── LEARNING DATA ──────────────────────────────────────────────
+    fbDb.ref('learning').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const remote = snap.val();
+      if (remote && typeof remote === 'object') {
+        // Merge remote into local — combine orders arrays, dedupe by date, keep last 52
+        const local = lsGet('bartletts-learning-v1') || {};
+        const merged = mergeLearningData(local, remote);
+        lsSet('bartletts-learning-v1', merged);
+        // Push merged back so Firebase also has the complete combined dataset
+        fbWriteTimers['learning-merge'] && clearTimeout(fbWriteTimers['learning-merge']);
+        fbWriteTimers['learning-merge'] = setTimeout(() => {
+          fbIgnoreRemote = true;
+          fbDb.ref('learning').set(merged).catch(e => console.warn('FB learning merge error:', e))
+            .finally(() => setTimeout(() => { fbIgnoreRemote = false; }, 300));
+        }, 2000);
+      }
+    }, err => console.warn('FB learning error:', err));
 
     // ── ON-HAND & ORDER QTY (live order editing) ───────────────────
     fbDb.ref('liveOrder').on('value', snap => {
@@ -1294,8 +1481,15 @@ function loadPersistedData() {
     };
     saveTrimarkBegin();
   }
+  const addData = lsGet('bartletts-trimark-add-v1');
+  if (addData) state.trimarkAdd = addData;
   const tal = lsGet('bartletts-trimark-tally-v1');
   if (tal) state.trimarkTally = tal;
+  // Push any locally-accumulated learning data to Firebase on startup
+  const localLearning = lsGet('bartletts-learning-v1');
+  if (localLearning && Object.keys(localLearning).length > 0) {
+    setTimeout(() => fbWrite('learning', localLearning, 3000), 5000); // 5s delay after load
+  }
 }
 
 function saveBreakage() {
@@ -1313,11 +1507,42 @@ function saveTrimarkTally() {
   fbWrite('trimarkTally', state.trimarkTally);
 }
 
+function saveTrimarkAdd() {
+  lsSet('bartletts-trimark-add-v1', state.trimarkAdd);
+  fbWrite('trimarkAdd', state.trimarkAdd);
+}
+
 function saveCatalog() {
   const toStore = {};
   for (const sn of SUP_NAMES) toStore[sn] = { items: state.catalog[sn].items };
   lsSet('bartletts-catalog-v1', toStore);
   fbWrite('catalog', toStore);
+}
+
+function clearOrder() {
+  // Count how many items have data
+  const filledCount = Object.keys(state.onHand).filter(k => k.startsWith(state.activeSupp) && state.onHand[k] !== '').length
+    + Object.keys(state.orderQty).filter(k => k.startsWith(state.activeSupp) && state.orderQty[k] !== '').length;
+  if (filledCount === 0) { showToast('Nothing to clear.', 'warn'); return; }
+  if (!confirm(`Clear all ${state.activeSupp} on-hand counts and order quantities?`)) return;
+  // Clear only the active supplier's keys
+  for (const k of Object.keys(state.onHand)) {
+    if (k.startsWith(state.activeSupp + '|')) delete state.onHand[k];
+  }
+  for (const k of Object.keys(state.orderQty)) {
+    if (k.startsWith(state.activeSupp + '|')) delete state.orderQty[k];
+  }
+  for (const k of Object.keys(state.itemNotes)) {
+    if (k.startsWith(state.activeSupp + '|')) delete state.itemNotes[k];
+  }
+  if (state._autoFilled) {
+    for (const k of Object.keys(state._autoFilled)) {
+      if (k.startsWith(state.activeSupp + '|')) delete state._autoFilled[k];
+    }
+  }
+  saveLiveOrder();
+  render();
+  showToast(`✓ ${state.activeSupp} order cleared`);
 }
 
 function saveLiveOrder() {
@@ -1366,15 +1591,22 @@ function renderTopBar() {
 
   const btnEdit = document.getElementById('btn-edit');
   const btnSave = document.getElementById('btn-save');
+  const btnClear = document.getElementById('btn-clear');
 
   if (state.tab === 'order') {
     btnEdit.style.display = 'flex';
     btnSave.style.display = state.editMode ? 'none' : 'flex';
     btnEdit.className = 'btn-edit' + (state.editMode ? ' active' : '');
     btnEdit.textContent = state.editMode ? '✎ Editing' : '✎ Edit';
+    // Show clear button only when there's something entered for this supplier
+    const sn = state.activeSupp;
+    const hasFilled = Object.keys(state.onHand).some(k => k.startsWith(sn + '|') && state.onHand[k] !== '')
+      || Object.keys(state.orderQty).some(k => k.startsWith(sn + '|') && state.orderQty[k] !== '');
+    btnClear.style.display = (!state.editMode && hasFilled) ? 'flex' : 'none';
   } else {
     btnEdit.style.display = 'none';
     btnSave.style.display = 'none';
+    btnClear.style.display = 'none';
   }
 }
 
@@ -1417,6 +1649,10 @@ function renderOrderView() {
       state.trimarkView = 'order'; // always start on order view when switching suppliers
       render();
       document.getElementById('item-list').scrollTop = 0;
+      // Show suggestions if order is empty (nothing entered yet)
+      const hasAnyInput = Object.keys(state.onHand).some(k => k.startsWith(sn+'|') && state.onHand[k] !== '')
+        || Object.keys(state.orderQty).some(k => k.startsWith(sn+'|') && state.orderQty[k] !== '');
+      if (!hasAnyInput) setTimeout(() => showOrderSuggestions(sn), 600);
     };
     tabsEl.appendChild(btn);
   }
@@ -1893,10 +2129,13 @@ function renderTrimarkInventory(listEl, sup) {
 
   // Column header
   const colHdr = document.createElement('div');
-  colHdr.style.cssText = 'padding:6px 16px;background:#111;display:grid;grid-template-columns:1fr 64px 64px 64px 64px;gap:6px;align-items:center;border-bottom:1px solid #222;';
+  colHdr.style.cssText = 'padding:6px 16px;background:#111;display:grid;grid-template-columns:1fr 44px 52px 44px 52px 64px 52px 64px;gap:4px;align-items:center;border-bottom:1px solid #222;';
   colHdr.innerHTML = `
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#636366;letter-spacing:1px;">ITEM</span>
+    <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#6b21a8;letter-spacing:1px;text-align:center;">PAR</span>
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#636366;letter-spacing:1px;text-align:center;">BEGIN</span>
+    <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#4ade80;letter-spacing:1px;text-align:center;">ADD</span>
+    <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#60a5fa;letter-spacing:1px;text-align:center;">START</span>
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#c084fc;letter-spacing:1px;text-align:center;">COUNT</span>
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#f87171;letter-spacing:1px;text-align:center;">USED</span>
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;text-align:center;">ORDER</span>`;
@@ -1916,6 +2155,9 @@ function renderTrimarkInventory(listEl, sup) {
     const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
     const parVal = parseFloat(item.par) || 0;
     const _caseQtyRow = item.caseQty || 1;
+    const addRaw = state.trimarkAdd[item.id] ?? '';
+    const addVal = addRaw !== '' ? parseFloat(addRaw) : null;
+    const startVal = hasBeg && addVal !== null ? (begVal + addVal) : (hasBeg ? begVal : null);
     const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
     const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _caseQtyRow) : null;
     const orderLabel = orderQty !== null && orderQty > 0 ? ('+'+orderQty+(_caseQtyRow > 1 ? 'cs' : '')) : null;
@@ -1923,13 +2165,13 @@ function renderTrimarkInventory(listEl, sup) {
     const isCrit = hasEnd && !isNaN(endVal) && endVal <= 0;
 
     const row = document.createElement('div');
-    row.style.cssText = `padding:10px 16px;border-bottom:1px solid #1c1c1e;display:grid;grid-template-columns:1fr 64px 64px 64px 64px;gap:6px;align-items:center;background:${isCrit ? 'rgba(248,113,113,0.09)' : isLow ? 'rgba(251,191,36,0.05)' : idx%2===0 ? '#0a0a0a' : 'transparent'};`;
+    row.style.cssText = `padding:10px 16px;border-bottom:1px solid #1c1c1e;display:grid;grid-template-columns:1fr 44px 52px 44px 52px 64px 52px 64px;gap:4px;align-items:center;background:${isCrit ? 'rgba(248,113,113,0.09)' : isLow ? 'rgba(251,191,36,0.05)' : idx%2===0 ? '#0a0a0a' : 'transparent'};`;
 
     // Name col
     const nameDiv = document.createElement('div');
     nameDiv.innerHTML = `
       <div style="color:#e5e5e7;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
-      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px">par ${item.par}${item.unitCost ? ' · $'+item.unitCost.toFixed(2) : ''}</div>
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px">${item.unitCost ? '$'+item.unitCost.toFixed(2)+' ea' : ''}</div>
       ${brkgCost !== null && brkgCost > 0 ? `<div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#f87171;margin-top:1px">loss: $${brkgCost.toFixed(2)}</div>` : ''}`;
 
     // Begin input
@@ -2008,8 +2250,49 @@ function renderTrimarkInventory(listEl, sup) {
     orderCol.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
     orderCol.textContent = orderQty !== null ? (orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : '✓') : '—';
 
+    // PAR cell
+    const parCell = document.createElement('div');
+    parCell.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:13px;font-weight:700;color:#6b21a8;';
+    parCell.textContent = item.par || '—';
+
+    // ADD input (editable)
+    const addCol = document.createElement('div');
+    addCol.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+    const addInp = document.createElement('input');
+    addInp.type = 'number'; addInp.inputMode = 'decimal';
+    addInp.value = addVal !== null ? addVal : '';
+    addInp.placeholder = '—';
+    addInp.style.cssText = `width:40px;height:38px;text-align:center;border-radius:8px;border:2px solid ${addVal !== null ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addVal !== null ? '#4ade80' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:14px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
+    const updateStart = () => {
+      const b = parseFloat(begInp.value);
+      const a = parseFloat(addInp.value);
+      const s = (!isNaN(b) && !isNaN(a)) ? b + a : (!isNaN(b) ? b : null);
+      startCell.textContent = s !== null ? s : '—';
+    };
+    addInp.addEventListener('input', e => {
+      const val = e.target.value;
+      if (val !== '') { state.trimarkAdd[item.id] = val; }
+      else { delete state.trimarkAdd[item.id]; }
+      saveTrimarkAdd();
+      addInp.style.borderColor = val !== '' ? '#4ade80' : '#2c2c2e';
+      addInp.style.color = val !== '' ? '#4ade80' : '#636366';
+      updateStart();
+    });
+    addCol.appendChild(addInp);
+
+    // START cell (live: begin + add, read-only display)
+    const startCell = document.createElement('div');
+    startCell.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:13px;font-weight:700;color:#60a5fa;';
+    startCell.textContent = startVal !== null ? startVal : '—';
+
+    // Wire BEGIN input to also update START when it changes
+    begInp.addEventListener('input', updateStart, { passive: true });
+
     row.appendChild(nameDiv);
+    row.appendChild(parCell);
     row.appendChild(begCol);
+    row.appendChild(addCol);
+    row.appendChild(startCell);
     row.appendChild(endCol);
     row.appendChild(usageCol);
     row.appendChild(orderCol);
@@ -2053,7 +2336,8 @@ function refreshTriRow(row, item, ik, listEl, sup) {
   const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
   const parVal = parseFloat(item.par) || 0;
   const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
-  const orderQty = neededPcs !== null ? (item.caseQty > 1 ? Math.ceil(neededPcs / item.caseQty) : neededPcs) : null;
+  const _cqRefresh = item.caseQty || 1;
+  const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _cqRefresh) : null;
 
   const usageEl = listEl.querySelector('.tri-usage-' + item.id);
   if (usageEl) {
@@ -2062,7 +2346,7 @@ function refreshTriRow(row, item, ik, listEl, sup) {
   }
   const orderEl = listEl.querySelector('.tri-order-' + item.id);
   if (orderEl) {
-    orderEl.textContent = orderQty !== null ? (orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : '✓') : '—';
+    orderEl.textContent = orderQty !== null ? (orderQty > 0 ? '+'+orderQty+(_cqRefresh > 1 ? 'cs' : '') : '✓') : '—';
     orderEl.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
   }
   // Update summary bar
@@ -2087,7 +2371,17 @@ function openTrimarkInventoryReport(e, recId) {
   // 2. History: openTrimarkInventoryReport(null, recId) — uses saved record
   const isHistory = !!recId;
   const rec = isHistory ? state.history.find(r => r.id === recId) : null;
-  const sup = state.catalog['TRIMARK'];
+  // Always use DEFAULT_SUPPLIERS for item order — never rely on stored catalog order
+  // Exclude Nutra Clear (tri-42), Firewood (tri-43), Bar Mixing Glass (tri-44) from boss report
+  const BOSS_REPORT_EXCLUDE = ['tri-44']; // Bar Mixing Glass excluded; Nutra Clear + Firewood included
+  const sup = {
+    ...state.catalog['TRIMARK'],
+    items: DEFAULT_SUPPLIERS['TRIMARK'].items.filter(i => !BOSS_REPORT_EXCLUDE.includes(i.id)).map(defItem => {
+      // Merge with live catalog so any edited pars/costs are reflected
+      const liveItem = (state.catalog['TRIMARK']?.items || []).find(ci => ci.id === defItem.id);
+      return liveItem ? { ...defItem, ...liveItem } : defItem;
+    })
+  };
   if (!sup) return;
 
   const now = isHistory ? new Date(rec.date) : new Date();
@@ -2095,23 +2389,16 @@ function openTrimarkInventoryReport(e, recId) {
   const timeStr = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
   const monthStr = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
 
-  // Build item data — from history record or live state
+  // Build item data
   const itemData = sup.items.map(item => {
     if (isHistory) {
       const saved = (rec.suppliers?.['TRIMARK'] || []).find(i => i.name === item.name) || {};
       return {
-        name: item.name,
-        par: item.par,
-        unitCost: item.unitCost,
-        caseQty: item.caseQty,
-        inventoryOnly: item.inventoryOnly,
-        pack: item.pack,
-        beg: saved.begin ?? '',
-        end: saved.onHand ?? '',
-        usage: saved.usage ?? null,
-        brkgCost: saved.brkgCost ?? null,
+        name: item.name, par: item.par, unitCost: item.unitCost,
+        caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
+        beg: saved.begin ?? '', end: saved.onHand ?? '',
+        usage: saved.usage ?? null, brkgCost: saved.brkgCost ?? null,
         orderQty: saved.orderQty ?? '',
-        tally: null, // no tally breakdown in history
       };
     } else {
       const ik = ikey('TRIMARK', item.id);
@@ -2121,122 +2408,344 @@ function openTrimarkInventoryReport(e, recId) {
       const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? begV - endV : null;
       const brkgCost = usage !== null && usage > 0 ? (usage * (item.unitCost || 0)) : null;
       const parVal = parseFloat(item.par) || 0;
-      const _caseQtyRpt = item.caseQty || 1;
+      const _cq = item.caseQty || 1;
       const neededPcs = end !== '' && !isNaN(endV) ? Math.max(0, parVal - endV) : null;
-      const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _caseQtyRpt) : null;
+      const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _cq) : null;
       return {
         name: item.name, par: item.par, unitCost: item.unitCost,
         caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
         beg, end, usage, brkgCost, orderQty,
-        tally: state.trimarkTally[item.id] || null,
       };
     }
   });
 
-  let totalLoss = 0, itemsWithCount = 0, itemsNeedOrder = 0;
+  // ── Trend rows (built per item using learning data) ────────────────────
+  const reportDate = now.toISOString();
+  const trendRows = itemData.map((item, idx) => {
+    if (item.inventoryOnly) return ''; // skip inventory-only for trends
+    const td = getTrendData(item.name, 'TRIMARK', reportDate);
+    if (!td) return '';
 
-  const rows = itemData.map((item, idx) => {
-    const { beg, end, usage, brkgCost, orderQty, tally } = item;
-    const endV = parseFloat(end);
-    const usageN = usage !== null ? parseFloat(usage) : null;
-    const lossN = brkgCost !== null ? parseFloat(brkgCost) : (usageN !== null ? usageN * (item.unitCost || 0) : null);
-    const parVal = parseFloat(item.par) || 0;
-    const hasEnd = end !== '';
-    const isLow = hasEnd && !isNaN(endV) && endV < parVal;
-    const isCrit = hasEnd && !isNaN(endV) && endV <= 0;
+    const hasLastMonth = !!td.lastMonth;
+    const hasLastYear  = !!td.lastYear;
+    if (!hasLastMonth && !hasLastYear) return '';
 
-    // For history records, orderQty is already a string; for live it's a number
-    const orderDisplay = item.inventoryOnly ? '—'
-      : (orderQty !== null && orderQty !== '' && orderQty !== '0')
-        ? (isHistory ? orderQty + (item.caseQty > 1 ? ' cs' : '') : (orderQty > 0 ? '+'+orderQty+'cs' : '✓'))
-        : (hasEnd ? '✓' : '—');
+    // Current values from itemData
+    const curUsage    = item.usage    !== null ? parseFloat(item.usage)    : null;
+    const curBrkgCost = item.brkgCost !== null ? parseFloat(item.brkgCost) : null;
+    const curOrder    = typeof item.orderQty === 'number' ? item.orderQty : parseInt(item.orderQty) || 0;
 
-    if (hasEnd) itemsWithCount++;
-    if (!item.inventoryOnly && orderQty && orderQty !== '0' && orderQty !== '') itemsNeedOrder++;
-    if (lossN && lossN > 0) totalLoss += lossN;
+    // Last month comparison
+    const lmUsage = hasLastMonth && td.lastMonth.usage != null ? td.lastMonth.usage : null;
+    const lmOrder = hasLastMonth ? td.lastMonth.qty : null;
+    const lmLoss  = hasLastMonth && td.lastMonth.brkgCost != null ? td.lastMonth.brkgCost : null;
+
+    // Last year comparison
+    const lyUsage = hasLastYear && td.lastYear.usage != null ? td.lastYear.usage : null;
+    const lyOrder = hasLastYear ? td.lastYear.qty : null;
+    const lyLoss  = hasLastYear && td.lastYear.brkgCost != null ? td.lastYear.brkgCost : null;
+
+    // Only show row if we have something meaningful to compare
+    const hasUsageTrend = curUsage !== null && (lmUsage !== null || lyUsage !== null);
+    const hasOrderTrend = curOrder > 0 && (lmOrder !== null || lyOrder !== null);
+    if (!hasUsageTrend && !hasOrderTrend) return '';
+
+    function pctBadge(cur, prior, higherIsBad) {
+      if (cur == null || prior == null || prior === 0) return '<span style="color:#6b7280;font-size:9px;">—</span>';
+      const pct = Math.round(((cur - prior) / prior) * 100);
+      if (Math.abs(pct) < 2) return '<span style="color:#9ca3af;font-size:9px;">&#8594; flat</span>';
+      const up = pct > 0;
+      const bad = up === higherIsBad;
+      const color = bad ? '#dc2626' : '#16a34a';
+      const arrow = up ? '&#9650;' : '&#9660;';
+      return '<span style="font-size:9px;font-weight:700;color:'+color+';">'+arrow+' '+Math.abs(pct)+'%</span>';
+    }
 
     const bg = idx % 2 === 0 ? '#f9fafb' : '#fff';
-    const statusColor = isCrit ? '#dc2626' : isLow ? '#d97706' : '#16a34a';
+    return '<tr style="background:'+bg+'">'
+      + '<td style="padding:5px 8px;font-size:12px;border-bottom:1px solid #e5e7eb">'+item.name+'</td>'
+      // Usage vs last month
+      + '<td style="padding:5px 8px;font-size:11px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (curUsage !== null ? '<span style="font-size:12px;font-weight:700;">' + curUsage + '</span>' : '—') + '</td>'
+      + '<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (lmUsage !== null ? '<span style="font-size:11px;color:#6b7280;">'+lmUsage+'</span> ' : '<span style="color:#9ca3af;font-size:9px;">—</span> ')
+      + pctBadge(curUsage, lmUsage, true) + '</td>'
+      // Usage vs last year
+      + '<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (lyUsage !== null ? '<span style="font-size:11px;color:#6b7280;">'+lyUsage+'</span> ' : '<span style="color:#9ca3af;font-size:9px;">no data</span> ')
+      + (lyUsage !== null ? pctBadge(curUsage, lyUsage, true) : '') + '</td>'
+      // Loss vs last month
+      + '<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (curBrkgCost !== null && curBrkgCost > 0 ? '<span style="font-size:12px;font-weight:700;color:#dc2626;">$'+curBrkgCost.toFixed(2)+'</span>' : '—') + '</td>'
+      + '<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (lmLoss !== null ? '<span style="font-size:11px;color:#6b7280;">$'+lmLoss.toFixed(2)+'</span> ' : '<span style="color:#9ca3af;font-size:9px;">—</span>')
+      + pctBadge(curBrkgCost, lmLoss, true) + '</td>'
+      // Order qty vs last month
+      + '<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (curOrder > 0 ? '<span style="font-size:12px;font-weight:700;color:#d97706;">'+curOrder+'cs</span>' : '—') + '</td>'
+      + '<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'
+      + (lmOrder !== null ? '<span style="font-size:11px;color:#6b7280;">'+lmOrder+'cs</span> ' : '<span style="color:#9ca3af;font-size:9px;">—</span> ')
+      + pctBadge(curOrder, lmOrder, false)
+      + (lyOrder !== null ? ' <span style="font-size:8px;color:#9ca3af;">vs LY: '+lyOrder+'cs</span>' : '')
+      + '</td>'
+      + '</tr>';
+  }).filter(Boolean).join('');
+
+  // ── Summaries ──────────────────────────────────────────────────────────
+  let totalLoss = 0, itemsWithCount = 0, itemsNeedOrder = 0;
+  itemData.forEach(item => {
+    const hasEnd = item.end !== '';
+    if (hasEnd) itemsWithCount++;
+    const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) :
+      (item.usage !== null && parseFloat(item.usage) > 0 ? parseFloat(item.usage) * (item.unitCost || 0) : null);
+    if (lossN && lossN > 0) totalLoss += lossN;
+    if (!item.inventoryOnly && item.orderQty && item.orderQty !== '0' && item.orderQty !== '') itemsNeedOrder++;
+  });
+
+  const breakageItems = itemData
+    .filter(item => {
+      const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) :
+        (item.usage !== null && parseFloat(item.usage) > 0 ? parseFloat(item.usage) * (item.unitCost || 0) : null);
+      return lossN && lossN > 0;
+    })
+    .sort((a, b) => {
+      const la = a.brkgCost !== null ? parseFloat(a.brkgCost) : parseFloat(a.usage||0) * (a.unitCost||0);
+      const lb = b.brkgCost !== null ? parseFloat(b.brkgCost) : parseFloat(b.usage||0) * (b.unitCost||0);
+      return lb - la;
+    });
+
+  const orderItems = itemData.filter(i => !i.inventoryOnly && i.orderQty && i.orderQty !== '0' && i.orderQty !== '');
+
+  // ── Main inventory table rows ──────────────────────────────────────────
+  const mainRows = itemData.map((item, idx) => {
+    const endV = parseFloat(item.end);
+    const usageN = item.usage !== null ? parseFloat(item.usage) : null;
+    const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) :
+      (usageN !== null && usageN > 0 ? usageN * (item.unitCost || 0) : null);
+    const parVal = parseFloat(item.par) || 0;
+    const hasEnd = item.end !== '';
+    const isLow = hasEnd && !isNaN(endV) && endV < parVal;
+    const isCrit = hasEnd && !isNaN(endV) && endV <= 0;
+    const hasLoss = lossN && lossN > 0;
+
+    const _cq = item.caseQty || 1;
+    const orderDisplay = item.inventoryOnly ? '—'
+      : (item.orderQty !== null && item.orderQty !== '' && item.orderQty !== '0')
+        ? (isHistory ? item.orderQty + (_cq > 1 ? ' cs' : '') : (item.orderQty > 0 ? '+'+item.orderQty+(_cq>1?'cs':'') : '✓'))
+        : (hasEnd ? '✓' : '—');
+
+    const statusColor = isCrit ? '#dc2626' : isLow ? '#d97706' : hasEnd ? '#16a34a' : '#9ca3af';
     const statusLabel = isCrit ? '⚠ CRIT' : isLow ? '↓ LOW' : hasEnd ? '✓' : '—';
-    const tallyStr = tally && (tally.dock || tally.closet || tally.restaurant)
-      ? `<div style="font-size:9px;color:#9ca3af;margin-top:1px">🚢${tally.dock||0} 🚪${tally.closet||0} 🍽️${tally.restaurant||0}</div>` : '';
-
+    const bg = hasLoss ? '#fff8f8' : idx % 2 === 0 ? '#f9fafb' : '#fff';
+    const usageColor = usageN !== null ? (usageN > 0 ? '#dc2626' : usageN < 0 ? '#16a34a' : '#374151') : '#9ca3af';
     const usageDisplay = usageN !== null
-      ? (usageN > 0 ? `<span style="color:#dc2626">-${usageN}</span>`
-        : usageN < 0 ? `<span style="color:#16a34a">+${Math.abs(usageN)}</span>`
-        : '0')
-      : '—';
+      ? (usageN > 0 ? '-'+usageN : usageN < 0 ? '+'+Math.abs(usageN) : '0') : '—';
 
-    const parDisplay = item.par ? String(item.par) : '—';
-    const isUnderPar = hasEnd && !isNaN(endV) && endV < parseFloat(item.par||0);
-    return `<tr style="background:${bg}">
-      <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;">
-        ${item.name}
-        ${item.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;margin-left:4px;font-style:italic">count only</span>' : ''}
-        ${tallyStr}
-      </td>
-      <td style="padding:7px 8px;font-size:11px;color:#6b21a8;text-align:center;border-bottom:1px solid #e5e7eb;font-family:monospace;font-weight:700;">${parDisplay}</td>
-      <td style="padding:7px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb;">${beg || '—'}</td>
-      <td style="padding:7px 8px;font-size:13px;font-weight:700;color:#111;text-align:center;border-bottom:1px solid #e5e7eb;">${end || '—'}</td>
-      <td style="padding:7px 8px;font-size:12px;font-weight:700;text-align:center;border-bottom:1px solid #e5e7eb;">${usageDisplay}</td>
-      <td style="padding:7px 8px;font-size:12px;color:${lossN > 0 ? '#dc2626' : '#6b7280'};text-align:center;border-bottom:1px solid #e5e7eb;">${lossN !== null && lossN > 0 ? '$'+lossN.toFixed(2) : '—'}</td>
-      <td style="padding:7px 8px;font-size:13px;font-weight:800;text-align:center;border-bottom:1px solid #e5e7eb;color:${(orderQty > 0 || (isHistory && orderQty && orderQty !== '0')) ? '#d97706' : '#16a34a'}">${orderDisplay}</td>
-      <td style="padding:7px 8px;font-size:11px;font-weight:700;color:${statusColor};text-align:center;border-bottom:1px solid #e5e7eb;">${statusLabel}</td>
+    const addDisplay = item.add ? '+'+item.add : '—';
+    const startDisplay = item.start || item.beg || '—';
+    return `<tr style="background:${bg}${hasLoss?';border-left:3px solid #fca5a5':''}">
+      <td style="padding:6px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;${item.inventoryOnly?'color:#6b7280;font-style:italic':''}">${item.name}${item.inventoryOnly?'<span style="font-size:9px;margin-left:4px">(count only)</span>':''}</td>
+      <td style="padding:6px 8px;font-size:11px;font-weight:700;color:#6b21a8;text-align:center;border-bottom:1px solid #e5e7eb;font-family:monospace">${item.par||'—'}</td>
+      <td style="padding:6px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb">${item.beg||'—'}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${item.add?'#16a34a':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb">${addDisplay}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:#2563eb;text-align:center;border-bottom:1px solid #e5e7eb">${startDisplay}</td>
+      <td style="padding:6px 8px;font-size:13px;font-weight:700;color:#111;text-align:center;border-bottom:1px solid #e5e7eb">${item.end||'—'}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${usageColor};text-align:center;border-bottom:1px solid #e5e7eb">${usageDisplay}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${hasLoss?'#dc2626':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb">${hasLoss?'$'+lossN.toFixed(2):'—'}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:800;color:${(item.orderQty>0||(isHistory&&item.orderQty&&item.orderQty!=='0'))?'#d97706':'#16a34a'};text-align:center;border-bottom:1px solid #e5e7eb">${orderDisplay}</td>
+      <td style="padding:6px 8px;font-size:10px;font-weight:700;color:${statusColor};text-align:center;border-bottom:1px solid #e5e7eb">${statusLabel}</td>
     </tr>`;
   }).join('');
 
-  const historyNote = isHistory ? `<div style="margin-bottom:16px;padding:8px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0;font-family:monospace;font-size:11px;color:#92400e;">📅 Historical record — ${dateStr} at ${timeStr}</div>` : '';
+  // ── Breakage spotlight rows ────────────────────────────────────────────
+  const breakageRows = breakageItems.map((item, idx) => {
+    const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) : parseFloat(item.usage||0) * (item.unitCost||0);
+    const usageN = item.usage !== null ? parseFloat(item.usage) : null;
+    const pctOfPar = item.par ? ((usageN||0) / parseFloat(item.par) * 100).toFixed(0) : '—';
+    const bg = idx % 2 === 0 ? '#fff8f8' : '#fff';
+    return `<tr style="background:${bg}">
+      <td style="padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid #fecaca">${item.name}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #fecaca">${item.beg||'—'} → ${item.end||'—'}</td>
+      <td style="padding:7px 10px;font-size:13px;font-weight:700;color:#dc2626;text-align:center;border-bottom:1px solid #fecaca">${usageN!==null?usageN:'—'} pcs</td>
+      <td style="padding:7px 10px;font-size:11px;color:#6b7280;text-align:center;border-bottom:1px solid #fecaca">${item.unitCost?'$'+item.unitCost.toFixed(2)+'/ea':'—'}</td>
+      <td style="padding:7px 10px;font-size:14px;font-weight:800;color:#dc2626;text-align:center;border-bottom:1px solid #fecaca">$${lossN.toFixed(2)}</td>
+      <td style="padding:7px 10px;font-size:11px;color:#d97706;text-align:center;border-bottom:1px solid #fecaca">${pctOfPar}% of par</td>
+    </tr>`;
+  }).join('');
+
+  // ── Order summary rows ─────────────────────────────────────────────────
+  const orderRows = orderItems.map((item, idx) => {
+    const _cq = item.caseQty || 1;
+    const oq = typeof item.orderQty === 'number' ? item.orderQty : parseInt(item.orderQty)||0;
+    const totalUnits = oq * _cq;
+    const cost = oq * _cq * (item.unitCost || 0);
+    const bg = idx % 2 === 0 ? '#fffbeb' : '#fff';
+    return `<tr style="background:${bg}">
+      <td style="padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid #fde68a">${item.name}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #fde68a">${item.pack}</td>
+      <td style="padding:7px 10px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-bottom:1px solid #fde68a">${oq} cs</td>
+      <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #fde68a">${totalUnits} units</td>
+      <td style="padding:7px 10px;font-size:12px;color:#6b7280;text-align:center;border-bottom:1px solid #fde68a">${item.unitCost?'~$'+cost.toFixed(2):'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const historyNote = isHistory
+    ? `<div style="margin-bottom:20px;padding:10px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0;font-family:monospace;font-size:11px;color:#92400e;">📅 Historical record — ${dateStr} at ${timeStr}</div>` : '';
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Bartlett&#39;s — Trimark Inventory ${monthStr}</title>
+  <title>Bartlett's — EOM Inventory Report ${monthStr}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:24px;max-width:860px;margin:0 auto}
-    @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.2cm;size:A4 landscape}}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:28px;max-width:960px;margin:0 auto;font-size:14px}
+    h2{font-size:13px;font-weight:800;letter-spacing:2px;font-family:monospace;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid currentColor}
+    table{width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+    th{padding:8px 8px;font-size:10px;font-weight:700;font-family:monospace;letter-spacing:1px;text-transform:uppercase}
+    .tile{border-radius:10px;padding:10px 16px;text-align:center;display:inline-block}
+    .tile-num{font-size:22px;font-weight:800;font-family:monospace;line-height:1}
+    .tile-lbl{font-size:9px;font-family:monospace;letter-spacing:1px;margin-top:2px}
+    @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.2cm;size:A4 landscape}h2{margin-top:20px}}
   </style></head><body>
+
   <div class="no-print" style="text-align:right;margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end">
     <button onclick="window.print()" style="padding:10px 24px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>
     <button onclick="window.close()" style="padding:10px 20px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
   </div>
-  <div style="border-bottom:3px solid #7c3aed;padding-bottom:14px;margin-bottom:20px;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+
+  <!-- HEADER -->
+  <div style="border-bottom:3px solid #7c3aed;padding-bottom:16px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
       <div>
-        <div style="font-size:22px;font-weight:700;color:#ef4444;letter-spacing:2px;font-family:monospace">BARTLETT&#39;S</div>
-        <div style="font-size:13px;font-weight:700;color:#7c3aed;letter-spacing:2px;margin-top:2px;font-family:monospace">TRIMARK INVENTORY REPORT</div>
-        <div style="font-size:11px;color:#6b7280;font-family:monospace;margin-top:2px;">${monthStr}</div>
+        <div style="font-size:26px;font-weight:800;color:#ef4444;letter-spacing:3px;font-family:monospace">BARTLETT'S</div>
+        <div style="font-size:14px;font-weight:700;color:#7c3aed;letter-spacing:2px;margin-top:3px;font-family:monospace">END OF MONTH INVENTORY & BREAKAGE REPORT</div>
+        <div style="font-size:12px;color:#6b7280;font-family:monospace;margin-top:3px">${monthStr} · Trimark Supplies</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:14px;font-weight:700">${dateStr}</div>
         <div style="font-size:11px;color:#6b7280;margin-top:2px">${isHistory ? 'Historical record' : 'Generated at '+timeStr}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:1px">Prepared by: Oscar Rivas</div>
       </div>
     </div>
-    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
-      <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#7c3aed;font-family:monospace">${itemsWithCount}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">ITEMS COUNTED</div></div>
-      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#d97706;font-family:monospace">${itemsNeedOrder}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">NEED ORDER</div></div>
-      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#dc2626;font-family:monospace">$${totalLoss.toFixed(2)}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">TOTAL LOSS</div></div>
+
+    <!-- Summary tiles -->
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <div class="tile" style="background:#f5f3ff;border:1px solid #ddd6fe">
+        <div class="tile-num" style="color:#7c3aed">${itemsWithCount}</div>
+        <div class="tile-lbl" style="color:#7c3aed">ITEMS COUNTED</div>
+      </div>
+      <div class="tile" style="background:#fef2f2;border:1px solid #fecaca">
+        <div class="tile-num" style="color:#dc2626">${breakageItems.length}</div>
+        <div class="tile-lbl" style="color:#dc2626">ITEMS W/ LOSS</div>
+      </div>
+      <div class="tile" style="background:#fef2f2;border:1px solid #fecaca">
+        <div class="tile-num" style="color:#dc2626">$${totalLoss.toFixed(2)}</div>
+        <div class="tile-lbl" style="color:#dc2626">TOTAL LOSS</div>
+      </div>
+      <div class="tile" style="background:#fffbeb;border:1px solid #fde68a">
+        <div class="tile-num" style="color:#d97706">${itemsNeedOrder}</div>
+        <div class="tile-lbl" style="color:#d97706">NEED REORDER</div>
+      </div>
     </div>
   </div>
+
   ${historyNote}
-  <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;">
-    <thead>
-      <tr style="background:#f5f3ff;">
-        <th style="padding:7px 8px;font-size:10px;color:#7c3aed;text-align:left;font-family:monospace;border-bottom:2px solid #ddd6fe;">ITEM</th>
-        <th style="padding:7px 8px;font-size:10px;color:#6b21a8;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">PAR</th>
-        <th style="padding:7px 8px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">BEGIN</th>
-        <th style="padding:7px 8px;font-size:10px;color:#111;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">COUNT</th>
-        <th style="padding:7px 8px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">USED</th>
-        <th style="padding:7px 8px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">LOSS $</th>
-        <th style="padding:7px 8px;font-size:10px;color:#d97706;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">ORDER (cs)</th>
-        <th style="padding:7px 8px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #ddd6fe;">STATUS</th>
+
+  <!-- SECTION 1: FULL INVENTORY -->
+  <h2 style="color:#7c3aed">1 — FULL INVENTORY COUNT</h2>
+  <table>
+    <thead style="background:#f5f3ff">
+      <tr>
+        <th style="color:#7c3aed;text-align:left;border-bottom:2px solid #ddd6fe">ITEM</th>
+        <th style="color:#6b21a8;border-bottom:2px solid #ddd6fe">PAR</th>
+        <th style="color:#7c3aed;border-bottom:2px solid #ddd6fe">BEGIN</th>
+        <th style="color:#16a34a;border-bottom:2px solid #ddd6fe">ADD</th>
+        <th style="color:#2563eb;border-bottom:2px solid #ddd6fe">START</th>
+        <th style="color:#111;border-bottom:2px solid #ddd6fe">COUNT</th>
+        <th style="color:#dc2626;border-bottom:2px solid #ddd6fe">USED</th>
+        <th style="color:#dc2626;border-bottom:2px solid #ddd6fe">LOSS $</th>
+        <th style="color:#d97706;border-bottom:2px solid #ddd6fe">ORDER</th>
+        <th style="color:#6b7280;border-bottom:2px solid #ddd6fe">STATUS</th>
       </tr>
     </thead>
-    <tbody>${rows}</tbody>
+    <tbody>${mainRows}</tbody>
   </table>
-  <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2025 Oscar Rivas · Bartlett&#39;s Restaurant</div>
+
+  <!-- SECTION 1.5: TRENDS & COMPARISONS -->
+  ${trendRows.length > 0 ? `
+  <h2 style="color:#2563eb;margin-top:32px">2 — USAGE & ORDER TRENDS</h2>
+  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">
+    Month-over-month and year-over-year comparisons from order history.
+    &#9650; red = worse than prior period &nbsp;|&nbsp; &#9660; green = improved.
+    LY = last year same month.
+  </p>
+  <table>
+    <thead style="background:#eff6ff">
+      <tr>
+        <th style="color:#2563eb;text-align:left;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">ITEM</th>
+        <th style="color:#374151;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">USED<br>THIS MO</th>
+        <th style="color:#374151;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">USED<br>LAST MO</th>
+        <th style="color:#374151;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">USED<br>LAST YEAR</th>
+        <th style="color:#dc2626;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">LOSS<br>THIS MO</th>
+        <th style="color:#dc2626;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">LOSS<br>LAST MO</th>
+        <th style="color:#d97706;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">ORDER<br>THIS MO</th>
+        <th style="color:#d97706;text-align:center;border-bottom:2px solid #bfdbfe;padding:7px 8px;font-size:10px;font-family:monospace;">ORDER<br>TREND</th>
+      </tr>
+    </thead>
+    <tbody>${trendRows}</tbody>
+  </table>` : ''}
+
+  <!-- SECTION 2: BREAKAGE SPOTLIGHT -->
+  ${breakageItems.length > 0 ? `
+  <h2 style="color:#dc2626;margin-top:32px">3 — BREAKAGE & LOSS DETAIL</h2>
+  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items with unit losses this month, sorted by dollar impact. Usage = BEGIN − COUNT.</p>
+  <table>
+    <thead style="background:#fef2f2">
+      <tr>
+        <th style="color:#dc2626;text-align:left;border-bottom:2px solid #fecaca">ITEM</th>
+        <th style="color:#374151;border-bottom:2px solid #fecaca">BEGIN → COUNT</th>
+        <th style="color:#dc2626;border-bottom:2px solid #fecaca">UNITS LOST</th>
+        <th style="color:#6b7280;border-bottom:2px solid #fecaca">UNIT COST</th>
+        <th style="color:#dc2626;border-bottom:2px solid #fecaca">TOTAL LOSS</th>
+        <th style="color:#d97706;border-bottom:2px solid #fecaca">% OF PAR</th>
+      </tr>
+    </thead>
+    <tbody>${breakageRows}</tbody>
+    <tfoot>
+      <tr style="background:#fef2f2">
+        <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #fecaca">TOTAL BREAKAGE COST</td>
+        <td style="padding:8px 10px;font-size:16px;font-weight:800;color:#dc2626;text-align:center;font-family:monospace;border-top:2px solid #fecaca">$${totalLoss.toFixed(2)}</td>
+        <td style="border-top:2px solid #fecaca"></td>
+      </tr>
+    </tfoot>
+  </table>` : `
+  <h2 style="color:#16a34a;margin-top:32px">3 — BREAKAGE & LOSS DETAIL</h2>
+  <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ No breakage losses recorded this month</div>`}
+
+  <!-- SECTION 3: ORDER SUMMARY -->
+  ${orderItems.length > 0 ? `
+  <h2 style="color:#d97706;margin-top:32px">4 — REORDER SUMMARY</h2>
+  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items below par requiring reorder. Quantities in cases.</p>
+  <table>
+    <thead style="background:#fffbeb">
+      <tr>
+        <th style="color:#d97706;text-align:left;border-bottom:2px solid #fde68a">ITEM</th>
+        <th style="color:#374151;border-bottom:2px solid #fde68a">PACK SIZE</th>
+        <th style="color:#d97706;border-bottom:2px solid #fde68a">CASES TO ORDER</th>
+        <th style="color:#374151;border-bottom:2px solid #fde68a">TOTAL UNITS</th>
+        <th style="color:#6b7280;border-bottom:2px solid #fde68a">EST. COST</th>
+      </tr>
+    </thead>
+    <tbody>${orderRows}</tbody>
+  </table>` : `
+  <h2 style="color:#16a34a;margin-top:32px">4 — REORDER SUMMARY</h2>
+  <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ All items at or above par — no reorder needed</div>`}
+
+  <!-- FOOTER -->
+  <div style="margin-top:32px;padding-top:12px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2025 Oscar Rivas · Bartlett's Restaurant · Confidential</div>
     <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
   </div>
+
   </body></html>`;
 
   const blob = new Blob([html], {type:'text/html'});
@@ -2245,6 +2754,7 @@ function openTrimarkInventoryReport(e, recId) {
   if (!w) { const a = document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+
 
 function openHistoryEditCounts(recId) {
   const rec = state.history.find(r => r.id === recId);
@@ -2559,19 +3069,43 @@ function renderDetail(rec) {
     document.getElementById('detail-confirm-bar').before(extraBtns);
   }
   extraBtns.innerHTML = '';
+  const btns = [];
+
+  // Trimark inventory buttons
   if (hasTrimarkInventory) {
-    extraBtns.innerHTML = `
-      <button onclick="openTrimarkInventoryReport(null, '${rec.id}')" style="
+    btns.push(`<button onclick="openTrimarkInventoryReport(null, '${rec.id}')" style="
         height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #7c3aed;
         background:transparent;color:#c084fc;
         font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
-        cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY REPORT</button>
-      <button onclick="openHistoryEditCounts('${rec.id}')" style="
+        cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY REPORT</button>`);
+    btns.push(`<button onclick="openHistoryEditCounts('${rec.id}')" style="
         height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #3a3a3c;
         background:transparent;color:#a3a3a3;
         font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
-        cursor:pointer;letter-spacing:0.5px;">✎ EDIT COUNTS</button>`;
+        cursor:pointer;letter-spacing:0.5px;">✎ EDIT COUNTS</button>`);
   }
+
+  // ABCO resend SMS button
+  const abcoOrdered = (rec.suppliers?.['ABCO'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  if (abcoOrdered.length > 0) {
+    btns.push(`<button onclick="resendAbcoSms('${rec.id}')" style="
+        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #22c55e;
+        background:transparent;color:#22c55e;
+        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+        cursor:pointer;letter-spacing:0.5px;">💬 RESEND SMS TO HAL</button>`);
+  }
+
+  // BEK resend CSV button
+  const bekOrdered = (rec.suppliers?.['BEK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  if (bekOrdered.length > 0) {
+    btns.push(`<button onclick="resendBekCsv('${rec.id}')" style="
+        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #60a5fa;
+        background:transparent;color:#60a5fa;
+        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+        cursor:pointer;letter-spacing:0.5px;">📥 RE-DOWNLOAD BEK CSV</button>`);
+  }
+
+  extraBtns.innerHTML = btns.join('');
 
   const scroll = document.getElementById('detail-scroll');
   scroll.innerHTML = '';
@@ -2740,6 +3274,46 @@ function commitEdit() {
   render();
 }
 
+function deleteItem() {
+  if (!state.editingItem) return;
+  const {sn, id} = state.editingItem;
+  const item = state.catalog[sn]?.items.find(it => it.id === id);
+  if (!item) return;
+
+  // Show inline confirmation inside the sheet instead of confirm()
+  const btn = document.querySelector('#edit-sheet button[onclick*="deleteItem"]');
+  if (!btn) return;
+
+  if (btn.dataset.confirming === '1') {
+    // Second tap — actually delete
+    state.catalog[sn].items = state.catalog[sn].items.filter(it => it.id !== id);
+    const ik = ikey(sn, id);
+    delete state.onHand[ik];
+    delete state.orderQty[ik];
+    delete state.itemNotes[ik];
+    saveCatalog();
+    saveLiveOrder();
+    cancelEdit();
+    showToast(`🗑 ${item.name} deleted`);
+    render();
+  } else {
+    // First tap — ask for confirmation
+    btn.dataset.confirming = '1';
+    btn.textContent = '⚠ TAP AGAIN TO CONFIRM DELETE';
+    btn.style.borderColor = '#f87171';
+    btn.style.background = 'rgba(248,113,113,0.1)';
+    // Auto-reset after 3 seconds if not confirmed
+    setTimeout(() => {
+      if (btn.dataset.confirming === '1') {
+        btn.dataset.confirming = '0';
+        btn.textContent = '🗑 DELETE ITEM';
+        btn.style.borderColor = '#3a3a3c';
+        btn.style.background = 'transparent';
+      }
+    }, 3000);
+  }
+}
+
 // ─── SAVE ─────────────────────────────────────────────────────────────────
 function openSaveModal() {
   // Reset delivery to "Tomorrow" default each time
@@ -2805,7 +3379,7 @@ function doSave() {
       const begV = parseFloat(beg), ohV = parseFloat(oh);
       const usageCalc = sn === 'TRIMARK' && beg !== '' && oh !== '' && !isNaN(begV) && !isNaN(ohV) ? String(begV - ohV) : '';
       if (oh !== '' || oq !== '' || nt !== '') {
-        acc.push({name:it.name, pack:it.pack, par:it.par, onHand:oh,
+        acc.push({id:it.id, name:it.name, pack:it.pack, par:it.par, onHand:oh,
           orderQty: it.inventoryOnly ? '' : oq,  // never save an order qty for inventory-only items
           note:nt, status:getStatus(oh, it.par),
           ...(it.inventoryOnly ? {inventoryOnly:true} : {}),
@@ -2843,11 +3417,14 @@ function doSave() {
   saveTrimarkBegin();
   state.trimarkTally = {};
   saveTrimarkTally();
+  state.trimarkAdd = {};
+  saveTrimarkAdd();
 
   state.onHand = {}; state.orderQty = {};
   state.itemNotes = {}; state.globalNote = ''; state._openNote = null;
   state.breakage = {}; saveBreakage();
   state.trimarkView = 'order';
+  saveLiveOrder(); // push empty state to Firebase so other devices clear too
 
   btn.textContent = '✓  CONFIRM SAVE & RESET'; btn.disabled = false;
   closeSaveModal();
@@ -2865,6 +3442,14 @@ function doSave() {
     setTimeout(() => showAbcoSmsPrompt(abcoOrdered), 600);
   }
 
+  // If BEK had items ordered, show CSV download prompt
+  const bekItems = snap.suppliers['BEK'] || [];
+  const bekOrdered = bekItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  if (bekOrdered.length > 0) {
+    const bekDelay = 600 + (abcoOrdered.length > 0 ? 800 : 0);
+    setTimeout(() => showBekCsvPrompt(bekOrdered), bekDelay);
+  }
+
   // If TRIMARK had items ordered, show email prompt
   const triItems = snap.suppliers['TRIMARK'] || [];
   const triOrdered = triItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
@@ -2879,6 +3464,73 @@ function doSave() {
     const delay = 600 + (abcoOrdered.length > 0 ? 800 : 0) + (triOrdered.length > 0 ? 800 : 0);
     setTimeout(() => showElectricalEmailPrompt(elcOrdered), delay);
   }
+}
+
+function showBekCsvPrompt(items) {
+  const existing = document.getElementById('bek-csv-prompt');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.id = 'bek-csv-prompt';
+  el.style.cssText = `
+    position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+    background:#1c1c1e;border:1.5px solid #60a5fa;border-radius:16px;
+    padding:14px 18px;display:flex;align-items:center;gap:12px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:9999;
+    font-family:ui-monospace,'SF Mono','Courier New',monospace;
+    max-width:calc(100vw - 32px);
+  `;
+  el.innerHTML = `
+    <div style="font-size:11px;color:#a3a3a3;line-height:1.5;">
+      <div style="color:#60a5fa;font-weight:700;font-size:12px;margin-bottom:2px;">📥 BEK ORDER READY</div>
+      ${items.length} item${items.length > 1 ? 's' : ''} · Download CSV to upload to BEK portal
+    </div>
+    <button onclick="downloadBekCsv()" style="
+      flex-shrink:0;height:38px;padding:0 16px;border-radius:19px;
+      background:#60a5fa;border:none;color:#000;
+      font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+      cursor:pointer;letter-spacing:0.5px;">
+      ⬇ DOWNLOAD
+    </button>
+    <button onclick="document.getElementById('bek-csv-prompt').remove()" style="
+      flex-shrink:0;width:28px;height:28px;border-radius:14px;
+      background:#2c2c2e;border:none;color:#636366;font-size:16px;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>
+  `;
+  el._items = items;
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 15000);
+}
+
+function downloadBekCsv() {
+  const el = document.getElementById('bek-csv-prompt');
+  const items = el?._items || [];
+  el?.remove();
+
+  // Build CSV in BEK's exact format: Item#, Each, Quantity
+  const rows = ['Item#,Each,Quantity'];
+  items.forEach(i => {
+    // Find itemNum from catalog
+    const catItem = (state.catalog['BEK']?.items || []).find(ci => ci.name === i.name);
+    const itemNum = catItem?.itemNum || '';
+    const qty = parseFloat(i.orderQty) || 0;
+    if (itemNum && qty > 0) {
+      rows.push(`${itemNum},Each,${qty}`);
+    }
+  });
+
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const date = new Date().toLocaleDateString('en-US', { month:'2-digit', day:'2-digit', year:'numeric' }).replace(/\//g, '-');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `BEK-Order-${date}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showToast('📥 BEK order CSV downloaded');
 }
 
 function showAbcoSmsPrompt(items) {
@@ -2926,15 +3578,58 @@ function openAbcoSms() {
   const items = el?._items || [];
   el?.remove();
 
-  // Format each item as "-x{qty} {name}", grouped in rows of 3
-  const formatted = items.map(i => `-x${i.orderQty} ${i.name}`);
-  const rows = [];
-  for (let i = 0; i < formatted.length; i += 3) {
-    rows.push(formatted.slice(i, i + 3).join('   '));
+  // Each item on its own line, blank line every 3 items
+  const lines = items.map(i => `-x${i.orderQty} ${i.name}`);
+  const groups = [];
+  for (let i = 0; i < lines.length; i += 3) {
+    groups.push(lines.slice(i, i + 3).join('\n'));
   }
-  const body = `Hi Hal, ABCO order:\n\n${rows.join('\n')}\n\nThanks`;
+  const body = `Hi Hal, ABCO order:\n\n${groups.join('\n\n')}\n\nThanks`;
   const encoded = encodeURIComponent(body);
   window.location.href = `sms:5128015422&body=${encoded}`;
+}
+
+function resendAbcoSms(recId) {
+  const rec = state.history.find(r => r.id === recId);
+  if (!rec) return;
+  const items = (rec.suppliers?.['ABCO'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  if (!items.length) { showToast('No ABCO items in this order', 'warn'); return; }
+
+  const lines = items.map(i => `-x${i.orderQty} ${i.name}`);
+  const groups = [];
+  for (let i = 0; i < lines.length; i += 3) {
+    groups.push(lines.slice(i, i + 3).join('\n'));
+  }
+  const body = `Hi Hal, ABCO order:
+
+${groups.join('\n\n')}\n\nThanks`;
+  window.location.href = `sms:5128015422&body=${encodeURIComponent(body)}`;
+}
+
+function resendBekCsv(recId) {
+  const rec = state.history.find(r => r.id === recId);
+  if (!rec) return;
+  const items = (rec.suppliers?.['BEK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  if (!items.length) { showToast('No BEK items in this order', 'warn'); return; }
+
+  const rows = ['Item#,Each,Quantity'];
+  items.forEach(i => {
+    const catItem = (state.catalog['BEK']?.items || []).find(ci => ci.name === i.name);
+    const itemNum = catItem?.itemNum || '';
+    const qty = parseFloat(i.orderQty) || 0;
+    if (itemNum && qty > 0) rows.push(`${itemNum},Each,${qty}`);
+  });
+
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const d = new Date(rec.date);
+  const dateStr = d.toLocaleDateString('en-US', {month:'2-digit', day:'2-digit', year:'numeric'}).replace(/\//g, '-');
+  const a = document.createElement('a');
+  a.href = url; a.download = `BEK-Order-${dateStr}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showToast('📥 BEK CSV downloaded');
 }
 
 function showTrimarkEmailPrompt(items) {
@@ -3146,7 +3841,141 @@ function saveDeliveryConfirmation(recId) {
     showToast('✅ Delivery confirmed — all items received');
   }
 
-  renderDetail(rec);
+  // If this is a Trimark order, open the ADD review modal
+  const trimarkItems = (rec.suppliers?.['TRIMARK'] || []).filter(i =>
+    i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly
+  );
+  const receivedTrimark = trimarkItems.filter(i =>
+    !missing.some(m => m.name === i.name && m.supplier === 'TRIMARK')
+  );
+
+  if (receivedTrimark.length > 0) {
+    setTimeout(() => openTrimarkAddModal(recId, receivedTrimark), 400);
+  } else {
+    renderDetail(rec);
+  }
+}
+
+function openTrimarkAddModal(recId, receivedItems) {
+  const existing = document.getElementById('trimark-add-modal');
+  if (existing) existing.remove();
+
+  const sup = state.catalog['TRIMARK'];
+
+  // Pre-calculate ADD amounts: cases ordered × caseQty per item
+  const addAmounts = {};
+  receivedItems.forEach(item => {
+    const catItem = (sup?.items || []).find(ci => ci.name === item.name);
+    const caseQty = catItem?.caseQty || 1;
+    const cases = parseInt(item.orderQty) || 0;
+    addAmounts[item.name] = cases * caseQty;
+  });
+
+  const overlay = document.createElement('div');
+  overlay.id = 'trimark-add-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9600;display:flex;align-items:flex-end;';
+
+  overlay.innerHTML = `
+    <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:16px 20px 12px;border-bottom:1px solid #1c1c1e;flex-shrink:0;">
+        <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 14px;"></div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#c084fc;letter-spacing:1px;margin-bottom:4px;">➕ TRIMARK DELIVERY — ADD TO INVENTORY</div>
+        <div style="font-size:12px;color:#636366;font-family:-apple-system,sans-serif;">
+          Units below are auto-calculated from your order. Edit any line if the actual delivery differs, then tap APPLY.
+        </div>
+      </div>
+      <div style="overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;" id="trimark-add-list"></div>
+      <div style="padding:16px 20px;border-top:1px solid #1c1c1e;flex-shrink:0;padding-bottom:max(16px,env(safe-area-inset-bottom));">
+        <div style="display:flex;gap:10px;">
+          <button onclick="document.getElementById('trimark-add-modal').remove();renderDetail(state.history.find(r=>r.id==='${recId}'));" style="flex:1;height:48px;border-radius:14px;background:transparent;border:1.5px solid #3a3a3c;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;">Skip</button>
+          <button onclick="applyTrimarkAdd('${recId}')" style="flex:2;height:48px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">➕ APPLY TO BEGIN</button>
+        </div>
+      </div>
+    </div>`;
+
+  // Build item rows
+  const listEl = overlay.querySelector('#trimark-add-list');
+
+  // Header row
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'padding:6px 16px;background:#0a0a0a;display:grid;grid-template-columns:1fr 80px 80px;gap:8px;border-bottom:1px solid #222;';
+  hdr.innerHTML = `
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#636366;letter-spacing:1px;">ITEM</span>
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#636366;letter-spacing:1px;text-align:center;">ORDER</span>
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#c084fc;letter-spacing:1px;text-align:center;">ADD (units)</span>`;
+  listEl.appendChild(hdr);
+
+  receivedItems.forEach((item, idx) => {
+    const catItem = (sup?.items || []).find(ci => ci.name === item.name);
+    const caseQty = catItem?.caseQty || 1;
+    const addVal = addAmounts[item.name];
+    const currentBegin = parseFloat(state.trimarkBegin[catItem?.id] || 0) || 0;
+
+    const row = document.createElement('div');
+    row.style.cssText = `padding:10px 16px;display:grid;grid-template-columns:1fr 80px 80px;gap:8px;align-items:center;border-bottom:1px solid #1c1c1e;background:${idx%2===0?'#0a0a0a':'transparent'};`;
+    row.innerHTML = `
+      <div>
+        <div style="color:#e5e5e7;font-size:13px;">${item.name}</div>
+        <div style="font-family:ui-monospace,monospace;font-size:10px;color:#48484a;margin-top:1px;">
+          begin: ${currentBegin} · ${item.orderQty}cs × ${caseQty}/cs
+        </div>
+      </div>
+      <div style="text-align:center;font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#fbbf24;">${item.orderQty} cs</div>
+      <div style="display:flex;justify-content:center;">
+        <input type="number" inputmode="numeric"
+          id="add-inp-${catItem?.id||item.name.replace(/\s/g,'_')}"
+          value="${addVal}"
+          style="width:70px;height:38px;text-align:center;border-radius:8px;border:2px solid #7c3aed;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,monospace;font-size:16px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;">
+      </div>`;
+    listEl.appendChild(row);
+  });
+
+  // Store context for applyTrimarkAdd
+  overlay._recId = recId;
+  overlay._receivedItems = receivedItems;
+  overlay._sup = sup;
+
+  document.body.appendChild(overlay);
+}
+
+function applyTrimarkAdd(recId) {
+  const overlay = document.getElementById('trimark-add-modal');
+  if (!overlay) return;
+  const sup = state.catalog['TRIMARK'];
+  const receivedItems = overlay._receivedItems || [];
+  const rec = state.history.find(r => r.id === recId);
+
+  const addLog = {}; // item.id → units added
+
+  receivedItems.forEach(item => {
+    const catItem = (sup?.items || []).find(ci => ci.name === item.name);
+    if (!catItem) return;
+    const inp = document.getElementById('add-inp-' + (catItem.id || item.name.replace(/\s/g,'_')));
+    const addUnits = parseInt(inp?.value) || 0;
+    if (addUnits <= 0) return;
+
+    // Add to begin
+    const currentBegin = parseFloat(state.trimarkBegin[catItem.id] || 0) || 0;
+    state.trimarkBegin[catItem.id] = String(currentBegin + addUnits);
+
+    // Track the add separately
+    state.trimarkAdd[catItem.id] = String(addUnits);
+    addLog[catItem.id] = addUnits;
+  });
+
+  // Save add amounts to the record for reporting
+  if (rec) {
+    rec.trimarkAdd = addLog;
+    lsSet('bartletts-orders-v3', state.history);
+    fbSaveRecord(rec);
+  }
+
+  saveTrimarkBegin();
+  saveTrimarkAdd();
+
+  overlay.remove();
+  showToast('✅ Inventory updated with delivery additions');
+  renderDetail(rec || state.history.find(r => r.id === recId));
 }
 
 function resolveShortage(recId) {
@@ -3197,11 +4026,42 @@ function updateMissingBanner() {
 }
 
 // ─── LEARNING ENGINE (Stage 1 — Silent Data Collection) ────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// LEARNING ENGINE v2 — multi-signal trend prediction
+// Signals used:
+//   1. Recency-weighted average        — recent orders count exponentially more
+//   2. Trend direction                 — are orders going up or down lately?
+//   3. Day-of-week pattern             — BEK/ABCO vary by day ordered
+//   4. Monthly seasonality             — same month prior years
+//   5. Week-of-month pattern           — first week vs last week of month
+//   6. Consistency bonus               — low variance = higher confidence
+// ══════════════════════════════════════════════════════════════════════════════
+
+function mergeLearningData(local, remote) {
+  const result = { ...local };
+  Object.entries(remote).forEach(([k, remoteItem]) => {
+    if (!result[k]) {
+      result[k] = remoteItem;
+    } else {
+      const allOrders = [...(result[k].orders || []), ...(remoteItem.orders || [])];
+      const seen = new Set();
+      const deduped = allOrders.filter(o => {
+        if (seen.has(o.date)) return false;
+        seen.add(o.date); return true;
+      }).sort((a, b) => new Date(a.date) - new Date(b.date));
+      result[k].orders = deduped.slice(-104); // keep 2 years now
+    }
+  });
+  return result;
+}
+
 function recordOrderLearning(snap) {
   try {
     const existing = lsGet('bartletts-learning-v1') || {};
-    const dayOfWeek = new Date(snap.date).getDay(); // 0=Sun...6=Sat
-    const month = new Date(snap.date).getMonth();
+    const d = new Date(snap.date);
+    const dayOfWeek  = d.getDay();           // 0=Sun…6=Sat
+    const month      = d.getMonth();         // 0=Jan…11=Dec
+    const weekOfMonth = Math.floor((d.getDate() - 1) / 7); // 0=first,1=second,2=third,3=fourth
 
     Object.entries(snap.suppliers || {}).forEach(([sn, items]) => {
       items.forEach(it => {
@@ -3209,13 +4069,333 @@ function recordOrderLearning(snap) {
         if (qty <= 0) return;
         const k = sn + '|' + it.name;
         if (!existing[k]) existing[k] = { supplier: sn, name: it.name, orders: [] };
-        existing[k].orders.push({ qty, dow: dayOfWeek, month, date: snap.date });
-        // Keep last 52 entries per item (1 year of weekly data)
-        if (existing[k].orders.length > 52) existing[k].orders = existing[k].orders.slice(-52);
+        existing[k].orders.push({
+          qty,
+          dow: dayOfWeek,
+          month,
+          weekOfMonth,
+          date: snap.date,
+          // Enriched fields for trend reporting
+          onHand:   it.onHand   !== undefined ? parseFloat(it.onHand)   : null,
+          begin:    it.begin    !== undefined ? parseFloat(it.begin)    : null,
+          usage:    it.usage    !== undefined ? parseFloat(it.usage)    : null,
+          brkgCost: it.brkgCost !== undefined ? parseFloat(it.brkgCost) : null,
+          par:      it.par      !== undefined ? parseFloat(it.par)      : null,
+        });
+        if (existing[k].orders.length > 104) existing[k].orders = existing[k].orders.slice(-104);
       });
     });
     lsSet('bartletts-learning-v1', existing);
+    fbWrite('learning', existing, 1000);
   } catch(e) { console.warn('Learning engine error:', e); }
+}
+
+// ── SIGNAL HELPERS ────────────────────────────────────────────────────────
+
+function _expWeightedAvg(orders) {
+  // Exponential decay: most recent order has weight 1, one before = 0.9, etc.
+  const decay = 0.9;
+  let sum = 0, totalW = 0;
+  orders.slice().reverse().forEach((o, i) => {
+    const w = Math.pow(decay, i);
+    sum += o.qty * w;
+    totalW += w;
+  });
+  return totalW > 0 ? sum / totalW : 0;
+}
+
+function _trendSlope(orders) {
+  // Linear regression slope over last N orders — positive = growing, negative = shrinking
+  const n = Math.min(orders.length, 12); // last 12 orders
+  const recent = orders.slice(-n);
+  if (n < 3) return 0;
+  const xMean = (n - 1) / 2;
+  const yMean = recent.reduce((s, o) => s + o.qty, 0) / n;
+  let num = 0, den = 0;
+  recent.forEach((o, i) => {
+    num += (i - xMean) * (o.qty - yMean);
+    den += (i - xMean) ** 2;
+  });
+  return den > 0 ? num / den : 0;
+}
+
+function _stdDev(orders) {
+  if (orders.length < 2) return 0;
+  const mean = orders.reduce((s, o) => s + o.qty, 0) / orders.length;
+  const variance = orders.reduce((s, o) => s + (o.qty - mean) ** 2, 0) / orders.length;
+  return Math.sqrt(variance);
+}
+
+function _dowPattern(orders, currentDow) {
+  // Average qty for orders placed on same day of week
+  const matching = orders.filter(o => o.dow === currentDow);
+  if (matching.length < 2) return null;
+  return matching.reduce((s, o) => s + o.qty, 0) / matching.length;
+}
+
+function _monthPattern(orders, currentMonth) {
+  const matching = orders.filter(o => o.month === currentMonth);
+  if (matching.length < 2) return null;
+  return _expWeightedAvg(matching);
+}
+
+function _weekOfMonthPattern(orders, currentWom) {
+  const matching = orders.filter(o => o.weekOfMonth === currentWom);
+  if (matching.length < 2) return null;
+  return matching.reduce((s, o) => s + o.qty, 0) / matching.length;
+}
+
+// ── TREND ANALYSIS ───────────────────────────────────────────────────────
+
+function getTrendData(itemName, sn, currentDate) {
+  const data = lsGet('bartletts-learning-v1') || {};
+  const k = sn + '|' + itemName;
+  const entry = data[k];
+  if (!entry || !entry.orders || !entry.orders.length) return null;
+
+  const cur = new Date(currentDate);
+  const curMonth = cur.getMonth();
+  const curYear  = cur.getFullYear();
+
+  function ordersInMonth(m, y) {
+    return entry.orders.filter(o => {
+      const d = new Date(o.date);
+      return d.getMonth() === m && d.getFullYear() === y;
+    });
+  }
+
+  function monthSummary(orders) {
+    if (!orders.length) return null;
+    const qty      = orders.reduce((s, o) => s + (o.qty || 0), 0);
+    const usage    = orders.reduce((s, o) => s + (o.usage != null ? o.usage : 0), 0);
+    const brkgCost = orders.reduce((s, o) => s + (o.brkgCost != null ? o.brkgCost : 0), 0);
+    const onHand   = orders[orders.length - 1].onHand;
+    return { qty, usage, brkgCost, onHand, orderCount: orders.length };
+  }
+
+  const lastMonthDate = new Date(cur.getFullYear(), cur.getMonth() - 1, 1);
+  const twoMonthsDate = new Date(cur.getFullYear(), cur.getMonth() - 2, 1);
+  const lastYearDate  = new Date(cur.getFullYear() - 1, cur.getMonth(), 1);
+
+  return {
+    current:   monthSummary(ordersInMonth(curMonth, curYear)),
+    lastMonth: monthSummary(ordersInMonth(lastMonthDate.getMonth(), lastMonthDate.getFullYear())),
+    twoMonths: monthSummary(ordersInMonth(twoMonthsDate.getMonth(), twoMonthsDate.getFullYear())),
+    lastYear:  monthSummary(ordersInMonth(lastYearDate.getMonth(), lastYearDate.getFullYear())),
+  };
+}
+
+function formatTrendBadge(current, prior, field, higherIsBad) {
+  if (!current || !prior) return '';
+  const curVal   = current[field] || 0;
+  const priorVal = prior[field]   || 0;
+  if (priorVal === 0 && curVal === 0) return '';
+  if (priorVal === 0) return '<span style="font-size:9px;color:#fbbf24;font-weight:700;">NEW</span>';
+  const pct = Math.round(((curVal - priorVal) / priorVal) * 100);
+  if (Math.abs(pct) < 2) return '<span style="font-size:9px;color:#9ca3af;">\u2192 flat</span>';
+  const up  = pct > 0;
+  const bad = up === higherIsBad;
+  const color = bad ? '#f87171' : '#4ade80';
+  const arrow = up ? '\u25b2' : '\u25bc';
+  return `<span style="font-size:9px;font-weight:700;color:${color};">${arrow} ${Math.abs(pct)}%</span>`;
+}
+
+// ── MAIN PREDICTION ───────────────────────────────────────────────────────
+
+function getOrderSuggestions(sn) {
+  const data = lsGet('bartletts-learning-v1') || {};
+  const suggestions = {};
+  const now = new Date();
+  const currentDow     = now.getDay();
+  const currentMonth   = now.getMonth();
+  const currentWom     = Math.floor((now.getDate() - 1) / 7);
+
+  // Cadence model: Trimark = monthly supplier, others = weekly/as-needed
+  const isMonthly = sn === 'TRIMARK';
+
+  Object.entries(data).forEach(([k, item]) => {
+    if (item.supplier !== sn) return;
+    const orders = item.orders || [];
+    if (orders.length < 2) return;
+
+    // ── Signal 1: Exponential recency-weighted average ─────────────────
+    const expAvg = _expWeightedAvg(orders);
+
+    // ── Signal 2: Trend slope — project 1 order ahead ─────────────────
+    const slope = _trendSlope(orders);
+    const trendProjection = expAvg + slope; // where the trend points next order
+
+    // ── Signal 3: Day-of-week pattern (more useful for BEK/ABCO) ──────
+    const dowAvg = isMonthly ? null : _dowPattern(orders, currentDow);
+
+    // ── Signal 4: Monthly seasonality ─────────────────────────────────
+    const monthAvg = _monthPattern(orders, currentMonth);
+
+    // ── Signal 5: Week-of-month pattern ───────────────────────────────
+    const womAvg = _weekOfMonthPattern(orders, currentWom);
+
+    // ── Signal 6: Consistency — low stddev = higher reliability ───────
+    const std = _stdDev(orders);
+    const mean = orders.reduce((s, o) => s + o.qty, 0) / orders.length;
+    const cv = mean > 0 ? std / mean : 1; // coefficient of variation (lower = more consistent)
+
+    // ── Blend signals with context-aware weights ───────────────────────
+    // For monthly suppliers: lean on month + trend
+    // For weekly suppliers: lean on DOW + trend
+    let signals = [], weights = [];
+
+    // Base: exponential average always included
+    signals.push(expAvg); weights.push(2);
+
+    // Trend projection: weight by how strong and consistent the trend is
+    if (Math.abs(slope) > 0.1) {
+      const trendWeight = Math.min(2, Math.abs(slope) / mean * 10);
+      signals.push(Math.max(0, trendProjection)); weights.push(trendWeight);
+    }
+
+    // Day-of-week: only for non-monthly suppliers
+    if (!isMonthly && dowAvg !== null) {
+      signals.push(dowAvg); weights.push(1.5);
+    }
+
+    // Monthly seasonality: stronger weight when more seasonal data exists
+    if (monthAvg !== null) {
+      const monthOrders = orders.filter(o => o.month === currentMonth);
+      const monthWeight = isMonthly ? Math.min(3, monthOrders.length * 0.5) : Math.min(1.5, monthOrders.length * 0.3);
+      signals.push(monthAvg); weights.push(monthWeight);
+    }
+
+    // Week-of-month: applies to both, but stronger for monthly
+    if (womAvg !== null) {
+      signals.push(womAvg); weights.push(isMonthly ? 1.5 : 0.8);
+    }
+
+    // Blend
+    const totalWeight = weights.reduce((s, w) => s + w, 0);
+    const blended = signals.reduce((s, sig, i) => s + sig * weights[i], 0) / totalWeight;
+    const estimate = Math.max(1, Math.round(blended));
+
+    // ── Confidence score ───────────────────────────────────────────────
+    // Factors: data quantity, consistency, number of active signals
+    const activeSignals = signals.length;
+    const consistencyBonus = cv < 0.2 ? 2 : cv < 0.4 ? 1 : 0; // very consistent = bonus
+    const dataScore = Math.min(4, Math.floor(orders.length / 4)); // up to 4 points from data qty
+    const signalScore = Math.min(2, activeSignals - 1);            // up to 2 from signal diversity
+    const totalScore = dataScore + signalScore + consistencyBonus;
+
+    const confidence = totalScore >= 6 ? 'high' : totalScore >= 3 ? 'medium' : 'low';
+
+    // ── Build explanation for UI ───────────────────────────────────────
+    const trendLabel = slope > 0.3 ? '↑ trending up' : slope < -0.3 ? '↓ trending down' : '→ stable';
+    const signals_used = [
+      'avg',
+      Math.abs(slope) > 0.1 ? 'trend' : null,
+      !isMonthly && dowAvg !== null ? 'day-pattern' : null,
+      monthAvg !== null ? 'seasonal' : null,
+      womAvg !== null ? 'week-pattern' : null,
+    ].filter(Boolean);
+
+    suggestions[item.name] = {
+      qty: estimate,
+      confidence,
+      dataPoints: orders.length,
+      lastQty: orders[orders.length - 1].qty,
+      trend: trendLabel,
+      signals: signals_used,
+      cv: Math.round(cv * 100), // consistency % — lower is better
+    };
+  });
+  return suggestions;
+}
+
+function showOrderSuggestions(sn) {
+  const existing = document.getElementById('suggestion-banner');
+  if (existing) existing.remove();
+
+  const suggestions = getOrderSuggestions(sn);
+  const items = Object.entries(suggestions);
+  if (!items.length) return;
+
+  const goodItems = items.filter(([, s]) => s.confidence !== 'low');
+  if (!goodItems.length) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'suggestion-banner';
+  banner.style.cssText = `
+    position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+    background:#1c1c1e;border:1.5px solid #fbbf24;border-radius:16px;
+    padding:14px 16px;z-index:9000;
+    font-family:ui-monospace,'SF Mono','Courier New',monospace;
+    max-width:calc(100vw - 32px);width:380px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.6);
+  `;
+
+  banner.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:#fbbf24;letter-spacing:1px;">🧠 SUGGESTED ORDER — ${sn}</div>
+      <button onclick="document.getElementById('suggestion-banner').remove()" style="background:transparent;border:none;color:#636366;font-size:18px;cursor:pointer;padding:0;line-height:1;">×</button>
+    </div>
+    <div style="font-size:10px;color:#636366;margin-bottom:10px;">Multi-signal prediction. Tap items to adjust before applying.</div>
+    <div id="suggestion-items" style="max-height:200px;overflow-y:auto;margin-bottom:12px;">
+      ${goodItems.map(([name, s]) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2c2c2e;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+            <div style="font-size:9px;color:#48484a;margin-top:1px;">${s.trend} · ${s.signals.join(', ')} · ${s.dataPoints} orders</div>
+          </div>
+          <span style="font-size:9px;color:${s.confidence==='high'?'#4ade80':s.confidence==='medium'?'#fbbf24':'#636366'};">
+            ${s.confidence==='high'?'●●●':s.confidence==='medium'?'●●○':'●○○'}
+          </span>
+          <input type="number" inputmode="numeric"
+            id="sug-inp-${name.replace(/[^a-z0-9]/gi,'_')}"
+            value="${s.qty}"
+            style="width:48px;height:30px;text-align:center;border-radius:6px;border:1.5px solid #fbbf24;background:#111;color:#fbbf24;font-family:ui-monospace,monospace;font-size:13px;font-weight:700;outline:none;-webkit-appearance:none;">
+          <span style="font-size:10px;color:#636366;">${sn==='TRIMARK'?'cs':''}</span>
+        </div>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="document.getElementById('suggestion-banner').remove()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;">Dismiss</button>
+      <button onclick="applySuggestions('${sn}')" style="flex:2;height:36px;border-radius:10px;border:none;background:#fbbf24;color:#000;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">⚡ APPLY</button>
+    </div>
+  `;
+  banner._suggestions = suggestions;
+  banner._sn = sn;
+  banner._goodItems = goodItems;
+  document.body.appendChild(banner);
+  setTimeout(() => { if (banner.parentNode) banner.remove(); }, 20000);
+}
+
+function applySuggestions(sn) {
+  const banner = document.getElementById('suggestion-banner');
+  if (!banner) return;
+  const goodItems = banner._goodItems || [];
+  const sup = state.catalog[sn];
+  if (!sup) return;
+
+  // Read current values from the editable inputs in the banner
+  const finalQtys = {};
+  goodItems.forEach(([name]) => {
+    const inp = document.getElementById('sug-inp-' + name.replace(/[^a-z0-9]/gi, '_'));
+    if (inp) finalQtys[name] = parseInt(inp.value) || 0;
+  });
+
+  let applied = 0;
+  sup.items.forEach(item => {
+    const qty = finalQtys[item.name];
+    if (!qty || qty <= 0) return;
+    const ik = ikey(sn, item.id);
+    if ((state.orderQty[ik] ?? '') === '') {
+      state.orderQty[ik] = String(qty);
+      if (!state._autoFilled) state._autoFilled = {};
+      state._autoFilled[ik] = true;
+      applied++;
+    }
+  });
+
+  saveLiveOrder();
+  banner.remove();
+  render();
+  showToast(`⚡ ${applied} suggestion${applied !== 1 ? 's' : ''} applied`);
 }
 
 // ─── ELECTRICAL EMAIL ────────────────────────────────────────────────────────
@@ -3576,15 +4756,44 @@ function openPrint(rec) {
         ? `${item.orderQty} cs`
         : item.orderQty;
 
-      const begCell   = isTri ? `<td style="padding:7px 10px;font-size:12px;color:#7c3aed;border-bottom:1px solid #e5e7eb;text-align:center">${item.begin||'—'}</td>` : '';
-      const usedCell  = isTri ? `<td style="padding:7px 10px;font-size:12px;font-weight:700;color:#dc2626;border-bottom:1px solid #e5e7eb;text-align:center">${item.usage ? '-'+item.usage : '—'}</td>` : '';
-      const lossCell  = isTri ? `<td style="padding:7px 10px;font-size:12px;color:#dc2626;border-bottom:1px solid #e5e7eb;text-align:center">${item.brkgCost ? '$'+item.brkgCost : '—'}</td>` : '';
-      const noteSpan  = isTri ? 8 : 5;
+      const begCell  = isTri ? `<td style="padding:7px 10px;font-size:12px;color:#7c3aed;border-bottom:1px solid #e5e7eb;text-align:center">${item.begin||'—'}</td>` : '';
+      const usedCell = isTri ? `<td style="padding:7px 10px;font-size:12px;font-weight:700;color:#dc2626;border-bottom:1px solid #e5e7eb;text-align:center">${item.usage ? '-'+item.usage : '—'}</td>` : '';
+      const lossCell = isTri ? `<td style="padding:7px 10px;font-size:12px;color:#dc2626;border-bottom:1px solid #e5e7eb;text-align:center">${item.brkgCost ? '$'+item.brkgCost : '—'}</td>` : '';
+      // For ABCO/BEK: show cases used from learning history
+      const learnKey = sn + '|' + item.name;
+      const learnData = lsGet('bartletts-learning-v1') || {};
+      const learnEntry = learnData[learnKey];
+      let casesUsedCell = '';
+      if (!isTri && learnEntry && learnEntry.orders && learnEntry.orders.length >= 2) {
+        const recDate = new Date(rec.date);
+        const recMonth = recDate.getMonth(), recYear = recDate.getFullYear();
+        const lastMonthDate = new Date(recYear, recMonth - 1, 1);
+        const thisMonthOrders = learnEntry.orders.filter(o => {
+          const d = new Date(o.date); return d.getMonth() === recMonth && d.getFullYear() === recYear;
+        });
+        const lastMonthOrders = learnEntry.orders.filter(o => {
+          const d = new Date(o.date); return d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear();
+        });
+        const thisMoCs = thisMonthOrders.reduce((s, o) => s + (o.qty || 0), 0);
+        const lastMoCs = lastMonthOrders.reduce((s, o) => s + (o.qty || 0), 0);
+        const pct = lastMoCs > 0 ? Math.round(((thisMoCs - lastMoCs) / lastMoCs) * 100) : null;
+        const badge = pct !== null ? (Math.abs(pct) < 2
+          ? '<span style="font-size:9px;color:#9ca3af">flat</span>'
+          : `<span style="font-size:9px;font-weight:700;color:${pct>0?'#fbbf24':'#4ade80'}">${pct>0?'▲':'▼'} ${Math.abs(pct)}%</span>`)
+          : '';
+        casesUsedCell = `<td style="padding:7px 10px;font-size:12px;border-bottom:1px solid #e5e7eb;text-align:center">
+          <span style="font-weight:700">${thisMoCs > 0 ? thisMoCs+'cs' : '—'}</span>
+          ${lastMoCs > 0 ? `<div style="font-size:9px;color:#6b7280">prev: ${lastMoCs}cs ${badge}</div>` : ''}
+        </td>`;
+      } else if (!isTri) {
+        casesUsedCell = '<td style="padding:7px 10px;font-size:11px;color:#3a3a3c;border-bottom:1px solid #e5e7eb;text-align:center">—</td>';
+      }
+      const noteSpan = isTri ? 8 : 6;
 
       return `<tr style="background:${bg}">
         <td style="padding:7px 10px;font-size:13px;border-bottom:1px solid #e5e7eb">${item.name}</td>
         <td style="padding:7px 10px;font-size:11px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.pack}</td>
-        ${begCell}${usedCell}${lossCell}
+        ${begCell}${usedCell}${lossCell}${casesUsedCell}
         <td style="padding:7px 10px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.onHand||'—'}</td>
         <td style="padding:7px 10px;font-size:14px;font-weight:800;border-bottom:1px solid #e5e7eb;text-align:center;color:#111">${oqDisplay}</td>
         <td style="padding:7px 10px;font-size:11px;font-weight:700;color:${sc};border-bottom:1px solid #e5e7eb;text-align:center">${sl}</td>
@@ -3605,7 +4814,8 @@ function openPrint(rec) {
           ${isTri ? `
           <th style="padding:6px 10px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">BEGIN</th>
           <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">USED</th>
-          <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">LOSS $</th>` : ''}
+          <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">LOSS $</th>` : `
+          <th style="padding:6px 10px;font-size:10px;color:#2563eb;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">CASES USED<br><span style="font-size:8px;font-weight:400">vs prev mo</span></th>`}
           <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">ON HAND</th>
           <th style="padding:6px 10px;font-size:10px;color:#111;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">${isTri ? 'ORDER (cs)' : 'ORDER QTY'}</th>
           <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">STATUS</th>
@@ -3688,7 +4898,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.10</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.26</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">February 2026 · Bartlett&#39;s Order Management</div>
 
