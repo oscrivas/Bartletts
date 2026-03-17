@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.26                                           │
+  │  CURRENT VERSION: v1.28                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,22 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.28 — 2026-03-16
+  · BEGIN audit panel added to Inventory tab — tap 🔍 BEGIN AUDIT to expand
+  · Per-item grid shows: ITEM | BEGIN (editable) | ADD (editable) | START (auto)
+  · Each value shows its source label: "last count · Mar 1", "delivery · Mar 5", "edited · Mar 10"
+  · All values editable inline — changes sync to Firebase immediately
+  · Meta stored in trimarkBeginMeta + trimarkAddMeta — tracks value, source, date for every item
+  · Meta stamped automatically at: monthly save (last-count), delivery confirmation (delivery), manual edit (manual-edit)
+  · Summary footer shows how many items have BEGIN and ADD populated
+
+  v1.27 — 2026-03-16
+  · + ADD button in edit banner — tap ✎ Edit then green + ADD to add a new item to any supplier
+  · Add sheet shows Name, Pack, Par + extra fields: Unit Cost, Units per Case (Trimark), BEK Item # (BEK)
+  · New items get a unique ID (prefix-custom-timestamp) so they never collide with catalog items
+  · New items appear at bottom of list and sync to Firebase immediately via saveCatalog
+  · Edit mode sheet cleaned up — extra fields hidden when editing existing items
 
   v1.26 — 2026-03-16
   · Fixed delete button not working — event was bubbling to sheet overlay and clearing editingItem before deleteItem() ran
@@ -771,7 +787,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.26</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.28</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -793,9 +809,16 @@
       <div class="edit-banner" id="edit-banner" style="display:none;">
         <div>
           <div class="edit-banner-title">CATALOG EDIT MODE</div>
-          <div class="edit-banner-sub">Tap any item to edit name, pack size, or par</div>
+          <div class="edit-banner-sub">Tap any item to edit · Tap + to add new</div>
         </div>
-        <button class="btn-done-edit" onclick="toggleEditMode()">✓ Done Editing</button>
+        <div style="display:flex;gap:6px;">
+          <button onclick="startAddItem()" style="
+            height:34px;padding:0 14px;border-radius:17px;
+            border:1.5px solid #4ade80;background:rgba(74,222,128,0.1);color:#4ade80;
+            font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;
+            cursor:pointer;">+ ADD</button>
+          <button class="btn-done-edit" onclick="toggleEditMode()">✓ Done</button>
+        </div>
       </div>
       <div id="item-list"></div>
     </div>
@@ -906,11 +929,11 @@
   }
 </style>
 
-<!-- Edit Item Sheet -->
+<!-- Edit / Add Item Sheet -->
 <div class="sheet-overlay" id="edit-sheet" style="display:none;" onclick="cancelEdit()">
   <div class="sheet" onclick="event.stopPropagation()">
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Edit Item</div>
+    <div id="edit-sheet-title" class="sheet-title">Edit Item</div>
     <div id="edit-sheet-sup" style="color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;letter-spacing:1px;margin-bottom:18px;"></div>
     <div class="edit-field-wrap">
       <div class="edit-field-label">ITEM NAME</div>
@@ -920,13 +943,29 @@
       <div class="edit-field-label">PACK / CASE SIZE</div>
       <input class="edit-input" type="text" id="edit-pack" autocomplete="off">
     </div>
-    <div class="edit-field-wrap" style="margin-bottom:22px;">
+    <div class="edit-field-wrap">
       <div class="edit-field-label">PAR LEVEL</div>
       <input class="edit-input" type="number" inputmode="decimal" id="edit-par">
     </div>
-    <button class="btn-confirm" onclick="commitEdit()">✓  SAVE CHANGES</button>
+    <!-- Extra fields shown only in add mode -->
+    <div id="edit-extra-fields" style="display:none;">
+      <div class="edit-field-wrap">
+        <div class="edit-field-label">UNIT COST ($) <span style="color:#48484a;font-size:9px;">optional</span></div>
+        <input class="edit-input" type="number" inputmode="decimal" id="edit-cost" placeholder="0.00">
+      </div>
+      <div id="edit-caseqty-wrap" class="edit-field-wrap">
+        <div class="edit-field-label">UNITS PER CASE <span style="color:#48484a;font-size:9px;">Trimark only</span></div>
+        <input class="edit-input" type="number" inputmode="numeric" id="edit-caseqty" placeholder="1">
+      </div>
+      <div id="edit-itemnum-wrap" class="edit-field-wrap">
+        <div class="edit-field-label">BEK ITEM # <span style="color:#48484a;font-size:9px;">BEK only</span></div>
+        <input class="edit-input" type="number" inputmode="numeric" id="edit-itemnum" placeholder="e.g. 885622">
+      </div>
+    </div>
+    <div style="margin-bottom:22px;"></div>
+    <button class="btn-confirm" id="edit-submit-btn" onclick="commitEdit()">✓  SAVE CHANGES</button>
     <button class="btn-cancel" onclick="cancelEdit()">Cancel</button>
-    <button onclick="event.stopPropagation();deleteItem()" style="
+    <button id="edit-delete-btn" onclick="event.stopPropagation();deleteItem()" style="
       width:100%;height:44px;margin-top:8px;border-radius:14px;
       border:1.5px solid #3a3a3c;background:transparent;
       color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;
@@ -2184,9 +2223,15 @@ function renderTrimarkInventory(listEl, sup) {
     begInp.style.cssText = `width:56px;height:38px;text-align:center;border-radius:8px;border:2px solid ${hasBeg ? '#7c3aed' : '#2c2c2e'};background:#1c1c1e;color:${hasBeg ? '#a78bfa' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
     begInp.addEventListener('input', e => {
       const val = e.target.value;
-      if (val !== '') { state.trimarkBegin[item.id] = val; }
-      else { delete state.trimarkBegin[item.id]; }
+      if (val !== '') {
+        state.trimarkBegin[item.id] = val;
+        state.trimarkBeginMeta[item.id] = { value: parseFloat(val), source: 'manual-edit', date: new Date().toISOString() };
+      } else {
+        delete state.trimarkBegin[item.id];
+        delete state.trimarkBeginMeta[item.id];
+      }
       saveTrimarkBegin();
+      saveTrimarkMeta();
       begInp.style.borderColor = val !== '' ? '#7c3aed' : '#2c2c2e';
       begInp.style.color = val !== '' ? '#a78bfa' : '#636366';
       refreshTriRow(row, item, ik, listEl, sup);
@@ -2271,9 +2316,15 @@ function renderTrimarkInventory(listEl, sup) {
     };
     addInp.addEventListener('input', e => {
       const val = e.target.value;
-      if (val !== '') { state.trimarkAdd[item.id] = val; }
-      else { delete state.trimarkAdd[item.id]; }
+      if (val !== '') {
+        state.trimarkAdd[item.id] = val;
+        state.trimarkAddMeta[item.id] = { value: parseFloat(val), source: 'manual-edit', date: new Date().toISOString() };
+      } else {
+        delete state.trimarkAdd[item.id];
+        delete state.trimarkAddMeta[item.id];
+      }
       saveTrimarkAdd();
+      saveTrimarkMeta();
       addInp.style.borderColor = val !== '' ? '#4ade80' : '#2c2c2e';
       addInp.style.color = val !== '' ? '#4ade80' : '#636366';
       updateStart();
@@ -3245,33 +3296,104 @@ function toggleEditMode() {
 
 function startEdit(sn, item) {
   state.editingItem = {sn, id: item.id};
+  state._addingItem = false;
+  document.getElementById('edit-sheet-title').textContent = 'Edit Item';
   document.getElementById('edit-sheet-sup').textContent = sn;
+  document.getElementById('edit-submit-btn').textContent = '✓  SAVE CHANGES';
   document.getElementById('edit-name').value = item.name;
   document.getElementById('edit-pack').value = item.pack;
   document.getElementById('edit-par').value = item.par;
+  // Hide extra fields in edit mode (keep it simple)
+  document.getElementById('edit-extra-fields').style.display = 'none';
+  document.getElementById('edit-delete-btn').style.display = 'block';
   document.getElementById('edit-sheet').style.display = 'flex';
   setTimeout(() => document.getElementById('edit-name').focus(), 100);
 }
 
 function cancelEdit() {
   state.editingItem = null;
+  state._addingItem = false;
   document.getElementById('edit-sheet').style.display = 'none';
 }
 
+function startAddItem() {
+  const sn = state.activeSupp;
+  state._addingItem = true;
+  state.editingItem = null;
+
+  // Set sheet title and supplier label
+  document.getElementById('edit-sheet-title').textContent = 'Add New Item';
+  document.getElementById('edit-sheet-sup').textContent = sn + ' — new item';
+  document.getElementById('edit-submit-btn').textContent = '+ ADD ITEM';
+
+  // Clear all fields
+  document.getElementById('edit-name').value = '';
+  document.getElementById('edit-pack').value = '';
+  document.getElementById('edit-par').value = '';
+  document.getElementById('edit-cost').value = '';
+  document.getElementById('edit-caseqty').value = '';
+  document.getElementById('edit-itemnum').value = '';
+
+  // Show extra fields
+  document.getElementById('edit-extra-fields').style.display = 'block';
+
+  // Show/hide supplier-specific fields
+  document.getElementById('edit-caseqty-wrap').style.display = sn === 'TRIMARK' ? 'block' : 'none';
+  document.getElementById('edit-itemnum-wrap').style.display = sn === 'BEK' ? 'block' : 'none';
+
+  // Show delete button? No — it's a new item
+  document.getElementById('edit-delete-btn').style.display = 'none';
+
+  document.getElementById('edit-sheet').style.display = 'flex';
+  setTimeout(() => document.getElementById('edit-name').focus(), 100);
+}
+
 function commitEdit() {
-  if (!state.editingItem) return;
-  const {sn, id} = state.editingItem;
   const name = document.getElementById('edit-name').value.trim();
   const pack = document.getElementById('edit-pack').value.trim();
   const par  = parseFloat(document.getElementById('edit-par').value);
 
-  state.catalog[sn].items = state.catalog[sn].items.map(it =>
-    it.id === id ? {...it, name: name||it.name, pack: pack||it.pack, par: isNaN(par) ? it.par : par} : it
-  );
-  saveCatalog();
-  cancelEdit();
-  showToast('✓ Item updated');
-  render();
+  if (state._addingItem) {
+    // ── ADD MODE ──────────────────────────────────────────────────────────
+    const sn = state.activeSupp;
+    if (!name) { showToast('Item name is required', 'warn'); return; }
+
+    const cost     = parseFloat(document.getElementById('edit-cost').value) || 0;
+    const caseQty  = parseInt(document.getElementById('edit-caseqty').value) || 1;
+    const itemNum  = parseInt(document.getElementById('edit-itemnum').value) || null;
+
+    // Generate a unique ID — use prefix + timestamp suffix
+    const prefix = sn.toLowerCase().slice(0, 3);
+    const newId  = `${prefix}-custom-${Date.now()}`;
+
+    const newItem = {
+      id: newId,
+      name,
+      pack: pack || 'each',
+      par: isNaN(par) ? 0 : par,
+      unitCost: cost,
+      caseQty,
+      ...(itemNum ? {itemNum} : {}),
+    };
+
+    state.catalog[sn].items.push(newItem);
+    saveCatalog();
+    cancelEdit();
+    showToast(`✓ ${name} added to ${sn}`);
+    render();
+
+  } else {
+    // ── EDIT MODE ─────────────────────────────────────────────────────────
+    if (!state.editingItem) return;
+    const {sn, id} = state.editingItem;
+    state.catalog[sn].items = state.catalog[sn].items.map(it =>
+      it.id === id ? {...it, name: name||it.name, pack: pack||it.pack, par: isNaN(par) ? it.par : par} : it
+    );
+    saveCatalog();
+    cancelEdit();
+    showToast('✓ Item updated');
+    render();
+  }
 }
 
 function deleteItem() {
@@ -3963,6 +4085,14 @@ function applyTrimarkAdd(recId) {
     addLog[catItem.id] = addUnits;
   });
 
+  // Stamp meta for audit trail
+  Object.entries(addLog).forEach(([id, units]) => {
+    state.trimarkAddMeta[id] = { value: units, source: 'delivery', date: new Date().toISOString(), recId: recId };
+    const prevBeginMeta = state.trimarkBeginMeta[id] || {};
+    const lastCount = prevBeginMeta.value !== undefined ? prevBeginMeta.value : (parseFloat(state.trimarkBegin[id]) || 0) - units;
+    state.trimarkBeginMeta[id] = { ...prevBeginMeta, lastCount, addedUnits: units, total: parseFloat(state.trimarkBegin[id]) || 0, computed: true, date: new Date().toISOString() };
+  });
+
   // Save add amounts to the record for reporting
   if (rec) {
     rec.trimarkAdd = addLog;
@@ -3972,6 +4102,7 @@ function applyTrimarkAdd(recId) {
 
   saveTrimarkBegin();
   saveTrimarkAdd();
+  saveTrimarkMeta();
 
   overlay.remove();
   showToast('✅ Inventory updated with delivery additions');
@@ -4454,6 +4585,141 @@ function openElectricalEmail() {
 
 
 // ─── INVENTORY TAB ────────────────────────────────────────────────────────
+function buildAuditPanel(container, sup) {
+  if (!sup) return;
+
+  // Column header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:grid;grid-template-columns:1fr 56px 56px 56px;gap:6px;padding:6px 10px;background:#0a0a0a;border-radius:10px 10px 0 0;border:1px solid #1c1c1e;border-bottom:none;';
+  hdr.innerHTML = `
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#48484a;letter-spacing:1px;">ITEM</span>
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#7c3aed;letter-spacing:1px;text-align:center;">BEGIN</span>
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#4ade80;letter-spacing:1px;text-align:center;">ADD</span>
+    <span style="font-family:ui-monospace,monospace;font-size:9px;color:#60a5fa;letter-spacing:1px;text-align:center;">START</span>`;
+  container.appendChild(hdr);
+
+  const itemsWrap = document.createElement('div');
+  itemsWrap.style.cssText = 'border:1px solid #1c1c1e;border-radius:0 0 10px 10px;overflow:hidden;';
+
+  function sourceLabel(meta, type) {
+    if (!meta) return '<span style="color:#3a3a3c;font-size:8px;">no data</span>';
+    const date = meta.date ? new Date(meta.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+    const sourceMap = {
+      'last-count': { label:'last count', color:'#a78bfa' },
+      'delivery':   { label:'delivery',   color:'#4ade80' },
+      'manual-edit':{ label:'edited',     color:'#fbbf24' },
+    };
+    const s = sourceMap[meta.source] || { label: meta.source || '?', color: '#636366' };
+    return `<span style="font-size:8px;color:${s.color};">${s.label}${date ? ' · '+date : ''}</span>`;
+  }
+
+  sup.items.forEach((item, idx) => {
+    const bMeta = state.trimarkBeginMeta[item.id];
+    const aMeta = state.trimarkAddMeta[item.id];
+    const begRaw = state.trimarkBegin[item.id] ?? '';
+    const addRaw = state.trimarkAdd[item.id] ?? '';
+    const begVal = parseFloat(begRaw);
+    const addVal = parseFloat(addRaw);
+    const startVal = (!isNaN(begVal) && !isNaN(addVal)) ? begVal + addVal
+                   : (!isNaN(begVal) ? begVal : null);
+
+    const bg = idx % 2 === 0 ? '#0a0a0a' : '#111';
+
+    const row = document.createElement('div');
+    row.style.cssText = `display:grid;grid-template-columns:1fr 56px 56px 56px;gap:6px;padding:8px 10px;background:${bg};border-bottom:1px solid #1c1c1e;align-items:start;`;
+
+    // Name + source labels
+    const nameCell = document.createElement('div');
+    nameCell.innerHTML = `
+      <div style="font-size:12px;color:#e5e5e7;line-height:1.3;">${item.name}</div>
+      <div style="margin-top:3px;display:flex;flex-direction:column;gap:1px;">
+        ${bMeta ? `<div>BEGIN: ${sourceLabel(bMeta, 'begin')}</div>` : ''}
+        ${aMeta ? `<div>ADD: ${sourceLabel(aMeta, 'add')}</div>` : ''}
+        ${(!bMeta && !aMeta) ? '<span style="font-size:8px;color:#3a3a3c;">no history yet</span>' : ''}
+      </div>`;
+
+    // BEGIN editable
+    const begCell = document.createElement('div');
+    begCell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;';
+    const begInp = document.createElement('input');
+    begInp.type='number'; begInp.inputMode='decimal';
+    begInp.value = begRaw;
+    begInp.placeholder = '—';
+    begInp.style.cssText = `width:50px;height:34px;text-align:center;border-radius:7px;border:1.5px solid ${begRaw !== '' ? '#7c3aed' : '#2c2c2e'};background:#1c1c1e;color:${begRaw !== '' ? '#a78bfa' : '#636366'};font-family:ui-monospace,monospace;font-size:14px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;`;
+    begInp.addEventListener('change', e => {
+      const val = e.target.value;
+      if (val !== '') {
+        state.trimarkBegin[item.id] = val;
+        state.trimarkBeginMeta[item.id] = { value: parseFloat(val), source: 'manual-edit', date: new Date().toISOString() };
+      } else {
+        delete state.trimarkBegin[item.id];
+        delete state.trimarkBeginMeta[item.id];
+      }
+      saveTrimarkBegin(); saveTrimarkMeta();
+      // Refresh start display
+      const sv = (!isNaN(parseFloat(val)) && !isNaN(parseFloat(addRaw))) ? parseFloat(val) + parseFloat(addRaw) : parseFloat(val) || null;
+      startDisp.textContent = sv !== null ? sv : '—';
+      begInp.style.borderColor = val !== '' ? '#7c3aed' : '#2c2c2e';
+      begInp.style.color = val !== '' ? '#a78bfa' : '#636366';
+    });
+    begCell.appendChild(begInp);
+
+    // ADD editable
+    const addCell = document.createElement('div');
+    addCell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;';
+    const addInp = document.createElement('input');
+    addInp.type='number'; addInp.inputMode='decimal';
+    addInp.value = addRaw;
+    addInp.placeholder = '—';
+    addInp.style.cssText = `width:50px;height:34px;text-align:center;border-radius:7px;border:1.5px solid ${addRaw !== '' ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addRaw !== '' ? '#4ade80' : '#636366'};font-family:ui-monospace,monospace;font-size:14px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;`;
+    addInp.addEventListener('change', e => {
+      const val = e.target.value;
+      if (val !== '') {
+        state.trimarkAdd[item.id] = val;
+        state.trimarkAddMeta[item.id] = { value: parseFloat(val), source: 'manual-edit', date: new Date().toISOString() };
+      } else {
+        delete state.trimarkAdd[item.id];
+        delete state.trimarkAddMeta[item.id];
+      }
+      saveTrimarkAdd(); saveTrimarkMeta();
+      const bv = parseFloat(state.trimarkBegin[item.id]);
+      const av = parseFloat(val);
+      const sv = (!isNaN(bv) && !isNaN(av)) ? bv + av : !isNaN(bv) ? bv : null;
+      startDisp.textContent = sv !== null ? sv : '—';
+      addInp.style.borderColor = val !== '' ? '#4ade80' : '#2c2c2e';
+      addInp.style.color = val !== '' ? '#4ade80' : '#636366';
+    });
+    addCell.appendChild(addInp);
+
+    // START display (read-only, auto-computed)
+    const startCell = document.createElement('div');
+    startCell.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+    const startDisp = document.createElement('div');
+    startDisp.style.cssText = `font-family:ui-monospace,monospace;font-size:16px;font-weight:800;color:${startVal !== null ? '#60a5fa' : '#3a3a3c'};text-align:center;`;
+    startDisp.textContent = startVal !== null ? startVal : '—';
+    startCell.appendChild(startDisp);
+
+    row.appendChild(nameCell);
+    row.appendChild(begCell);
+    row.appendChild(addCell);
+    row.appendChild(startCell);
+    itemsWrap.appendChild(row);
+  });
+
+  // Summary footer
+  const footer = document.createElement('div');
+  footer.style.cssText = 'padding:8px 12px;background:#0a0a0a;border-top:1px solid #1c1c1e;border-radius:0 0 10px 10px;';
+  const itemsWithBegin = sup.items.filter(i => state.trimarkBegin[i.id] !== undefined).length;
+  const itemsWithAdd = sup.items.filter(i => state.trimarkAdd[i.id] !== undefined).length;
+  footer.innerHTML = `
+    <div style="font-family:ui-monospace,monospace;font-size:9px;color:#48484a;letter-spacing:0.5px;">
+      ${itemsWithBegin} items have BEGIN · ${itemsWithAdd} items have ADD delivery
+      <span style="margin-left:8px;color:#fbbf24;">✎ edits sync to all devices instantly</span>
+    </div>`;
+  itemsWrap.appendChild(footer);
+  container.appendChild(itemsWrap);
+}
+
 function renderInventoryTab() {
   document.getElementById('view-order').style.display = 'none';
   document.getElementById('view-history').style.display = 'none';
@@ -4503,6 +4769,37 @@ function renderInventoryTab() {
       <button onclick="switchTab('order');state.activeSupp='TRIMARK';state.trimarkView='inventory';render();" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#a3a3a3;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">✏️ EDIT COUNTS</button>
     </div>`;
   listEl.appendChild(liveCard);
+
+  // ── BEGIN AUDIT PANEL ────────────────────────────────────────────────────
+  const auditSection = document.createElement('div');
+  auditSection.style.cssText = 'margin:12px 16px 4px;';
+
+  const auditHdr = document.createElement('div');
+  auditHdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:pointer;';
+  const auditExpanded = { open: false };
+  auditHdr.innerHTML = `
+    <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;color:#60a5fa;letter-spacing:1.5px;">
+      🔍 BEGIN AUDIT — verify app reasoning
+    </div>
+    <span id="audit-chevron" style="color:#60a5fa;font-size:14px;transition:transform 0.2s;">▼</span>`;
+
+  const auditBody = document.createElement('div');
+  auditBody.id = 'audit-body';
+  auditBody.style.cssText = 'display:none;';
+
+  auditHdr.onclick = () => {
+    auditExpanded.open = !auditExpanded.open;
+    auditBody.style.display = auditExpanded.open ? 'block' : 'none';
+    document.getElementById('audit-chevron').style.transform = auditExpanded.open ? 'rotate(180deg)' : '';
+    if (auditExpanded.open && !auditBody._built) {
+      buildAuditPanel(auditBody, sup);
+      auditBody._built = true;
+    }
+  };
+
+  auditSection.appendChild(auditHdr);
+  auditSection.appendChild(auditBody);
+  listEl.appendChild(auditSection);
 
   // ── PAST RECORDS — grouped by month ──────────────────────────────────────
   const invRecords = state.history.filter(r => {
@@ -4898,7 +5195,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.26</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.28</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">February 2026 · Bartlett&#39;s Order Management</div>
 
