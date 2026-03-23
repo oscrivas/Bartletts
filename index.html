@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.37                                           │
+  │  CURRENT VERSION: v1.38                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,11 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.38 — 2026-03-23
+  · Fixed root cause of sync issues — Firebase config was incomplete (only had databaseURL)
+  · Added full Firebase config: apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId
+  · Without apiKey, signInAnonymously() had no project to authenticate against — causing persistent yellow triangle
 
   v1.37 — 2026-03-23
   · Added no-cache HTTP headers to force browser to always load fresh version
@@ -859,7 +864,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.37</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.38</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1350,7 +1355,13 @@ function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 
 // ─── FIREBASE SYNC ────────────────────────────────────────────────────────
 const FB_CONFIG = {
-  databaseURL: "https://bartletts-rest-op-default-rtdb.firebaseio.com"
+  apiKey: "AIzaSyDuL9lMcDJ1ydsH5Jn5B3socsNUScrby9c",
+  authDomain: "bartletts-rest-op.firebaseapp.com",
+  databaseURL: "https://bartletts-rest-op-default-rtdb.firebaseio.com",
+  projectId: "bartletts-rest-op",
+  storageBucket: "bartletts-rest-op.firebasestorage.app",
+  messagingSenderId: "347944384568",
+  appId: "1:347944384568:web:dc4417a68cc15d246d0ecd"
 };
 let fbDb = null;
 let fbSyncStatus = 'offline'; // 'offline' | 'syncing' | 'synced' | 'error'
@@ -5512,7 +5523,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.37</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.38</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.33</div>
 
