@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.35                                           │
+  │  CURRENT VERSION: v1.36                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,12 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.36 — 2026-03-23
+  · Fixed Firebase sync yellow triangle — root cause was listeners starting before auth resolved
+  · All Firebase listeners now moved into startFirebaseListeners() called inside signInAnonymously().then()
+  · This guarantees auth != null is satisfied before any read/write hits the database
+  · Refactored: initFirebase() handles auth, startFirebaseListeners() handles all db.ref() subscriptions
 
   v1.35 — 2026-03-23
   · Firebase security: anonymous authentication added
@@ -845,7 +851,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.35</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.36</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1354,17 +1360,25 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
     fbDb = firebase.database();
 
-    // ── ANONYMOUS AUTH — required for secure Firebase rules ────────
-    // Signs in anonymously so rules can check auth != null
-    // This does NOT expose any user data — it just proves the request
-    // comes from our app, not a random person on the internet
+    // ── ANONYMOUS AUTH — all listeners start AFTER auth resolves ──
+    // This ensures every Firebase read/write has auth != null
     firebase.auth().signInAnonymously().then(() => {
-      console.log('Firebase: anonymous auth OK');
+      console.log('Firebase: anonymous auth OK — starting listeners');
+      startFirebaseListeners();
     }).catch(e => {
       console.warn('Firebase auth error:', e);
-      // If auth fails, still try to connect — rules may be open during migration
+      fbSyncStatus = 'error';
+      updateSyncBadge();
     });
+  } catch(e) {
+    console.warn('Firebase init failed:', e);
+    fbSyncStatus = 'error';
+    updateSyncBadge();
+  }
+}
 
+function startFirebaseListeners() {
+  try {
     // ── ORDER HISTORY ──────────────────────────────────────────────
     fbDb.ref('history').on('value', snap => {
       const data = snap.val();
@@ -1495,7 +1509,7 @@ function initFirebase() {
     fbSyncStatus = 'syncing';
     updateSyncBadge();
   } catch(e) {
-    console.warn('Firebase init failed:', e);
+    console.warn('Firebase listeners error:', e);
     fbSyncStatus = 'error';
     updateSyncBadge();
   }
@@ -5490,7 +5504,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.35</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.36</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.33</div>
 
