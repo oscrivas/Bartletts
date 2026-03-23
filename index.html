@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.36                                           │
+  │  CURRENT VERSION: v1.37                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,11 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.37 — 2026-03-23
+  · Added no-cache HTTP headers to force browser to always load fresh version
+  · Prevents PWA from serving stale cached code after GitHub deploys
+  · Headers: Cache-Control: no-cache no-store must-revalidate, Pragma: no-cache, Expires: 0
 
   v1.36 — 2026-03-23
   · Fixed Firebase sync yellow triangle — root cause was listeners starting before auth resolved
@@ -350,6 +355,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 
   <!-- PWA / iOS home screen meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -851,7 +859,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.36</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.37</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -5504,7 +5512,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.36</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.37</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.33</div>
 
