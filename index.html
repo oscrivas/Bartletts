@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.38                                           │
+  │  CURRENT VERSION: v1.40                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,16 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.40 — bugfix
+  · Fixed suggestion banner not showing after Firebase fix
+  · Lowered minimum order history from 2 to 1 for suggestions to appear
+  · Suggestions now also trigger on initial app load (not just on tab switch)
+  · Tab switch resets the suggestion flag so banner can show on each new tab
+
+  v1.39 — bugfix
+  · Fixed What's New sheet getting stuck/closing when tapping content — added stopPropagation to inner sheet
+  · Fixed version mismatch in What's New subtitle (showed v1.33, now shows v1.38)
 
   v1.38 — 2026-03-23
   · Fixed root cause of sync issues — Firebase config was incomplete (only had databaseURL)
@@ -864,7 +874,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.38</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.40</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1821,6 +1831,7 @@ function renderOrderView() {
     btn.onclick = () => {
       state.activeSupp = sn;
       state.trimarkView = 'order'; // always start on order view when switching suppliers
+      state._suggestionsShownOnLoad = false; // reset so suggestions can show on new tab
       render();
       document.getElementById('item-list').scrollTop = 0;
       // Show suggestions if order is empty (nothing entered yet)
@@ -1876,6 +1887,15 @@ function renderOrderView() {
 
   // Edit banner
   document.getElementById('edit-banner').style.display = state.editMode ? 'flex' : 'none';
+
+  // Show suggestions on initial render if order is empty
+  if (!state._suggestionsShownOnLoad) {
+    state._suggestionsShownOnLoad = true;
+    const sn = state.activeSupp;
+    const hasAnyInput = Object.keys(state.onHand).some(k => k.startsWith(sn+'|') && state.onHand[k] !== '')
+      || Object.keys(state.orderQty).some(k => k.startsWith(sn+'|') && state.orderQty[k] !== '');
+    if (!hasAnyInput) setTimeout(() => showOrderSuggestions(sn), 1200);
+  }
 
   // Items
   const listEl = document.getElementById('item-list');
@@ -4669,7 +4689,7 @@ function getOrderSuggestions(sn) {
   Object.entries(data).forEach(([k, item]) => {
     if (item.supplier !== sn) return;
     const orders = item.orders || [];
-    if (orders.length < 2) return;
+    if (orders.length < 1) return;
 
     // ── Signal 1: Exponential recency-weighted average ─────────────────
     const expAvg = _expWeightedAvg(orders);
@@ -5518,14 +5538,14 @@ function showWhatsNew() {
   ];
 
   overlay.innerHTML = `
-    <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 20px calc(24px + env(safe-area-inset-bottom));">
+    <div onclick="event.stopPropagation()" style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 20px calc(24px + env(safe-area-inset-bottom));">
       <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 16px;"></div>
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.38</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.40</div>
       </div>
-      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.33</div>
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.38</div>
 
       ${updates.map(u => `
         <div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:12px;">
