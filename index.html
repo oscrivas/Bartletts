@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.40                                           │
+  │  CURRENT VERSION: v1.41                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,17 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.41 — EMERGENCY PATCH
+  · Split single report into two separate reports:
+    - 📋 INVENTORY REPORT (Inventory tab) — shows ALL items counted with final count, INV VALUE, loss $, gain $, net variance
+    - 📦 ORDER REPORT (History tab) — shows only items needing order for James, plus items at or above par
+  · Inventory report: every item appears regardless of loss/gain/count status — PENDING shown for uncounted items
+  · Inventory report: INV VALUE column = final count × unit cost per item, total at bottom
+  · Order report: clean order list + confirmation that other items are at par — exactly what James needs
+  · Shared buildTrimarkItemData() helper — both reports use same data source, no duplication
+  · History detail button changed to 📦 ORDER REPORT (amber)
+  · Inventory tab buttons labeled 📋 INVENTORY REPORT
 
   v1.40 — bugfix
   · Fixed suggestion banner not showing after Firebase fix
@@ -874,7 +885,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.40</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.41</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -2607,7 +2618,8 @@ function clearTrimarkInventory() {
   renderOrderView();
 }
 
-function openTrimarkInventoryReport(e, recId) {
+// ── SHARED: build item data for both reports ──────────────────────────────
+function buildTrimarkItemData(recId) {
   const isHistory = !!recId;
   const rec = isHistory ? state.history.find(r => r.id === recId) : null;
   const BOSS_REPORT_EXCLUDE = ['tri-44'];
@@ -2618,14 +2630,7 @@ function openTrimarkInventoryReport(e, recId) {
       return liveItem ? { ...defItem, ...liveItem } : defItem;
     })
   };
-  if (!sup) return;
 
-  const now = isHistory ? new Date(rec.date) : new Date();
-  const dateStr = now.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-  const timeStr = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
-  const monthStr = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
-
-  // ── Build item data ─────────────────────────────────────────────────────
   const itemData = sup.items.map(item => {
     if (isHistory) {
       const saved = (rec.suppliers?.['TRIMARK'] || []).find(i => i.name === item.name) || {};
@@ -2633,21 +2638,24 @@ function openTrimarkInventoryReport(e, recId) {
       const histBeg = saved.begin ?? '';
       const histStart = (histBeg !== '' && savedAdd !== null)
         ? String(parseFloat(histBeg) + parseFloat(savedAdd)) : histBeg;
+      const usageN = saved.usage !== undefined ? parseFloat(saved.usage) : null;
+      const gainCost = usageN !== null && usageN < 0 ? Math.abs(usageN) * (item.unitCost || 0) : null;
       return {
         name: item.name, par: item.par, unitCost: item.unitCost,
         caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
         beg: histBeg, add: savedAdd !== null ? String(savedAdd) : '',
         start: histStart, end: saved.onHand ?? '',
         usage: saved.usage ?? null, brkgCost: saved.brkgCost ?? null,
-        orderQty: saved.orderQty ?? '',
+        gainCost, orderQty: saved.orderQty ?? '',
       };
     } else {
       const ik = ikey('TRIMARK', item.id);
       const beg = state.trimarkBegin[item.id] ?? '';
       const addRaw = state.trimarkAdd[item.id] ?? '';
       const end = state.onHand[ik] ?? '';
-      const begV = parseFloat(beg), endV = parseFloat(end), addV = addRaw !== '' ? parseFloat(addRaw) : null;
-      const startV = begV && addV !== null ? begV + addV : begV;
+      const begV = parseFloat(beg), endV = parseFloat(end);
+      const addV = addRaw !== '' ? parseFloat(addRaw) : null;
+      const startV = !isNaN(begV) && addV !== null ? begV + addV : !isNaN(begV) ? begV : null;
       const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? begV - endV : null;
       const brkgCost = usage !== null && usage > 0 ? (usage * (item.unitCost || 0)) : null;
       const gainCost = usage !== null && usage < 0 ? (Math.abs(usage) * (item.unitCost || 0)) : null;
@@ -2658,74 +2666,45 @@ function openTrimarkInventoryReport(e, recId) {
       return {
         name: item.name, par: item.par, unitCost: item.unitCost,
         caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
-        beg, add: addRaw, start: !isNaN(startV) ? String(startV) : beg,
+        beg, add: addRaw, start: startV !== null ? String(startV) : beg,
         end, usage, brkgCost, gainCost, orderQty,
       };
     }
   });
 
-  // ── Compute gainCost for history records too ───────────────────────────
+  // Compute gainCost for history records
   itemData.forEach(item => {
     if (item.gainCost === undefined) {
-      const usageN = item.usage !== null ? parseFloat(item.usage) : null;
-      item.gainCost = usageN !== null && usageN < 0 ? Math.abs(usageN) * (item.unitCost || 0) : null;
+      const u = item.usage !== null ? parseFloat(item.usage) : null;
+      item.gainCost = u !== null && u < 0 ? Math.abs(u) * (item.unitCost || 0) : null;
     }
   });
 
-  // ── Trend rows ─────────────────────────────────────────────────────────
-  const reportDate = now.toISOString();
-  const trendRows = itemData.map((item, idx) => {
-    if (item.inventoryOnly) return '';
-    const td = getTrendData(item.name, 'TRIMARK', reportDate);
-    if (!td) return '';
-    const hasLastMonth = !!td.lastMonth, hasLastYear = !!td.lastYear;
-    if (!hasLastMonth && !hasLastYear) return '';
-    const curUsage = item.usage !== null ? parseFloat(item.usage) : null;
-    const curBrkgCost = item.brkgCost !== null ? parseFloat(item.brkgCost) : null;
-    const curOrder = typeof item.orderQty === 'number' ? item.orderQty : parseInt(item.orderQty) || 0;
-    const lmUsage = hasLastMonth && td.lastMonth.usage != null ? td.lastMonth.usage : null;
-    const lmOrder = hasLastMonth ? td.lastMonth.qty : null;
-    const lmLoss  = hasLastMonth && td.lastMonth.brkgCost != null ? td.lastMonth.brkgCost : null;
-    const lyUsage = hasLastYear && td.lastYear.usage != null ? td.lastYear.usage : null;
-    const lyOrder = hasLastYear ? td.lastYear.qty : null;
-    const hasUsageTrend = curUsage !== null && (lmUsage !== null || lyUsage !== null);
-    const hasOrderTrend = curOrder > 0 && (lmOrder !== null || lyOrder !== null);
-    if (!hasUsageTrend && !hasOrderTrend) return '';
-    function pctBadge(cur, prior, higherIsBad) {
-      if (cur == null || prior == null || prior === 0) return '<span style="color:#6b7280;font-size:9px;">—</span>';
-      const pct = Math.round(((cur - prior) / prior) * 100);
-      if (Math.abs(pct) < 2) return '<span style="color:#9ca3af;font-size:9px;">&#8594; flat</span>';
-      const up = pct > 0, bad = up === higherIsBad;
-      return '<span style="font-size:9px;font-weight:700;color:'+(bad?'#dc2626':'#16a34a')+';">'+(up?'&#9650;':'&#9660;')+' '+Math.abs(pct)+'%</span>';
-    }
-    const bg = idx % 2 === 0 ? '#f9fafb' : '#fff';
-    return '<tr style="background:'+bg+'">'
-      +'<td style="padding:5px 8px;font-size:12px;border-bottom:1px solid #e5e7eb">'+item.name+'</td>'
-      +'<td style="padding:5px 8px;font-size:11px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(curUsage!==null?'<span style="font-size:12px;font-weight:700;">'+curUsage+'</span>':'—')+'</td>'
-      +'<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(lmUsage!==null?'<span style="font-size:11px;color:#6b7280;">'+lmUsage+'</span> ':'<span style="color:#9ca3af;font-size:9px;">—</span> ')+pctBadge(curUsage,lmUsage,true)+'</td>'
-      +'<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(lyUsage!==null?'<span style="font-size:11px;color:#6b7280;">'+lyUsage+'</span> ':'<span style="color:#9ca3af;font-size:9px;">no data</span> ')+(lyUsage!==null?pctBadge(curUsage,lyUsage,true):'')+'</td>'
-      +'<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(curBrkgCost!==null&&curBrkgCost>0?'<span style="font-size:12px;font-weight:700;color:#dc2626;">$'+curBrkgCost.toFixed(2)+'</span>':'—')+'</td>'
-      +'<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(lmLoss!==null?'<span style="font-size:11px;color:#6b7280;">$'+lmLoss.toFixed(2)+'</span> ':'<span style="color:#9ca3af;font-size:9px;">—</span>')+pctBadge(curBrkgCost,lmLoss,true)+'</td>'
-      +'<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(curOrder>0?'<span style="font-size:12px;font-weight:700;color:#d97706;">'+curOrder+'cs</span>':'—')+'</td>'
-      +'<td style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">'+(lmOrder!==null?'<span style="font-size:11px;color:#6b7280;">'+lmOrder+'cs</span> ':'<span style="color:#9ca3af;font-size:9px;">—</span> ')+pctBadge(curOrder,lmOrder,false)+(lyOrder!==null?' <span style="font-size:8px;color:#9ca3af;">vs LY: '+lyOrder+'cs</span>':'')+'</td>'
-      +'</tr>';
-  }).filter(Boolean).join('');
+  return { itemData, sup, rec, isHistory };
+}
 
-  // ── Summaries ───────────────────────────────────────────────────────────
-  let totalLoss = 0, totalGain = 0, totalInvValue = 0;
-  let itemsWithCount = 0, itemsNeedOrder = 0, itemsWithLoss = 0, itemsWithGain = 0;
+// ── REPORT 1: INVENTORY COUNT REPORT (Inventory tab only) ─────────────────
+function openTrimarkInventoryReport(e, recId) {
+  const { itemData, rec, isHistory } = buildTrimarkItemData(recId);
+
+  const now = isHistory ? new Date(rec.date) : new Date();
+  const dateStr = now.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const timeStr = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+  const monthStr = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+
+  // ── Compute totals ────────────────────────────────────────────────────────
+  let totalLoss = 0, totalGain = 0, totalInvValue = 0, itemsWithCount = 0;
   let totalUsedPcs = 0, totalFoundPcs = 0;
 
   itemData.forEach(item => {
-    const hasEnd = item.end !== '';
     const endV = parseFloat(item.end);
+    const hasEnd = item.end !== '';
     if (hasEnd) itemsWithCount++;
     const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) :
       (item.usage !== null && parseFloat(item.usage) > 0 ? parseFloat(item.usage) * (item.unitCost || 0) : null);
-    const gainN = item.gainCost !== null && item.gainCost !== undefined ? parseFloat(item.gainCost) : null;
-    if (lossN && lossN > 0) { totalLoss += lossN; itemsWithLoss++; }
-    if (gainN && gainN > 0) { totalGain += gainN; itemsWithGain++; }
-    if (!item.inventoryOnly && item.orderQty && item.orderQty !== '0' && item.orderQty !== '') itemsNeedOrder++;
+    const gainN = item.gainCost && parseFloat(item.gainCost) > 0 ? parseFloat(item.gainCost) : null;
+    if (lossN && lossN > 0) totalLoss += lossN;
+    if (gainN && gainN > 0) totalGain += gainN;
     if (hasEnd && !isNaN(endV) && item.unitCost) totalInvValue += endV * item.unitCost;
     if (item.usage !== null) {
       const u = parseFloat(item.usage);
@@ -2735,13 +2714,13 @@ function openTrimarkInventoryReport(e, recId) {
   });
   const netVariance = totalGain - totalLoss;
 
-  // ── Gain items ──────────────────────────────────────────────────────────
+  // ── Gain items ────────────────────────────────────────────────────────────
   const gainItems = itemData.filter(item => item.gainCost && parseFloat(item.gainCost) > 0);
 
-  // ── Loss items ──────────────────────────────────────────────────────────
+  // ── Loss items ────────────────────────────────────────────────────────────
   const breakageItems = itemData.filter(item => {
     const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) :
-      (item.usage !== null && parseFloat(item.usage) > 0 ? parseFloat(item.usage) * (item.unitCost||0) : null);
+      (item.usage !== null && parseFloat(item.usage) > 0 ? parseFloat(item.usage) * (item.unitCost || 0) : null);
     return lossN && lossN > 0;
   }).sort((a,b) => {
     const la = a.brkgCost !== null ? parseFloat(a.brkgCost) : parseFloat(a.usage||0)*(a.unitCost||0);
@@ -2749,84 +2728,74 @@ function openTrimarkInventoryReport(e, recId) {
     return lb - la;
   });
 
-  const orderItems = itemData.filter(i => !i.inventoryOnly && i.orderQty && i.orderQty !== '0' && i.orderQty !== '');
-
-  // ── Main table rows ─────────────────────────────────────────────────────
+  // ── Main inventory rows — ALL items ──────────────────────────────────────
   const mainRows = itemData.map((item, idx) => {
     const endV = parseFloat(item.end);
     const usageN = item.usage !== null ? parseFloat(item.usage) : null;
     const lossN = item.brkgCost !== null ? parseFloat(item.brkgCost) :
-      (usageN !== null && usageN > 0 ? usageN * (item.unitCost||0) : null);
+      (usageN !== null && usageN > 0 ? usageN * (item.unitCost || 0) : null);
     const gainN = item.gainCost && parseFloat(item.gainCost) > 0 ? parseFloat(item.gainCost) : null;
     const parVal = parseFloat(item.par) || 0;
     const hasEnd = item.end !== '';
     const isLow = hasEnd && !isNaN(endV) && endV < parVal;
-    const isCrit = hasEnd && !isNaN(endV) && endV <= 0;
     const hasLoss = lossN && lossN > 0;
     const hasGain = gainN && gainN > 0;
-    const _cq = item.caseQty || 1;
-    const orderDisplay = item.inventoryOnly ? '—'
-      : (item.orderQty !== null && item.orderQty !== '' && item.orderQty !== '0')
-        ? (isHistory ? item.orderQty+(_cq>1?' cs':'') : (item.orderQty>0?'+'+item.orderQty+(_cq>1?'cs':''):'✓'))
-        : (hasEnd ? '✓' : '—');
-    const statusColor = isCrit?'#dc2626':isLow?'#d97706':hasEnd?'#16a34a':'#9ca3af';
-    const statusLabel = isCrit?'⚠ CRIT':isLow?'↓ LOW':hasEnd?'✓':'—';
-    const usageColor = usageN!==null?(usageN>0?'#dc2626':usageN<0?'#16a34a':'#374151'):'#9ca3af';
-    const usageDisplay = usageN!==null?(usageN>0?'-'+usageN:usageN<0?'+'+Math.abs(usageN):'0'):'—';
+    const invValue = hasEnd && !isNaN(endV) && item.unitCost ? endV * item.unitCost : null;
     const addDisplay = item.add ? '+'+item.add : '—';
     const startDisplay = item.start || item.beg || '—';
-    // Row background: red for loss, green for gain, alternating for clean
-    const bg = hasLoss ? '#fff8f8' : hasGain ? '#f0fdf4' : idx%2===0 ? '#f9fafb' : '#fff';
-    const borderLeft = hasLoss ? ';border-left:3px solid #fca5a5' : hasGain ? ';border-left:3px solid #86efac' : '';
-    // Loss $: show $0.00 for counted items with no loss (confirms verified), — for uncounted
+    const usageColor = usageN !== null ? (usageN > 0 ? '#dc2626' : usageN < 0 ? '#16a34a' : '#374151') : '#9ca3af';
+    const usageDisplay = usageN !== null ? (usageN > 0 ? '-'+usageN : usageN < 0 ? '+'+Math.abs(usageN) : '0') : '—';
     const lossDisplay = hasLoss ? '$'+lossN.toFixed(2) : (hasEnd && !item.inventoryOnly ? '$0.00' : '—');
     const lossColor = hasLoss ? '#dc2626' : '#9ca3af';
-    const gainDisplay = hasGain ? '+$'+gainN.toFixed(2) : '—';
-
+    const statusColor = !hasEnd ? '#9ca3af' : isLow ? '#d97706' : '#16a34a';
+    const statusLabel = !hasEnd ? 'PENDING' : isLow ? '↓ LOW' : '✓ OK';
+    const statusBg = !hasEnd ? '#f3f4f6' : isLow ? '#fffbeb' : '#f0fdf4';
+    const bg = hasLoss ? '#fff8f8' : hasGain ? '#f0fdf4' : !hasEnd ? '#fafafa' : idx%2===0 ? '#f9fafb' : '#fff';
+    const borderLeft = hasLoss ? ';border-left:3px solid #fca5a5' : hasGain ? ';border-left:3px solid #86efac' : '';
     return `<tr style="background:${bg}${borderLeft}">
-      <td style="padding:6px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;${item.inventoryOnly?'color:#6b7280;font-style:italic':''}">${item.name}${item.inventoryOnly?'<span style="font-size:9px;margin-left:4px">(count only)</span>':''}</td>
+      <td style="padding:6px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;${item.inventoryOnly?'color:#6b7280;font-style:italic':''}${!hasEnd?'opacity:0.65':''}">${item.name}${item.inventoryOnly?'<span style="font-size:9px;margin-left:4px">(count only)</span>':''}</td>
       <td style="padding:6px 8px;font-size:11px;font-weight:700;color:#6b21a8;text-align:center;border-bottom:1px solid #e5e7eb;font-family:monospace">${item.par||'—'}</td>
       <td style="padding:6px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb">${item.beg||'—'}</td>
       <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${item.add?'#16a34a':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb">${addDisplay}</td>
       <td style="padding:6px 8px;font-size:12px;font-weight:700;color:#2563eb;text-align:center;border-bottom:1px solid #e5e7eb">${startDisplay}</td>
-      <td style="padding:6px 8px;font-size:13px;font-weight:700;color:#111;text-align:center;border-bottom:1px solid #e5e7eb">${item.end||'—'}</td>
+      <td style="padding:6px 8px;font-size:14px;font-weight:800;color:${hasEnd?'#111':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb;${hasEnd?'':'font-style:italic;font-size:11px'}">${hasEnd?item.end:'not counted'}</td>
       <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${usageColor};text-align:center;border-bottom:1px solid #e5e7eb">${usageDisplay}</td>
       <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${lossColor};text-align:center;border-bottom:1px solid #e5e7eb">${lossDisplay}</td>
-      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${hasGain?'#16a34a':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb">${gainDisplay}</td>
-      <td style="padding:6px 8px;font-size:12px;font-weight:800;color:${(item.orderQty>0||(isHistory&&item.orderQty&&item.orderQty!=='0'))?'#d97706':'#16a34a'};text-align:center;border-bottom:1px solid #e5e7eb">${orderDisplay}</td>
-      <td style="padding:6px 8px;font-size:10px;font-weight:700;color:${statusColor};text-align:center;border-bottom:1px solid #e5e7eb">${statusLabel}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${hasGain?'#16a34a':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb">${hasGain?'+$'+gainN.toFixed(2):'—'}</td>
+      <td style="padding:6px 8px;font-size:12px;font-weight:700;color:#0369a1;text-align:center;border-bottom:1px solid #e5e7eb">${invValue!==null?'$'+invValue.toFixed(2):'—'}</td>
+      <td style="padding:6px 8px;font-size:9px;font-weight:700;color:${statusColor};text-align:center;border-bottom:1px solid #e5e7eb"><span style="background:${statusBg};padding:2px 6px;border-radius:10px;">${statusLabel}</span></td>
     </tr>`;
   }).join('');
 
-  // ── Grand total footer row ──────────────────────────────────────────────
+  // ── Grand total footer ────────────────────────────────────────────────────
   const grandTotalRow = `
-    <tr style="background:#f5f3ff;font-family:monospace;">
-      <td colspan="6" style="padding:8px 10px;font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:1px;border-top:2px solid #7c3aed;">MONTH TOTALS</td>
+    <tr style="background:#f5f3ff;">
+      <td colspan="5" style="padding:8px 10px;font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:1px;border-top:2px solid #7c3aed;font-family:monospace">MONTH TOTALS</td>
+      <td style="padding:8px;text-align:center;border-top:2px solid #7c3aed;font-family:monospace;font-size:11px;color:#374151">${itemsWithCount} counted</td>
       <td style="padding:8px;font-size:11px;font-weight:700;text-align:center;border-top:2px solid #7c3aed;">
         ${totalUsedPcs>0?'<span style="color:#dc2626;">-'+totalUsedPcs+' pcs</span>':''}
         ${totalFoundPcs>0?'<br><span style="color:#16a34a;font-size:10px;">+'+totalFoundPcs+' found</span>':''}
       </td>
       <td style="padding:8px;font-size:12px;font-weight:800;color:#dc2626;text-align:center;border-top:2px solid #7c3aed;">${totalLoss>0?'$'+totalLoss.toFixed(2):'$0.00'}</td>
       <td style="padding:8px;font-size:12px;font-weight:800;color:#16a34a;text-align:center;border-top:2px solid #7c3aed;">${totalGain>0?'+$'+totalGain.toFixed(2):'—'}</td>
-      <td style="padding:8px;font-size:11px;text-align:center;border-top:2px solid #7c3aed;color:#d97706;">${itemsNeedOrder} items</td>
+      <td style="padding:8px;font-size:13px;font-weight:800;color:#0369a1;text-align:center;border-top:2px solid #7c3aed;">$${totalInvValue.toFixed(2)}</td>
       <td style="border-top:2px solid #7c3aed;"></td>
     </tr>
     <tr style="background:#fff;">
-      <td colspan="9" style="padding:6px 10px;font-family:monospace;font-size:10px;color:#6b7280;">
+      <td colspan="9" style="padding:6px 10px;font-family:monospace;font-size:9px;color:#6b7280;">
         NET VARIANCE: <span style="color:${netVariance>=0?'#16a34a':'#dc2626'};font-weight:700;">${netVariance>=0?'+':''}\$${Math.abs(netVariance).toFixed(2)}</span>
-        &nbsp;|&nbsp; INV VALUE ON HAND: <span style="color:#16a34a;font-weight:700;">\$${totalInvValue.toFixed(2)}</span>
+        &nbsp;·&nbsp; TOTAL INV VALUE ON HAND: <span style="color:#0369a1;font-weight:700;">\$${totalInvValue.toFixed(2)}</span>
       </td>
-      <td colspan="2" style="padding:6px;font-size:9px;color:#9ca3af;font-family:monospace;text-align:right;">* items w/o unit cost excluded from value</td>
+      <td colspan="2" style="padding:6px;font-size:9px;color:#9ca3af;font-family:monospace;text-align:right;">* items w/o unit cost excluded</td>
     </tr>`;
 
-  // ── Breakage rows ───────────────────────────────────────────────────────
-  const breakageRows = breakageItems.map((item, idx) => {
+  // ── Breakage spotlight rows ───────────────────────────────────────────────
+  const breakageRows = breakageItems.map((item,idx) => {
     const lossN = item.brkgCost!==null?parseFloat(item.brkgCost):parseFloat(item.usage||0)*(item.unitCost||0);
     const usageN = item.usage!==null?parseFloat(item.usage):null;
-    const startDisp = item.start || item.beg || '—';
+    const startDisp = item.start||item.beg||'—';
     const pctOfPar = item.par?((usageN||0)/parseFloat(item.par)*100).toFixed(0):'—';
-    const bg = idx%2===0?'#fff8f8':'#fff';
-    return `<tr style="background:${bg}">
+    return `<tr style="background:${idx%2===0?'#fff8f8':'#fff'}">
       <td style="padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid #fecaca">${item.name}</td>
       <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #fecaca">${startDisp} → ${item.end||'—'}</td>
       <td style="padding:7px 10px;font-size:13px;font-weight:700;color:#dc2626;text-align:center;border-bottom:1px solid #fecaca">${usageN!==null?usageN:'—'} pcs</td>
@@ -2836,14 +2805,13 @@ function openTrimarkInventoryReport(e, recId) {
     </tr>`;
   }).join('');
 
-  // ── Gain rows ───────────────────────────────────────────────────────────
-  const gainRows = gainItems.map((item, idx) => {
+  // ── Gain spotlight rows ───────────────────────────────────────────────────
+  const gainRows = gainItems.map((item,idx) => {
     const gainN = parseFloat(item.gainCost);
     const usageN = item.usage!==null?parseFloat(item.usage):null;
     const foundPcs = usageN!==null?Math.abs(usageN):null;
-    const startDisp = item.start || item.beg || '—';
-    const bg = idx%2===0?'#f0fdf4':'#fff';
-    return `<tr style="background:${bg}">
+    const startDisp = item.start||item.beg||'—';
+    return `<tr style="background:${idx%2===0?'#f0fdf4':'#fff'}">
       <td style="padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid #bbf7d0">${item.name}</td>
       <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #bbf7d0">${startDisp} → ${item.end||'—'}</td>
       <td style="padding:7px 10px;font-size:13px;font-weight:700;color:#16a34a;text-align:center;border-bottom:1px solid #bbf7d0">+${foundPcs!==null?foundPcs:'—'} pcs</td>
@@ -2853,28 +2821,12 @@ function openTrimarkInventoryReport(e, recId) {
     </tr>`;
   }).join('');
 
-  // ── Order rows ──────────────────────────────────────────────────────────
-  const orderRows = orderItems.map((item, idx) => {
-    const _cq = item.caseQty||1;
-    const oq = typeof item.orderQty==='number'?item.orderQty:parseInt(item.orderQty)||0;
-    const totalUnits = oq*_cq;
-    const cost = oq*_cq*(item.unitCost||0);
-    const bg = idx%2===0?'#fffbeb':'#fff';
-    return `<tr style="background:${bg}">
-      <td style="padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid #fde68a">${item.name}</td>
-      <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #fde68a">${item.pack}</td>
-      <td style="padding:7px 10px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-bottom:1px solid #fde68a">${oq} cs</td>
-      <td style="padding:7px 10px;font-size:12px;color:#374151;text-align:center;border-bottom:1px solid #fde68a">${totalUnits} units</td>
-      <td style="padding:7px 10px;font-size:12px;color:#6b7280;text-align:center;border-bottom:1px solid #fde68a">${item.unitCost?'~$'+cost.toFixed(2):'—'}</td>
-    </tr>`;
-  }).join('');
-
   const historyNote = isHistory
     ? `<div style="margin-bottom:20px;padding:10px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0;font-family:monospace;font-size:11px;color:#92400e;">📅 Historical record — ${dateStr} at ${timeStr}</div>` : '';
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Bartlett's — EOM Inventory Report ${monthStr}</title>
+  <title>Bartlett's — Inventory Count ${monthStr}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:28px;max-width:1000px;margin:0 auto;font-size:14px}
@@ -2886,17 +2838,15 @@ function openTrimarkInventoryReport(e, recId) {
     .tile-lbl{font-size:9px;font-family:monospace;letter-spacing:1px;margin-top:2px}
     @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.2cm;size:A4 landscape}h2{margin-top:20px}}
   </style></head><body>
-
   <div class="no-print" style="text-align:right;margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end">
     <button onclick="window.print()" style="padding:10px 24px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>
     <button onclick="window.close()" style="padding:10px 20px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
   </div>
-
   <div style="border-bottom:3px solid #7c3aed;padding-bottom:16px;margin-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
       <div>
         <div style="font-size:26px;font-weight:800;color:#ef4444;letter-spacing:3px;font-family:monospace">BARTLETT'S</div>
-        <div style="font-size:14px;font-weight:700;color:#7c3aed;letter-spacing:2px;margin-top:3px;font-family:monospace">END OF MONTH INVENTORY & BREAKAGE REPORT</div>
+        <div style="font-size:14px;font-weight:700;color:#7c3aed;letter-spacing:2px;margin-top:3px;font-family:monospace">MONTHLY INVENTORY COUNT</div>
         <div style="font-size:12px;color:#6b7280;font-family:monospace;margin-top:3px">${monthStr} · Trimark Supplies</div>
       </div>
       <div style="text-align:right">
@@ -2910,33 +2860,28 @@ function openTrimarkInventoryReport(e, recId) {
         <div class="tile-num" style="color:#7c3aed">${itemsWithCount}</div>
         <div class="tile-lbl" style="color:#7c3aed">ITEMS COUNTED</div>
       </div>
+      <div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0">
+        <div class="tile-num" style="color:#0369a1">\$${totalInvValue.toFixed(2)}</div>
+        <div class="tile-lbl" style="color:#0369a1">TOTAL INV VALUE</div>
+      </div>
       <div class="tile" style="background:#fef2f2;border:1px solid #fecaca">
-        <div class="tile-num" style="color:#dc2626">$${totalLoss.toFixed(2)}</div>
+        <div class="tile-num" style="color:#dc2626">\$${totalLoss.toFixed(2)}</div>
         <div class="tile-lbl" style="color:#dc2626">TOTAL LOSS</div>
       </div>
       ${totalGain>0?`
       <div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0">
-        <div class="tile-num" style="color:#16a34a">+$${totalGain.toFixed(2)}</div>
+        <div class="tile-num" style="color:#16a34a">+\$${totalGain.toFixed(2)}</div>
         <div class="tile-lbl" style="color:#16a34a">INVENTORY GAINS</div>
       </div>
       <div class="tile" style="background:${netVariance>=0?'#f0fdf4':'#fef2f2'};border:1px solid ${netVariance>=0?'#bbf7d0':'#fecaca'}">
         <div class="tile-num" style="color:${netVariance>=0?'#16a34a':'#dc2626'}">${netVariance>=0?'+':''}\$${Math.abs(netVariance).toFixed(2)}</div>
         <div class="tile-lbl" style="color:${netVariance>=0?'#16a34a':'#dc2626'}">NET VARIANCE</div>
       </div>`:''}
-      <div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0">
-        <div class="tile-num" style="color:#16a34a">$${totalInvValue.toFixed(2)}</div>
-        <div class="tile-lbl" style="color:#16a34a">INV VALUE ON HAND</div>
-      </div>
-      <div class="tile" style="background:#fffbeb;border:1px solid #fde68a">
-        <div class="tile-num" style="color:#d97706">${itemsNeedOrder}</div>
-        <div class="tile-lbl" style="color:#d97706">NEED REORDER</div>
-      </div>
     </div>
   </div>
-
   ${historyNote}
-
-  <h2 style="color:#7c3aed">1 — FULL INVENTORY COUNT</h2>
+  <h2 style="color:#7c3aed">FULL INVENTORY COUNT — ALL ITEMS</h2>
+  <p style="font-size:10px;color:#6b7280;font-family:monospace;margin-bottom:8px">Every item this month. Red border = loss. Green border = gain found. Faded = not yet counted.</p>
   <table>
     <thead style="background:#f5f3ff">
       <tr>
@@ -2945,11 +2890,11 @@ function openTrimarkInventoryReport(e, recId) {
         <th style="color:#7c3aed;border-bottom:2px solid #ddd6fe">BEGIN</th>
         <th style="color:#16a34a;border-bottom:2px solid #ddd6fe">ADD</th>
         <th style="color:#2563eb;border-bottom:2px solid #ddd6fe">START</th>
-        <th style="color:#111;border-bottom:2px solid #ddd6fe">COUNT</th>
+        <th style="color:#111;border-bottom:2px solid #ddd6fe">FINAL COUNT</th>
         <th style="color:#dc2626;border-bottom:2px solid #ddd6fe">USED/FOUND</th>
         <th style="color:#dc2626;border-bottom:2px solid #ddd6fe">LOSS $</th>
         <th style="color:#16a34a;border-bottom:2px solid #ddd6fe">GAIN $</th>
-        <th style="color:#d97706;border-bottom:2px solid #ddd6fe">ORDER</th>
+        <th style="color:#0369a1;border-bottom:2px solid #ddd6fe">INV VALUE</th>
         <th style="color:#6b7280;border-bottom:2px solid #ddd6fe">STATUS</th>
       </tr>
     </thead>
@@ -2957,31 +2902,11 @@ function openTrimarkInventoryReport(e, recId) {
     <tfoot>${grandTotalRow}</tfoot>
   </table>
   <div style="margin-top:6px;font-family:monospace;font-size:9px;color:#9ca3af;line-height:1.6;">
-    LOSS $: units used × unit cost · $0.00 = counted, no breakage confirmed · GAIN $: units found above start × unit cost (green row) · Green row = investigate source
+    LOSS $: units used × unit cost · $0.00 = counted clean · GAIN $: units found above START · INV VALUE: final count × unit cost
   </div>
-
-  ${trendRows.length > 0 ? `
-  <h2 style="color:#2563eb;margin-top:32px">2 — USAGE & ORDER TRENDS</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Month-over-month and year-over-year comparisons. &#9650; red = worse · &#9660; green = improved.</p>
-  <table>
-    <thead style="background:#eff6ff">
-      <tr>
-        <th style="color:#2563eb;text-align:left;border-bottom:2px solid #bfdbfe">ITEM</th>
-        <th style="color:#374151;border-bottom:2px solid #bfdbfe">USED THIS MO</th>
-        <th style="color:#374151;border-bottom:2px solid #bfdbfe">USED LAST MO</th>
-        <th style="color:#374151;border-bottom:2px solid #bfdbfe">USED LAST YEAR</th>
-        <th style="color:#dc2626;border-bottom:2px solid #bfdbfe">LOSS THIS MO</th>
-        <th style="color:#dc2626;border-bottom:2px solid #bfdbfe">LOSS LAST MO</th>
-        <th style="color:#d97706;border-bottom:2px solid #bfdbfe">ORDER THIS MO</th>
-        <th style="color:#d97706;border-bottom:2px solid #bfdbfe">ORDER TREND</th>
-      </tr>
-    </thead>
-    <tbody>${trendRows}</tbody>
-  </table>` : ''}
-
-  ${breakageItems.length > 0 ? `
-  <h2 style="color:#dc2626;margin-top:32px">3 — BREAKAGE & LOSS DETAIL</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items with unit losses, sorted by dollar impact. Usage = START − COUNT.</p>
+  ${breakageItems.length>0?`
+  <h2 style="color:#dc2626;margin-top:32px">BREAKAGE & LOSS DETAIL</h2>
+  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items with unit losses, sorted by dollar impact.</p>
   <table>
     <thead style="background:#fef2f2">
       <tr>
@@ -2994,20 +2919,17 @@ function openTrimarkInventoryReport(e, recId) {
       </tr>
     </thead>
     <tbody>${breakageRows}</tbody>
-    <tfoot>
-      <tr style="background:#fef2f2">
-        <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #fecaca">TOTAL BREAKAGE COST</td>
-        <td style="padding:8px 10px;font-size:16px;font-weight:800;color:#dc2626;text-align:center;font-family:monospace;border-top:2px solid #fecaca">$${totalLoss.toFixed(2)}</td>
-        <td style="border-top:2px solid #fecaca"></td>
-      </tr>
-    </tfoot>
-  </table>` : `
-  <h2 style="color:#16a34a;margin-top:32px">3 — BREAKAGE & LOSS DETAIL</h2>
+    <tfoot><tr style="background:#fef2f2">
+      <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #fecaca">TOTAL BREAKAGE</td>
+      <td style="padding:8px;font-size:16px;font-weight:800;color:#dc2626;text-align:center;font-family:monospace;border-top:2px solid #fecaca">\$${totalLoss.toFixed(2)}</td>
+      <td style="border-top:2px solid #fecaca"></td>
+    </tr></tfoot>
+  </table>`:`
+  <h2 style="color:#16a34a;margin-top:32px">BREAKAGE & LOSS DETAIL</h2>
   <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ No breakage losses recorded this month</div>`}
-
-  ${gainItems.length > 0 ? `
-  <h2 style="color:#16a34a;margin-top:24px">3b — INVENTORY GAINS DETAIL</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items where count exceeded start. Investigate source — possible previous undercount or unrecorded delivery.</p>
+  ${gainItems.length>0?`
+  <h2 style="color:#16a34a;margin-top:24px">INVENTORY GAINS DETAIL</h2>
+  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items where count exceeded START. Investigate — possible undercount or unrecorded delivery.</p>
   <table>
     <thead style="background:#f0fdf4">
       <tr>
@@ -3020,35 +2942,14 @@ function openTrimarkInventoryReport(e, recId) {
       </tr>
     </thead>
     <tbody>${gainRows}</tbody>
-    <tfoot>
-      <tr style="background:#f0fdf4">
-        <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #bbf7d0">TOTAL GAIN VALUE</td>
-        <td style="padding:8px 10px;font-size:16px;font-weight:800;color:#16a34a;text-align:center;font-family:monospace;border-top:2px solid #bbf7d0">+$${totalGain.toFixed(2)}</td>
-        <td style="border-top:2px solid #bbf7d0"></td>
-      </tr>
-    </tfoot>
-  </table>` : ''}
-
-  ${orderItems.length > 0 ? `
-  <h2 style="color:#d97706;margin-top:32px">4 — REORDER SUMMARY</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items below par requiring reorder. Quantities in cases.</p>
-  <table>
-    <thead style="background:#fffbeb">
-      <tr>
-        <th style="color:#d97706;text-align:left;border-bottom:2px solid #fde68a">ITEM</th>
-        <th style="color:#374151;border-bottom:2px solid #fde68a">PACK SIZE</th>
-        <th style="color:#d97706;border-bottom:2px solid #fde68a">CASES TO ORDER</th>
-        <th style="color:#374151;border-bottom:2px solid #fde68a">TOTAL UNITS</th>
-        <th style="color:#6b7280;border-bottom:2px solid #fde68a">EST. COST</th>
-      </tr>
-    </thead>
-    <tbody>${orderRows}</tbody>
-  </table>` : `
-  <h2 style="color:#16a34a;margin-top:32px">4 — REORDER SUMMARY</h2>
-  <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ All items at or above par — no reorder needed</div>`}
-
+    <tfoot><tr style="background:#f0fdf4">
+      <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #bbf7d0">TOTAL GAIN VALUE</td>
+      <td style="padding:8px;font-size:16px;font-weight:800;color:#16a34a;text-align:center;font-family:monospace;border-top:2px solid #bbf7d0">+\$${totalGain.toFixed(2)}</td>
+      <td style="border-top:2px solid #bbf7d0"></td>
+    </tr></tfoot>
+  </table>`:''}
   <div style="margin-top:32px;padding-top:12px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
-    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2025 Oscar Rivas · Bartlett's Restaurant · Confidential</div>
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2026 Oscar Rivas · Bartlett's Restaurant · Confidential</div>
     <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
   </div>
   </body></html>`;
@@ -3060,6 +2961,164 @@ function openTrimarkInventoryReport(e, recId) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// ── REPORT 2: ORDER REPORT (History tab only) ─────────────────────────────
+function openTrimarkOrderReport(recId) {
+  const { itemData, rec, isHistory } = buildTrimarkItemData(recId);
+  if (!rec && isHistory) return;
+
+  const now = isHistory ? new Date(rec.date) : new Date();
+  const dateStr = now.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const timeStr = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+  const monthStr = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+
+  // Items needing order
+  const orderItems = itemData.filter(i => !i.inventoryOnly && i.orderQty && i.orderQty !== '0' && i.orderQty !== '');
+  // Items at or above par
+  const okItems = itemData.filter(i => !i.inventoryOnly && i.end !== '' && (!i.orderQty || i.orderQty === '0' || i.orderQty === ''));
+
+  let totalCases = 0, totalCost = 0;
+  orderItems.forEach(i => {
+    const oq = typeof i.orderQty === 'number' ? i.orderQty : parseInt(i.orderQty)||0;
+    const _cq = i.caseQty || 1;
+    totalCases += oq;
+    totalCost += oq * _cq * (i.unitCost || 0);
+  });
+
+  const orderRows = orderItems.map((item, idx) => {
+    const _cq = item.caseQty || 1;
+    const oq = typeof item.orderQty === 'number' ? item.orderQty : parseInt(item.orderQty)||0;
+    const totalUnits = oq * _cq;
+    const cost = oq * _cq * (item.unitCost || 0);
+    const endV = parseFloat(item.end);
+    const parVal = parseFloat(item.par) || 0;
+    const shortage = !isNaN(endV) ? endV - parVal : null;
+    return `<tr style="background:${idx%2===0?'#fffbeb':'#fff'}">
+      <td style="padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid #fde68a">${item.name}</td>
+      <td style="padding:7px 10px;font-size:12px;text-align:center;border-bottom:1px solid #fde68a">${item.pack}</td>
+      <td style="padding:7px 10px;font-size:13px;font-weight:700;text-align:center;border-bottom:1px solid #fde68a">${item.end||'—'}</td>
+      <td style="padding:7px 10px;font-size:12px;font-weight:700;color:#6b21a8;text-align:center;border-bottom:1px solid #fde68a">${item.par||'—'}</td>
+      <td style="padding:7px 10px;font-size:12px;font-weight:700;color:#dc2626;text-align:center;border-bottom:1px solid #fde68a">${shortage!==null?shortage.toFixed(0):'—'}</td>
+      <td style="padding:7px 10px;font-size:15px;font-weight:800;color:#d97706;text-align:center;border-bottom:1px solid #fde68a">+${oq} cs</td>
+      <td style="padding:7px 10px;font-size:12px;text-align:center;border-bottom:1px solid #fde68a">${totalUnits} units</td>
+      <td style="padding:7px 10px;font-size:12px;color:#6b7280;text-align:center;border-bottom:1px solid #fde68a">${item.unitCost?'~\$'+cost.toFixed(2):'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const okRows = okItems.map((item, idx) => {
+    const endV = parseFloat(item.end);
+    const parVal = parseFloat(item.par) || 0;
+    const surplus = !isNaN(endV) ? endV - parVal : null;
+    return `<tr style="background:${idx%2===0?'#f9fafb':'#fff'}">
+      <td style="padding:6px 10px;font-size:12px;border-bottom:1px solid #e5e7eb">${item.name}</td>
+      <td style="padding:6px 10px;font-size:13px;font-weight:700;color:#16a34a;text-align:center;border-bottom:1px solid #e5e7eb">${item.end}</td>
+      <td style="padding:6px 10px;font-size:12px;color:#6b21a8;font-weight:700;text-align:center;border-bottom:1px solid #e5e7eb">${item.par||'—'}</td>
+      <td style="padding:6px 10px;font-size:12px;font-weight:700;color:#16a34a;text-align:center;border-bottom:1px solid #e5e7eb">${surplus!==null?'+'+surplus.toFixed(0):'—'}</td>
+      <td style="padding:6px 10px;text-align:center;border-bottom:1px solid #e5e7eb"><span style="background:#f0fdf4;color:#16a34a;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;font-family:monospace">✓ OK</span></td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bartlett's — Trimark Order ${monthStr}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:28px;max-width:960px;margin:0 auto;font-size:14px}
+    h2{font-size:13px;font-weight:800;letter-spacing:2px;font-family:monospace;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid currentColor}
+    table{width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+    th{padding:8px;font-size:10px;font-weight:700;font-family:monospace;letter-spacing:1px;text-transform:uppercase}
+    .tile{border-radius:10px;padding:10px 16px;text-align:center;display:inline-block}
+    .tile-num{font-size:20px;font-weight:800;font-family:monospace;line-height:1}
+    .tile-lbl{font-size:9px;font-family:monospace;letter-spacing:1px;margin-top:2px}
+    @media print{body{padding:0}.no-print{display:none!important}@page{margin:1.2cm;size:A4 landscape}}
+  </style></head><body>
+  <div class="no-print" style="text-align:right;margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="window.print()" style="padding:10px 24px;background:#d97706;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>
+    <button onclick="window.close()" style="padding:10px 20px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div style="border-bottom:3px solid #d97706;padding-bottom:16px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:26px;font-weight:800;color:#ef4444;letter-spacing:3px;font-family:monospace">BARTLETT'S</div>
+        <div style="font-size:14px;font-weight:700;color:#d97706;letter-spacing:2px;margin-top:3px;font-family:monospace">TRIMARK ORDER — JAMES HAWLEY</div>
+        <div style="font-size:12px;color:#6b7280;font-family:monospace;margin-top:3px">${monthStr} · james.hawley@trimarkusa.com</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:14px;font-weight:700">${dateStr}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${isHistory?'Placed at '+timeStr:'Generated at '+timeStr}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:1px">Prepared by: Oscar Rivas</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
+      <div class="tile" style="background:#fffbeb;border:1px solid #fde68a">
+        <div class="tile-num" style="color:#d97706">${orderItems.length}</div>
+        <div class="tile-lbl" style="color:#d97706">ITEMS TO ORDER</div>
+      </div>
+      <div class="tile" style="background:#fffbeb;border:1px solid #fde68a">
+        <div class="tile-num" style="color:#d97706">${totalCases}</div>
+        <div class="tile-lbl" style="color:#d97706">TOTAL CASES</div>
+      </div>
+      ${totalCost>0?`<div class="tile" style="background:#fffbeb;border:1px solid #fde68a">
+        <div class="tile-num" style="color:#d97706">~\$${totalCost.toFixed(2)}</div>
+        <div class="tile-lbl" style="color:#d97706">EST. COST</div>
+      </div>`:''}
+      <div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0">
+        <div class="tile-num" style="color:#16a34a">${okItems.length}</div>
+        <div class="tile-lbl" style="color:#16a34a">AT OR ABOVE PAR</div>
+      </div>
+    </div>
+  </div>
+  ${orderItems.length>0?`
+  <h2 style="color:#d97706">ITEMS TO ORDER</h2>
+  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items below par requiring replenishment. Send this list to James.</p>
+  <table>
+    <thead style="background:#fffbeb">
+      <tr>
+        <th style="color:#d97706;text-align:left;border-bottom:2px solid #fde68a">ITEM</th>
+        <th style="color:#374151;border-bottom:2px solid #fde68a">PACK</th>
+        <th style="color:#374151;border-bottom:2px solid #fde68a">COUNT</th>
+        <th style="color:#6b21a8;border-bottom:2px solid #fde68a">PAR</th>
+        <th style="color:#dc2626;border-bottom:2px solid #fde68a">SHORT</th>
+        <th style="color:#d97706;border-bottom:2px solid #fde68a">ORDER</th>
+        <th style="color:#374151;border-bottom:2px solid #fde68a">UNITS</th>
+        <th style="color:#6b7280;border-bottom:2px solid #fde68a">EST. COST</th>
+      </tr>
+    </thead>
+    <tbody>${orderRows}</tbody>
+    <tfoot><tr style="background:#fffbeb;">
+      <td colspan="5" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;color:#d97706;border-top:2px solid #fde68a">ORDER TOTAL</td>
+      <td style="padding:8px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-top:2px solid #fde68a">${totalCases} cases</td>
+      <td style="padding:8px;text-align:center;border-top:2px solid #fde68a">—</td>
+      <td style="padding:8px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-top:2px solid #fde68a">${totalCost>0?'~\$'+totalCost.toFixed(2):'—'}</td>
+    </tr></tfoot>
+  </table>`:`
+  <h2 style="color:#16a34a">ITEMS TO ORDER</h2>
+  <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ All items at or above par — no order needed</div>`}
+  ${okItems.length>0?`
+  <h2 style="color:#16a34a;margin-top:28px">AT OR ABOVE PAR — NO ORDER NEEDED</h2>
+  <table>
+    <thead style="background:#f0fdf4">
+      <tr>
+        <th style="color:#16a34a;text-align:left;border-bottom:2px solid #bbf7d0">ITEM</th>
+        <th style="color:#16a34a;border-bottom:2px solid #bbf7d0">COUNT</th>
+        <th style="color:#6b21a8;border-bottom:2px solid #bbf7d0">PAR</th>
+        <th style="color:#16a34a;border-bottom:2px solid #bbf7d0">SURPLUS</th>
+        <th style="color:#6b7280;border-bottom:2px solid #bbf7d0">STATUS</th>
+      </tr>
+    </thead>
+    <tbody>${okRows}</tbody>
+  </table>`:''}
+  <div style="margin-top:32px;padding-top:12px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2026 Oscar Rivas · Bartlett's Restaurant · Confidential</div>
+    <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
+  </div>
+  </body></html>`;
+
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (!w) { const a = document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 function openHistoryEditCounts(recId) {
   const rec = state.history.find(r => r.id === recId);
   if (!rec) return;
@@ -3377,11 +3436,11 @@ function renderDetail(rec) {
 
   // Trimark inventory buttons
   if (hasTrimarkInventory) {
-    btns.push(`<button onclick="openTrimarkInventoryReport(null, '${rec.id}')" style="
-        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #7c3aed;
-        background:transparent;color:#c084fc;
+    btns.push(`<button onclick="openTrimarkOrderReport('${rec.id}')" style="
+        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #d97706;
+        background:transparent;color:#fbbf24;
         font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
-        cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY REPORT</button>`);
+        cursor:pointer;letter-spacing:0.5px;">📦 ORDER REPORT</button>`);
     btns.push(`<button onclick="openHistoryEditCounts('${rec.id}')" style="
         height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #3a3a3c;
         background:transparent;color:#a3a3a3;
@@ -5107,7 +5166,7 @@ function renderInventoryTab() {
       </div>
     </div>
     <div style="display:flex;gap:8px;">
-      <button onclick="openTrimarkInventoryReport()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #7c3aed;background:rgba(124,58,237,0.2);color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 VIEW REPORT</button>
+      <button onclick="openTrimarkInventoryReport()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #7c3aed;background:rgba(124,58,237,0.2);color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY REPORT</button>
       <button onclick="switchTab('order');state.activeSupp='TRIMARK';state.trimarkView='inventory';render();" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#a3a3a3;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">✏️ EDIT COUNTS</button>
     </div>`;
   listEl.appendChild(liveCard);
@@ -5216,7 +5275,7 @@ function renderInventoryTab() {
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="openTrimarkInventoryReport(null,'${rec.id}')" style="flex:1;height:34px;border-radius:9px;border:1.5px solid #7c3aed;background:transparent;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 VIEW REPORT</button>
+          <button onclick="openTrimarkInventoryReport(null,'${rec.id}')" style="flex:1;height:34px;border-radius:9px;border:1.5px solid #7c3aed;background:transparent;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY</button>
           <button onclick="openHistoryEditCounts('${rec.id}')" style="height:34px;padding:0 12px;border-radius:9px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;">✎ EDIT</button>
         </div>`;
       listEl.appendChild(card);
@@ -5543,7 +5602,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.40</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.41</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.38</div>
 
