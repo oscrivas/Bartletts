@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.46                                           │
+  │  CURRENT VERSION: v1.48                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,21 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.48 — 2026-04-10
+  · Replaced auto-pop suggestion banner with manual 🧠 SUGGEST ORDER button in supplier info bar
+  · Button is always visible — amber when history exists, gray when no data yet
+  · Tapping it shows the suggestion banner if good data exists, or a friendly message explaining how many orders are recorded so far
+  · Auto-show on tab switch and on load removed — no more unexpected popups
+  · Banner clears when switching supplier tabs
+
+  v1.47 — 2026-04-10
+  · Fixed History detail getting stuck — root cause was hist-detail sitting in document flow
+  · Changed hist-detail to position:fixed full-screen overlay (z-index:800) — now always on top, never blocked by other elements
+  · Added slide-in animation (translateX) for smooth open/close feel
+  · Fixed duplicate display:none in CSS that was causing layout inconsistency
+  · Added detail-scroll overflow-y:auto so long orders scroll properly
+  · Added safe-area-inset-top padding to detail header for iPhone notch
 
   v1.46 — 2026-04-10
   · Fixed touchscreen glitches on History tab and tally system
@@ -698,10 +713,23 @@
     .hist-print-label { font-size: 8px; font-family: ui-monospace, 'SF Mono', 'Courier New', monospace; color: #3a3a3c; }
 
     /* History detail */
-    #hist-detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; display: none; }
-    #hist-detail.show { display: flex; }
+    #hist-detail {
+      position: fixed; inset: 0;
+      background: #000;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      z-index: 800;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #hist-detail.show {
+      transform: translateX(0);
+    }
     .detail-header {
-      background: #111; padding: 12px 16px; flex-shrink: 0;
+      background: #111;
+      padding: 12px 16px;
+      padding-top: max(12px, env(safe-area-inset-top));
+      flex-shrink: 0;
       display: flex; align-items: center; gap: 12px;
       border-bottom: 1px solid #1c1c1e;
     }
@@ -922,7 +950,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.46</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.48</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1018,7 +1046,7 @@
     <button class="btn-print-detail" id="btn-print-detail">🖨 Print</button>
   </div>
   <div id="detail-confirm-bar" style="padding:8px 16px 0;"></div>
-  <div id="detail-scroll"></div>
+  <div id="detail-scroll" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
 </div>
 
 <!-- Save Modal -->
@@ -1893,13 +1921,12 @@ function renderOrderView() {
     btn.onclick = () => {
       state.activeSupp = sn;
       state.trimarkView = 'order'; // always start on order view when switching suppliers
-      state._suggestionsShownOnLoad = false; // reset so suggestions can show on new tab
+      state._suggestionsShownOnLoad = false;
+      // Remove any existing suggestion banner when switching tabs
+      const existingBanner = document.getElementById('suggestion-banner');
+      if (existingBanner) existingBanner.remove();
       render();
       document.getElementById('item-list').scrollTop = 0;
-      // Show suggestions if order is empty (nothing entered yet)
-      const hasAnyInput = Object.keys(state.onHand).some(k => k.startsWith(sn+'|') && state.onHand[k] !== '')
-        || Object.keys(state.orderQty).some(k => k.startsWith(sn+'|') && state.orderQty[k] !== '');
-      if (!hasAnyInput) setTimeout(() => showOrderSuggestions(sn), 600);
     };
     tabsEl.appendChild(btn);
   }
@@ -1936,6 +1963,12 @@ function renderOrderView() {
         cursor:pointer;">✎ EDIT VENDOR</button>
     </div>` : '';
 
+  // Check if suggestions are available for this supplier
+  const _suggData = lsGet('bartletts-learning-v1') || {};
+  const _hasSuggestions = Object.values(_suggData).some(item =>
+    item.supplier === state.activeSupp && item.orders && item.orders.length >= 1
+  );
+
   infoEl.innerHTML = `
     <div class="sup-info-sched">📅 ${defSup.schedule}</div>
     <div class="sup-info-contact">${defSup.contact}</div>
@@ -1944,20 +1977,24 @@ function renderOrderView() {
       ${crit > 0 ? `<span style="color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px">🔴 ${crit} critical</span>` : ''}
       ${low  > 0 ? `<span style="color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px">🟡 ${low} low</span>` : ''}
     </div>` : ''}
+    ${!state.editMode ? `<div style="margin-top:6px;">
+      <button onclick="showOrderSuggestions('${state.activeSupp}', true)" style="
+        height:28px;padding:0 12px;border-radius:14px;
+        border:1.5px solid ${_hasSuggestions ? '#fbbf24' : '#3a3a3c'};
+        background:${_hasSuggestions ? 'rgba(251,191,36,0.12)' : 'transparent'};
+        color:${_hasSuggestions ? '#fbbf24' : '#48484a'};
+        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;
+        cursor:pointer;letter-spacing:0.5px;touch-action:manipulation;">
+        🧠 ${_hasSuggestions ? 'SUGGEST ORDER' : 'NO HISTORY YET'}
+      </button>
+    </div>` : ''}
     ${state.editMode ? `<div style="color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;margin-top:4px">✎ Tap any item to edit name, pack size, or par</div>` : ''}
   `;
 
   // Edit banner
   document.getElementById('edit-banner').style.display = state.editMode ? 'flex' : 'none';
 
-  // Show suggestions on initial render if order is empty
-  if (!state._suggestionsShownOnLoad) {
-    state._suggestionsShownOnLoad = true;
-    const sn = state.activeSupp;
-    const hasAnyInput = Object.keys(state.onHand).some(k => k.startsWith(sn+'|') && state.onHand[k] !== '')
-      || Object.keys(state.orderQty).some(k => k.startsWith(sn+'|') && state.orderQty[k] !== '');
-    if (!hasAnyInput) setTimeout(() => showOrderSuggestions(sn), 1200);
-  }
+  // Suggestions are now manually triggered via the 🧠 SUGGEST button — no auto-show
 
   // Items
   const listEl = document.getElementById('item-list');
@@ -4938,15 +4975,29 @@ function getOrderSuggestions(sn) {
   return suggestions;
 }
 
-function showOrderSuggestions(sn) {
+function showOrderSuggestions(sn, fromButton) {
   const existing = document.getElementById('suggestion-banner');
   if (existing) existing.remove();
 
   const suggestions = getOrderSuggestions(sn);
   const items = Object.entries(suggestions);
-  if (!items.length) return;
-
   const goodItems = items.filter(([, s]) => s.confidence !== 'low');
+
+  if (fromButton && !goodItems.length) {
+    const data = lsGet('bartletts-learning-v1') || {};
+    const supplierOrders = Object.values(data).filter(item => item.supplier === sn);
+    const totalOrders = supplierOrders.reduce((sum, item) => sum + (item.orders?.length || 0), 0);
+    const msg = totalOrders === 0
+      ? 'No order history yet for ' + sn + '. Save a few orders and suggestions will appear here.'
+      : 'Not enough confident data yet (' + totalOrders + ' orders recorded). Keep saving orders and suggestions will improve.';
+    const banner = document.createElement('div');
+    banner.id = 'suggestion-banner';
+    banner.style.cssText = "position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1c1c1e;border:1.5px solid #3a3a3c;border-radius:16px;padding:14px 18px;z-index:9000;font-family:ui-monospace,'SF Mono','Courier New',monospace;max-width:calc(100vw - 32px);width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.6);";
+    banner.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div style="font-size:11px;font-weight:700;color:#636366;letter-spacing:1px;">🧠 SUGGESTIONS — ${sn}</div><button onclick="document.getElementById('suggestion-banner').remove()" style="background:transparent;border:none;color:#636366;font-size:18px;cursor:pointer;padding:0;touch-action:manipulation;">×</button></div><div style="font-size:12px;color:#a3a3a3;line-height:1.5;">${msg}</div>`;
+    document.body.appendChild(banner);
+    return;
+  }
+
   if (!goodItems.length) return;
 
   const banner = document.createElement('div');
@@ -5683,6 +5734,7 @@ function showWhatsNew() {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 
   const updates = [
+    { icon:'🧠', title:'Suggest Order Button', desc:'Each supplier tab now has a 🧠 SUGGEST ORDER button in the info bar. Amber = history exists, tap to see suggestions. Gray = not enough data yet, tap to see how many orders have been recorded. No more surprise pop-ups — you control when suggestions appear.' },
     { icon:'🗑', title:'Delete Orders from History', desc:'Open any order in History and tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm it (turns red), tap again to confirm. Removes from all devices instantly. Great for cleaning up test orders.' },
     { icon:'📊', title:'Two Separate Reports', desc:'Inventory tab now opens a full 📋 INVENTORY REPORT showing every single item counted — final count, inventory value, loss $, gain $, net variance. History tab opens a 📦 ORDER REPORT showing only items to order for James, plus items confirmed at or above par.' },
     { icon:'💹', title:'Inventory Value Tracking', desc:'The inventory report now shows the dollar value of every item on hand (final count × unit cost), with a grand total at the bottom. Your boss can see exactly what the current inventory is worth at any point in time.' },
@@ -5702,9 +5754,9 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.46</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.48</div>
       </div>
-      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.44</div>
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.48</div>
 
       ${updates.map(u => `
         <div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:12px;">
@@ -5758,7 +5810,7 @@ const MUST_KNOW = [
       'Open any order in History → tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm (turns red), tap again to confirm. Useful for removing test orders. Cannot be undone.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🧠 SMART SUGGESTIONS',
-      'When you open a supplier tab with an empty order, a suggestion banner may appear based on your order history. Review and edit quantities directly in the banner before tapping APPLY. Banner stays open until you dismiss it.',
+      'Each supplier tab has a 🧠 SUGGEST ORDER button in the info bar. Amber = history exists. Gray = not enough data yet. Tap it anytime to see suggested order quantities based on your history. Edit quantities directly in the banner before tapping APPLY. Banner stays open until you dismiss it.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '⚠️ ON-HAND ALERTS',
       'After entering a count, if it is ±30% from your historical average for that time of month, a small colored note appears under the item. Red = unusually low. Yellow = unusually high. Not an error — just a flag to double-check.',
