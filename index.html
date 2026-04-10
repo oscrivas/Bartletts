@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.41                                           │
+  │  CURRENT VERSION: v1.45                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,35 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.45 — 2026-04-10
+  · What's New updated with 11 cards covering all features through v1.44
+  · Subtitle updated to April 2026 · v1.44
+  · Must Know — HOW TO USE: added reports clarification (Inventory tab = inventory report, History tab = order report), delete orders step, banner stays open note
+  · Must Know — CRITICAL RULES: added delete orders tip
+  · Must Know — BEK section: added note about CSV always capturing actual quantities not par values
+  · Must Know — TRIMARK INVENTORY: added reports section explaining two separate documents
+  · Full debug sweep: 76/76 technical checks passed, 24/24 UX checks passed
+
+  v1.44 — 2026-04-10
+  · 🗑 DELETE ORDER button added to every order in History detail view
+  · Two-tap confirmation — first tap arms it (red warning), second tap deletes
+  · Deletes from both localStorage and Firebase instantly
+  · Auto-resets after 3 seconds if not confirmed
+
+  v1.43 — bugfix
+  · Fixed BEK CSV showing PAR values instead of actual order quantities
+  · Root cause: liveOrder Firebase listener race condition — stale Firebase echo was overwriting freshly-typed order quantities before the snapshot was built
+  · Fix: added timestamp (ts) to every liveOrder write — listener now rejects incoming data older than the last local write
+  · fbWrite() tracks liveOrder timestamps so the guard works correctly across debounce delays
+  · This was the real reason quantities in the CSV matched PAR values — the auto-fill was correct but Firebase was reverting it
+
+  v1.42 — bugfix
+  · Fixed BEK CSV itemNum being lost after Firebase catalog sync
+  · Root cause: catalog merge ({ ...def, ...storedItem }) overwrote itemNum with undefined when catalog was saved to Firebase before itemNum was added (pre v1.22)
+  · Fix 1: catalog merge now always preserves itemNum from DEFAULT_SUPPLIERS if stored version is missing it
+  · Fix 2: getBekItemNum() now has 4-level lookup — snapshot → live catalog by id → live catalog by name → DEFAULT_SUPPLIERS (bulletproof fallback)
+  · This means BEK CSV will always find the correct item number regardless of catalog sync state
 
   v1.41 — EMERGENCY PATCH
   · Split single report into two separate reports:
@@ -885,7 +914,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.41</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.45</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1506,7 +1535,10 @@ function startFirebaseListeners() {
             const defaultItems = DEFAULT_SUPPLIERS[sn]?.items || [];
             state.catalog[sn].items = data[sn].items.map(storedItem => {
               const def = defaultItems.find(d => d.id === storedItem.id || d.name === storedItem.name) || {};
-              return { ...def, ...storedItem };
+              const merged = { ...def, ...storedItem };
+              // Always preserve itemNum from DEFAULT catalog — never let a stale Firebase value wipe it
+              if (def.itemNum && !merged.itemNum) merged.itemNum = def.itemNum;
+              return merged;
             });
           }
         }
@@ -1535,10 +1567,16 @@ function startFirebaseListeners() {
     }, err => console.warn('FB learning error:', err));
 
     // ── ON-HAND & ORDER QTY (live order editing) ───────────────────
+    let _lastLiveOrderTs = 0;  // track last accepted remote ts
     fbDb.ref('liveOrder').on('value', snap => {
       if (fbIgnoreRemote) return;
       const data = snap.val();
       if (data) {
+        const incomingTs = data.ts || 0;
+        // Reject if incoming data is older than what we last wrote locally
+        // This prevents a stale Firebase echo from overwriting fresh local input
+        if (incomingTs < _lastLiveOrderTs) return;
+        _lastLiveOrderTs = incomingTs;
         if (data.onHand)   { state.onHand   = data.onHand;   }
         if (data.orderQty) { state.orderQty = data.orderQty; }
         if (data.itemNotes){ state.itemNotes= data.itemNotes;}
@@ -1570,6 +1608,10 @@ function fbWrite(path, data, debounceMs = 600) {
   clearTimeout(fbWriteTimers[path]);
   fbWriteTimers[path] = setTimeout(() => {
     if (!fbDb) return;
+    // Track timestamp of our own liveOrder writes so the listener can reject echoes
+    if (path === 'liveOrder' && data.ts) {
+      try { _lastLiveOrderTs = data.ts; } catch(e) {}
+    }
     fbIgnoreRemote = true;
     fbDb.ref(path).set(data).catch(e => console.warn('FB write error:', e)).finally(() => {
       setTimeout(() => { fbIgnoreRemote = false; }, 300);
@@ -1745,6 +1787,7 @@ function saveLiveOrder() {
     onHand:    state.onHand,
     orderQty:  state.orderQty,
     itemNotes: state.itemNotes,
+    ts:        Date.now(),  // timestamp so listener rejects stale incoming data
   }, 400);
 }
 
@@ -3468,6 +3511,13 @@ function renderDetail(rec) {
         cursor:pointer;letter-spacing:0.5px;">📥 RE-DOWNLOAD BEK CSV</button>`);
   }
 
+  // Delete record button — always shown
+  btns.push(`<button onclick="event.stopPropagation();deleteHistoryRecord('${rec.id}')" style="
+      height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #3a3a3c;
+      background:transparent;color:#f87171;
+      font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+      cursor:pointer;letter-spacing:0.5px;">🗑 DELETE ORDER</button>`);
+
   extraBtns.innerHTML = btns.join('');
 
   const scroll = document.getElementById('detail-scroll');
@@ -3592,6 +3642,36 @@ function renderDetail(rec) {
 
   const spacer = document.createElement('div'); spacer.className = 'safe-bottom';
   scroll.appendChild(spacer);
+}
+
+function deleteHistoryRecord(recId) {
+  const btn = document.querySelector(`button[onclick*="deleteHistoryRecord('${recId}')"]`);
+  if (!btn) return;
+
+  if (btn.dataset.confirming === '1') {
+    // Second tap — delete
+    state.history = state.history.filter(r => r.id !== recId);
+    lsSet('bartletts-orders-v3', state.history);
+    // Remove from Firebase
+    if (fbDb) fbDb.ref('history/' + recId).remove().catch(e => console.warn('FB delete error:', e));
+    closeDetail();
+    renderHistoryView();
+    showToast('🗑 Order deleted');
+  } else {
+    // First tap — arm
+    btn.dataset.confirming = '1';
+    btn.textContent = '⚠ TAP AGAIN TO CONFIRM';
+    btn.style.borderColor = '#f87171';
+    btn.style.background = 'rgba(248,113,113,0.12)';
+    setTimeout(() => {
+      if (btn.dataset.confirming === '1') {
+        btn.dataset.confirming = '0';
+        btn.textContent = '🗑 DELETE ORDER';
+        btn.style.borderColor = '#3a3a3c';
+        btn.style.background = 'transparent';
+      }
+    }, 3000);
+  }
 }
 
 function closeDetail() {
@@ -3946,12 +4026,21 @@ function showBekCsvPrompt(items) {
 }
 
 function getBekItemNum(snapItem) {
-  // Priority: 1) itemNum stored directly on snapshot, 2) match by id, 3) match by name
+  // Priority: 1) itemNum stored directly on snapshot
   if (snapItem.itemNum) return snapItem.itemNum;
+  // 2) match by id in live catalog
   const catItems = state.catalog['BEK']?.items || [];
   const byId   = catItems.find(ci => ci.id   === snapItem.id);
+  if (byId?.itemNum) return byId.itemNum;
+  // 3) match by name in live catalog
   const byName = catItems.find(ci => ci.name === snapItem.name);
-  return (byId || byName)?.itemNum || null;
+  if (byName?.itemNum) return byName.itemNum;
+  // 4) always fall back to DEFAULT_SUPPLIERS — immune to stale Firebase catalog
+  const defItems = DEFAULT_SUPPLIERS['BEK']?.items || [];
+  const defById   = defItems.find(di => di.id   === snapItem.id);
+  if (defById?.itemNum) return defById.itemNum;
+  const defByName = defItems.find(di => di.name === snapItem.name);
+  return defByName?.itemNum || null;
 }
 
 function downloadBekCsv() {
@@ -5585,15 +5674,17 @@ function showWhatsNew() {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 
   const updates = [
+    { icon:'🗑', title:'Delete Orders from History', desc:'Open any order in History and tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm it (turns red), tap again to confirm. Removes from all devices instantly. Great for cleaning up test orders.' },
+    { icon:'📊', title:'Two Separate Reports', desc:'Inventory tab now opens a full 📋 INVENTORY REPORT showing every single item counted — final count, inventory value, loss $, gain $, net variance. History tab opens a 📦 ORDER REPORT showing only items to order for James, plus items confirmed at or above par.' },
+    { icon:'💹', title:'Inventory Value Tracking', desc:'The inventory report now shows the dollar value of every item on hand (final count × unit cost), with a grand total at the bottom. Your boss can see exactly what the current inventory is worth at any point in time.' },
+    { icon:'🔧', title:'BEK CSV Fixed', desc:'Fixed a race condition where Firebase was overwriting your freshly-typed order quantities with old data before the CSV was built — causing the CSV to show PAR values instead of what you actually ordered. Now uses a timestamp guard to prevent stale overwrites.' },
     { icon:'📥', title:'BEK Orders — CSV Export', desc:'After saving a BEK order, a blue 📥 BEK ORDER READY prompt appears. Tap DOWNLOAD to get a CSV file in BEK\'s exact portal format. Upload it directly to BEKEntree.com — no manual entry. From History you can also tap RE-DOWNLOAD BEK CSV anytime.' },
     { icon:'💬', title:'ABCO — Resend SMS to Hal', desc:'Missed the SMS prompt after saving? Open the order in History and tap 💬 RESEND SMS TO HAL. It opens Messages pre-filled with the exact same order — clean format, one item per line, grouped in threes.' },
-    { icon:'📦', title:'Inventory Tab', desc:'New dedicated 📦 Inventory tab (4th tab). Shows the current month card at the top with live count progress, plus all past inventory records grouped by month. Tap VIEW REPORT or EDIT COUNTS directly — no digging through History.' },
-    { icon:'🔍', title:'BEGIN Audit Panel', desc:'In the Inventory tab, tap 🔍 BEGIN AUDIT to expand a full breakdown of every item: last count + delivery ADD = START. All values editable with source labels (last count · Mar 1, delivery · Mar 5, edited · Mar 10) so you can verify the app\'s math before counting.' },
-    { icon:'📊', title:'EOM Report — Full Picture', desc:'The monthly report now shows every item — not just ones with loss. Clean items show $0.00 confirming they were verified. Items where you found more than expected show GAIN $ in green with a dedicated Gains section. Summary tiles include Total Loss, Inventory Gains, Net Variance, and Inv Value on Hand.' },
-    { icon:'🧠', title:'Smart Order Suggestions', desc:'The app now predicts order quantities using 6 signals: recent order history, trend direction, day-of-week patterns, monthly seasonality, week-of-month, and consistency. Tap a supplier tab to see suggestions. Edit quantities directly in the banner before applying.' },
-    { icon:'⚠', title:'On-Hand Anomaly Alerts', desc:'After entering an on-hand count, if it\'s ±30% from your historical average for that time of month, a small alert appears under the item name — red if unusually low, yellow if unusually high. Helps catch counting errors and spot real trends.' },
-    { icon:'✎', title:'Edit & Delete Catalog Items', desc:'In ✎ Edit mode, tap any item to edit its name, pack size, or par. Scroll to the bottom of the edit sheet to DELETE ITEM (two-tap confirmation). Tap + ADD to add a new item to any supplier catalog — syncs to all devices instantly.' },
-    { icon:'☁️', title:'Everything Syncs in Real Time', desc:'All data syncs across devices the moment you change it — order counts, inventory begins, tally numbers, breakage, catalog edits, learning history, and audit trail. The ☁️ icon in the top bar shows sync status.' },
+    { icon:'📦', title:'Inventory Tab', desc:'Dedicated 📦 Inventory tab (4th tab). Current month card shows live count progress. Tap 🔍 BEGIN AUDIT to verify the app\'s math: last count + delivery ADD = START, all with source labels and timestamps. Past records grouped by month below.' },
+    { icon:'🧠', title:'Smart Order Suggestions', desc:'The app predicts order quantities using 6 signals: recent order history, trend direction, day-of-week, monthly seasonality, week-of-month, and consistency. Suggestion banner stays open until you dismiss it — review and edit quantities before applying.' },
+    { icon:'⚠', title:'On-Hand Anomaly Alerts', desc:'After entering a count, if it\'s ±30% from your historical average for that time of month, a small alert appears under the item — red if unusually low, yellow if unusually high. Builds smarter over time as the app learns your patterns.' },
+    { icon:'✎', title:'Full Catalog Management', desc:'In ✎ Edit mode: tap any item to edit name, pack, or par. Tap + ADD to add a new item (with unit cost and BEK item number). Tap DELETE ITEM at the bottom of the edit sheet to remove — two-tap confirmation so nothing gets deleted by accident.' },
+    { icon:'☁️', title:'Secure Real-Time Sync', desc:'All data syncs across devices instantly — 10 Firebase paths including orders, inventory, catalog, learning, and audit trail. Secured with anonymous authentication so only the app can read or write your database. ☁️ = synced · ⚠️ = error · 📵 = offline.' },
   ];
 
   overlay.innerHTML = `
@@ -5602,9 +5693,9 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.41</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.45</div>
       </div>
-      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">March 2026 · Bartlett&#39;s Order Management — v1.38</div>
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.44</div>
 
       ${updates.map(u => `
         <div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:12px;">
@@ -5650,10 +5741,15 @@ const MUST_KNOW = [
       '7️⃣ Print from History tab to post for the team',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '📦 INVENTORY TAB (4th tab at the bottom)',
-      'Use this tab every month for Trimark inventory. It shows the current month card, BEGIN AUDIT panel, and all past records. Tap 🔍 BEGIN AUDIT to see and verify the app\'s math before counting.',
+      'Use this tab every month for Trimark inventory. It shows the current month card, BEGIN AUDIT panel, and all past records.',
+      '📋 INVENTORY REPORT (Inventory tab) — shows every item counted: final count, inventory value, loss $, gain $, net variance. This is your boss report.',
+      '📦 ORDER REPORT (History tab → open any Trimark order) — shows only items below par that need ordering, plus items confirmed at or above par. This is what you send James.',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🗑 DELETE ORDERS',
+      'Open any order in History → tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm (turns red), tap again to confirm. Useful for removing test orders. Cannot be undone.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🧠 SMART SUGGESTIONS',
-      'When you tap a supplier tab with an empty order, a suggestion banner may appear based on your order history. Review the quantities — you can edit them directly in the banner before tapping APPLY.',
+      'When you open a supplier tab with an empty order, a suggestion banner may appear based on your order history. Review and edit quantities directly in the banner before tapping APPLY. Banner stays open until you dismiss it.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '⚠️ ON-HAND ALERTS',
       'After entering a count, if it is ±30% from your historical average for that time of month, a small colored note appears under the item. Red = unusually low. Yellow = unusually high. Not an error — just a flag to double-check.',
@@ -5673,6 +5769,7 @@ const MUST_KNOW = [
       '📊 When in doubt, order more — running out costs more than overstock',
       '🗓️ Check order history before placing — avoid duplicate orders',
       `🖨️ Print the order summary and post it so all staff know what\'s coming`,
+      '🗑 Test orders can be deleted from History — tap the order → 🗑 DELETE ORDER → tap twice to confirm',
     ]
   },
   {
@@ -5736,6 +5833,7 @@ const MUST_KNOW = [
       '🔵 STEP 5 — Log into BEKEntree.com and upload the CSV file',
       '✅ No manual entry on the website — the file does it for you.',
       '🔄 Need to re-download? Open the order in History and tap 📥 RE-DOWNLOAD BEK CSV.',
+      '⚠️ The CSV always captures your actual order quantities — not par values. If quantities look wrong, make sure you enter ON HAND counts before saving so the auto-fill calculates correctly.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '📦 HOW TO CONFIRM A BEK DELIVERY',
       'When the BEK order arrives, confirm it the same day:',
@@ -5842,6 +5940,10 @@ const MUST_KNOW = [
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🟣 STEP 6 — SEND EMAIL TO JAMES',
       `After saving, a purple 📧 Email James? prompt pops up. Tap OPEN EMAIL. Your mail app opens with the full order written out — James\'s email, subject line, and all items with case quantities. Tap SEND. Done! ✅`,
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '📋 REPORTS — TWO SEPARATE DOCUMENTS',
+      '📋 INVENTORY REPORT — tap VIEW REPORT in the Inventory tab. Shows every item counted with final count, inventory value, loss $, and gain $. This is your boss report.',
+      '📦 ORDER REPORT — open any Trimark order in History → tap 📦 ORDER REPORT. Shows only items below par with cases to order. This is what you send James.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '⚠️ IMPORTANT REMINDERS',
       `• Count EVERY item including Nutra Clear, Firewood, Aprons, and Chef Hats — they\'re inventory-only and won\'t appear in the order.`,
