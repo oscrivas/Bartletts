@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.45                                           │
+  │  CURRENT VERSION: v1.46                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,13 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.46 — 2026-04-10
+  · Fixed touchscreen glitches on History tab and tally system
+  · History detail: removed stacking extra-btns divs on rapid re-renders — was creating overlapping invisible divs that blocked touch events
+  · Tally keypad: added _tallyOpen guard — Firebase-triggered re-renders no longer destroy the tally callback reference while counting
+  · Tally keypad: added touch-action:manipulation to all buttons — removes 300ms iOS tap delay that caused missed inputs
+  · All buttons globally get touch-action:manipulation for faster more reliable touch response across the whole app
 
   v1.45 — 2026-04-10
   · What's New updated with 11 cards covering all features through v1.44
@@ -455,7 +462,7 @@
     input[type=number] { -moz-appearance: textfield; }
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    button { cursor: pointer; }
+    button { cursor: pointer; touch-action: manipulation; }
 
     /* Install banner */
     #install-banner {
@@ -731,6 +738,7 @@
     .sheet-title { color: #f2f2f7; font-family: ui-monospace, 'SF Mono', 'Courier New', monospace; font-size: 17px; font-weight: 800; margin-bottom: 8px; }
     .sheet-sub { color: #8e8e93; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; font-size: 15px; line-height: 1.55; margin-bottom: 24px; }
     .tally-key {
+    touch-action: manipulation; /* removes 300ms tap delay on iOS */
       height: 56px; border-radius: 12px; border: none;
       background: #2c2c2e; color: #e5e5e7;
       font-family: ui-monospace, 'SF Mono', 'Courier New', monospace;
@@ -914,7 +922,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.45</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.46</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1957,6 +1965,9 @@ function renderOrderView() {
 
   // Trimark inventory sub-view
   if (state.activeSupp === 'TRIMARK' && state.trimarkView === 'inventory') {
+    // Don't re-render inventory while tally modal is open — would destroy
+    // the callback reference and leave the keypad unresponsive
+    if (window._tallyOpen) return;
     renderTrimarkInventory(listEl, sup);
     return;
   }
@@ -3467,14 +3478,12 @@ function renderDetail(rec) {
   // Add Trimark-specific buttons to header if this record has Trimark data
   const trimarkItems = rec.suppliers?.['TRIMARK'] || [];
   const hasTrimarkInventory = trimarkItems.some(i => i.begin || i.onHand);
-  let extraBtns = document.getElementById('detail-extra-btns');
-  if (!extraBtns) {
-    extraBtns = document.createElement('div');
-    extraBtns.id = 'detail-extra-btns';
-    extraBtns.style.cssText = 'display:flex;gap:6px;padding:0 16px 8px;flex-wrap:wrap;';
-    document.getElementById('detail-confirm-bar').before(extraBtns);
-  }
-  extraBtns.innerHTML = '';
+  // Remove ALL existing extra-btn divs to prevent stacking on rapid re-renders
+  document.querySelectorAll('#detail-extra-btns').forEach(el => el.remove());
+  const extraBtns = document.createElement('div');
+  extraBtns.id = 'detail-extra-btns';
+  extraBtns.style.cssText = 'display:flex;gap:6px;padding:0 16px 8px;flex-wrap:wrap;';
+  document.getElementById('detail-confirm-bar').before(extraBtns);
   const btns = [];
 
   // Trimark inventory buttons
@@ -5693,7 +5702,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.45</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.46</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.44</div>
 
@@ -6286,6 +6295,9 @@ function openTallyModal(item, onConfirm) {
   _tallyUpdateDisplay();
   _tallyUpdateLog();
   document.getElementById('tally-modal').style.display = 'flex';
+  // Block Firebase-triggered re-renders while tally is open
+  // so the callback reference and DOM elements stay valid
+  window._tallyOpen = true;
 }
 
 function updateTallyTotal() { _tallyUpdateDisplay(); }
@@ -6295,6 +6307,7 @@ function closeTallyModal() {
   document.getElementById('tally-modal').style.display = 'none';
   _tallyItemId = null;
   _tallyOnEndInput = null;
+  window._tallyOpen = false;
 }
 
 function confirmTally() {
@@ -6308,6 +6321,7 @@ function confirmTally() {
   if (_tallyOnEndInput) _tallyOnEndInput(String(total));
   document.getElementById('tally-modal').style.display = 'none';
   _tallyItemId = null; _tallyOnEndInput = null;
+  window._tallyOpen = false;
   showToast('🚢' + d + '  🚪' + c + '  🍽️' + r + '  =  ' + total);
 }
 
