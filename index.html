@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.48                                           │
+  │  CURRENT VERSION: v1.49                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,15 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.49 — 2026-04-14
+  · Fixed BEK CSV showing wrong items and PAR quantities instead of actual order quantities
+  · Root cause 1: _lastLiveOrderTs was stamped inside the 400ms debounce — Firebase could overwrite fresh orderQty before the stamp, so old data won the race
+  · Fix: _lastLiveOrderTs now stamped immediately in saveLiveOrder() before the debounce starts — any incoming Firebase data is rejected instantly
+  · _lastLiveOrderTs moved to module scope so saveLiveOrder() can always reach it
+  · Root cause 2: liveOrder in Firebase could contain data from a previous session (hours old) with a newer timestamp than the current session — restoring random items
+  · Fix 1: 12-hour staleness guard — liveOrder data older than 12 hours is rejected regardless of timestamp
+  · Fix 2: doSave stamps _lastLiveOrderTs + 5s buffer before clearing state — ensures empty write always wins after save
 
   v1.48 — 2026-04-10
   · Replaced auto-pop suggestion banner with manual 🧠 SUGGEST ORDER button in supplier info bar
@@ -950,7 +959,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.48</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.49</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1450,7 +1459,8 @@ const FB_CONFIG = {
   appId: "1:347944384568:web:dc4417a68cc15d246d0ecd"
 };
 let fbDb = null;
-let fbSyncStatus = 'offline'; // 'offline' | 'syncing' | 'synced' | 'error'
+let fbSyncStatus = 'offline';
+let _lastLiveOrderTs = 0;  // guards liveOrder listener from stale Firebase echoes // 'offline' | 'syncing' | 'synced' | 'error'
 let fbIgnoreRemote = false;   // guard: prevents echo when we wrote the change ourselves
 
 function initFirebase() {
@@ -1603,15 +1613,16 @@ function startFirebaseListeners() {
     }, err => console.warn('FB learning error:', err));
 
     // ── ON-HAND & ORDER QTY (live order editing) ───────────────────
-    let _lastLiveOrderTs = 0;  // track last accepted remote ts
     fbDb.ref('liveOrder').on('value', snap => {
       if (fbIgnoreRemote) return;
       const data = snap.val();
       if (data) {
         const incomingTs = data.ts || 0;
-        // Reject if incoming data is older than what we last wrote locally
-        // This prevents a stale Firebase echo from overwriting fresh local input
+        const now = Date.now();
+        // Reject stale echoes — must be newer than last local write
         if (incomingTs < _lastLiveOrderTs) return;
+        // Reject data older than 12 hours — prevents old sessions restoring random items
+        if (incomingTs > 0 && (now - incomingTs) > 12 * 60 * 60 * 1000) return;
         _lastLiveOrderTs = incomingTs;
         if (data.onHand)   { state.onHand   = data.onHand;   }
         if (data.orderQty) { state.orderQty = data.orderQty; }
@@ -1644,10 +1655,7 @@ function fbWrite(path, data, debounceMs = 600) {
   clearTimeout(fbWriteTimers[path]);
   fbWriteTimers[path] = setTimeout(() => {
     if (!fbDb) return;
-    // Track timestamp of our own liveOrder writes so the listener can reject echoes
-    if (path === 'liveOrder' && data.ts) {
-      try { _lastLiveOrderTs = data.ts; } catch(e) {}
-    }
+    // _lastLiveOrderTs is now stamped in saveLiveOrder() directly — no need here
     fbIgnoreRemote = true;
     fbDb.ref(path).set(data).catch(e => console.warn('FB write error:', e)).finally(() => {
       setTimeout(() => { fbIgnoreRemote = false; }, 300);
@@ -1819,11 +1827,15 @@ function clearOrder() {
 }
 
 function saveLiveOrder() {
+  const ts = Date.now();
+  // Stamp IMMEDIATELY — don't wait for the debounce — so the listener
+  // rejects any Firebase echoes that arrive before our write completes
+  try { _lastLiveOrderTs = ts; } catch(e) {}
   fbWrite('liveOrder', {
     onHand:    state.onHand,
     orderQty:  state.orderQty,
     itemNotes: state.itemNotes,
-    ts:        Date.now(),  // timestamp so listener rejects stale incoming data
+    ts,
   }, 400);
 }
 
@@ -3993,6 +4005,8 @@ function doSave() {
   state.itemNotes = {}; state.globalNote = ''; state._openNote = null;
   state.breakage = {}; saveBreakage();
   state.trimarkView = 'order';
+  // Stamp a fresh ts BEFORE saveLiveOrder so the empty write always wins
+  _lastLiveOrderTs = Date.now() + 5000; // +5s buffer so no old data can sneak in
   saveLiveOrder(); // push empty state to Firebase so other devices clear too
 
   btn.textContent = '✓  CONFIRM SAVE & RESET'; btn.disabled = false;
@@ -5754,7 +5768,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.48</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.49</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.48</div>
 
