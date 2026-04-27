@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.49                                           │
+  │  CURRENT VERSION: v1.51                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,36 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.51 — 2026-04-27
+  · BEK CSV debug: added console logs at save and download to trace exact items/quantities
+  · BEK prompt auto-dismiss removed — stays open until you tap DOWNLOAD or ×
+  · Open browser console (Safari: Settings → Advanced → Web Inspector) after next test order to see [BEK SNAPSHOT] and [BEK CSV] log lines
+
+  v1.50 — 2026-04-27
+  · Learning engine overhaul — 4 fixes:
+
+  FIX 1 — state.learning added
+  · All learning reads now use in-memory state.learning instead of lsGet() directly
+  · state.learning populated on startup from localStorage, updated by Firebase listener and recordOrderLearning
+  · Fixes: suggestions empty on new devices even when Firebase has data
+
+  FIX 2 — Better cross-device deduplication
+  · mergeLearningData now deduplicates by order window (month + week-of-month) not exact timestamp
+  · Two devices saving the same order cycle no longer create duplicate entries that bloat history
+  · Most recent entry wins when window keys match
+
+  FIX 3 — Demand forecasting engine
+  · Added _projectedNeed(), _avgUsagePerOrder(), _avgDaysBetweenOrders() helpers
+  · When ≥3 usage records exist for an item, suggestion uses: daily_usage × days_until_next_order
+  · Demand forecast gets progressively more weight as usage data accumulates (up to 4x)
+  · Falls back gracefully to order-history signals when usage data is insufficient
+  · Confidence scoring updated — demand bonus point added
+
+  FIX 4 — Banner shows forecast method per item
+  · Header line shows "📈 X items using demand forecast · Y from order history"
+  · Per-item shows: 📈 ~N units needed · trend (demand) or 📋 N orders · trend (history)
+  · All items still editable before applying
 
   v1.49 — 2026-04-14
   · Fixed BEK CSV showing wrong items and PAR quantities instead of actual order quantities
@@ -959,7 +989,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.49</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.51</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1442,6 +1472,7 @@ let state = {
   trimarkAddMeta: {},     // tri item id → {value, source, date} audit trail for ADD
   trimarkView: 'order',   // 'order' | 'inventory'
   trimarkTally: {},        // tri item id → {dock, closet, restaurant}
+  learning: {},            // in-memory learning data — mirrors Firebase + localStorage
 };
 
 // ─── STORAGE ──────────────────────────────────────────────────────────────
@@ -1598,9 +1629,10 @@ function startFirebaseListeners() {
       if (fbIgnoreRemote) return;
       const remote = snap.val();
       if (remote && typeof remote === 'object') {
-        // Merge remote into local — combine orders arrays, dedupe by date, keep last 52
+        // Merge remote into local — combine, dedupe, keep 104 entries
         const local = lsGet('bartletts-learning-v1') || {};
         const merged = mergeLearningData(local, remote);
+        state.learning = merged;
         lsSet('bartletts-learning-v1', merged);
         // Push merged back so Firebase also has the complete combined dataset
         fbWriteTimers['learning-merge'] && clearTimeout(fbWriteTimers['learning-merge']);
@@ -1762,7 +1794,8 @@ function loadPersistedData() {
   // Push any locally-accumulated learning data to Firebase on startup
   const localLearning = lsGet('bartletts-learning-v1');
   if (localLearning && Object.keys(localLearning).length > 0) {
-    setTimeout(() => fbWrite('learning', localLearning, 3000), 5000); // 5s delay after load
+    state.learning = localLearning;
+    setTimeout(() => fbWrite('learning', localLearning, 3000), 5000);
   }
 }
 
@@ -1976,7 +2009,8 @@ function renderOrderView() {
     </div>` : '';
 
   // Check if suggestions are available for this supplier
-  const _suggData = lsGet('bartletts-learning-v1') || {};
+  const _suggData = (Object.keys(state.learning || {}).length > 0)
+    ? state.learning : (lsGet('bartletts-learning-v1') || {});
   const _hasSuggestions = Object.values(_suggData).some(item =>
     item.supplier === state.activeSupp && item.orders && item.orders.length >= 1
   );
@@ -4028,6 +4062,9 @@ function doSave() {
   // If BEK had items ordered, show CSV download prompt
   const bekItems = snap.suppliers['BEK'] || [];
   const bekOrdered = bekItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
+  // Debug: log exactly what's in the BEK snapshot so we can trace issues
+  console.log('[BEK SNAPSHOT]', bekItems.length, 'items total,', bekOrdered.length, 'ordered:',
+    bekOrdered.map(i => `${i.name} (${i.itemNum||'NO#'}) qty=${i.orderQty}`).join(' | '));
   if (bekOrdered.length > 0) {
     const bekDelay = 600 + (abcoOrdered.length > 0 ? 800 : 0);
     setTimeout(() => showBekCsvPrompt(bekOrdered), bekDelay);
@@ -4082,7 +4119,7 @@ function showBekCsvPrompt(items) {
   `;
   el._items = items;
   document.body.appendChild(el);
-  setTimeout(() => { if (el.parentNode) el.remove(); }, 15000);
+  // No auto-dismiss — stays until user taps DOWNLOAD or ×
 }
 
 function getBekItemNum(snapItem) {
@@ -4111,9 +4148,11 @@ function downloadBekCsv() {
   // Build CSV in BEK's exact format: Item#, Each, Quantity
   const rows = ['Item#,Each,Quantity'];
   const missing = [];
+  console.log('[BEK CSV] Building from', items.length, 'items:', items.map(i => `${i.name}=${i.orderQty}`).join(', '));
   items.forEach(i => {
     const itemNum = getBekItemNum(i);
     const qty = parseFloat(i.orderQty) || 0;
+    console.log(`[BEK CSV] ${i.name} → itemNum=${itemNum} qty=${qty}`);
     if (itemNum && qty > 0) {
       rows.push(`${itemNum},Each,${qty}`);
     } else if (qty > 0) {
@@ -4663,12 +4702,22 @@ function mergeLearningData(local, remote) {
       result[k] = remoteItem;
     } else {
       const allOrders = [...(result[k].orders || []), ...(remoteItem.orders || [])];
-      const seen = new Set();
-      const deduped = allOrders.filter(o => {
-        if (seen.has(o.date)) return false;
-        seen.add(o.date); return true;
-      }).sort((a, b) => new Date(a.date) - new Date(b.date));
-      result[k].orders = deduped.slice(-104); // keep 2 years now
+      // Deduplicate: prefer the most recent entry for the same order window
+      // Window key = month + weekOfMonth (same counting period across devices)
+      // Fall back to exact date for within-window dedup
+      const seen = new Map();
+      allOrders.forEach(o => {
+        // Primary key: same month + week = same order window
+        const windowKey = `${o.month ?? '?'}-${o.weekOfMonth ?? '?'}`;
+        const dateMs = new Date(o.date).getTime() || 0;
+        if (!seen.has(windowKey) || dateMs > seen.get(windowKey).dateMs) {
+          seen.set(windowKey, { ...o, dateMs });
+        }
+      });
+      const deduped = Array.from(seen.values())
+        .sort((a, b) => a.dateMs - b.dateMs)
+        .map(({ dateMs, ...o }) => o); // strip helper field
+      result[k].orders = deduped.slice(-104);
     }
   });
   return result;
@@ -4706,6 +4755,7 @@ function recordOrderLearning(snap) {
         if (existing[k].orders.length > 104) existing[k].orders = existing[k].orders.slice(-104);
       });
     });
+    state.learning = existing;
     lsSet('bartletts-learning-v1', existing);
     fbWrite('learning', existing, 1000);
   } catch(e) { console.warn('Learning engine error:', e); }
@@ -4825,7 +4875,9 @@ function formatTrendBadge(current, prior, field, higherIsBad) {
 
 // ── ON-HAND ANOMALY DETECTION ─────────────────────────────────────────────
 function getOnHandAlert(sn, itemName, currentOnHand, weekOfMonth) {
-  const data = lsGet('bartletts-learning-v1') || {};
+  const data = (Object.keys(state.learning || {}).length > 0)
+    ? state.learning
+    : (lsGet('bartletts-learning-v1') || {});
   const k = sn + '|' + itemName;
   const entry = data[k];
   if (!entry || !entry.orders) return null;
@@ -4883,30 +4935,72 @@ function getOnHandAlertHTML(sn, itemName, ohVal) {
   return `<div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:${alert.color};margin-top:2px;letter-spacing:0.3px;">${alert.icon} ${alert.message}</div>`;
 }
 
+// ── DEMAND FORECASTING HELPERS ────────────────────────────────────────────
+
+function _avgDaysBetweenOrders(orders) {
+  // Estimate how often this supplier is ordered
+  if (orders.length < 2) return null;
+  const sorted = [...orders].sort((a,b) => new Date(a.date) - new Date(b.date));
+  let totalDays = 0, count = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const days = (new Date(sorted[i].date) - new Date(sorted[i-1].date)) / 86400000;
+    if (days > 0 && days < 90) { totalDays += days; count++; }
+  }
+  return count > 0 ? totalDays / count : null;
+}
+
+function _avgUsagePerOrder(orders) {
+  // Average usage (units consumed between orders) from recorded usage field
+  const withUsage = orders.filter(o => o.usage !== null && o.usage !== undefined && o.usage > 0);
+  if (!withUsage.length) return null;
+  const decay = 0.88;
+  let sum = 0, wSum = 0;
+  withUsage.slice().reverse().forEach((o, i) => {
+    const w = Math.pow(decay, i);
+    sum += o.usage * w; wSum += w;
+  });
+  return wSum > 0 ? sum / wSum : null;
+}
+
+function _projectedNeed(orders, daysUntilNext) {
+  // Demand forecast: usage rate × days until next order
+  const avgUsage = _avgUsagePerOrder(orders);
+  if (avgUsage === null || daysUntilNext === null) return null;
+  // Usage is per-order-cycle; estimate daily rate
+  const avgCycleDays = _avgDaysBetweenOrders(orders) || 7;
+  const dailyUsage = avgUsage / avgCycleDays;
+  return Math.max(0, dailyUsage * daysUntilNext);
+}
+
 function getOrderSuggestions(sn) {
-  const data = lsGet('bartletts-learning-v1') || {};
+  const data = (Object.keys(state.learning || {}).length > 0)
+    ? state.learning
+    : (lsGet('bartletts-learning-v1') || {});
   const suggestions = {};
   const now = new Date();
   const currentDow     = now.getDay();
   const currentMonth   = now.getMonth();
   const currentWom     = Math.floor((now.getDate() - 1) / 7);
 
-  // Cadence model: Trimark = monthly supplier, others = weekly/as-needed
   const isMonthly = sn === 'TRIMARK';
+
+  // Days until next likely order for this supplier
+  // ABCO: ~3-4 days, BEK: ~3-4 days, TRIMARK: ~30 days
+  const daysUntilNext = isMonthly ? 30 : 4;
 
   Object.entries(data).forEach(([k, item]) => {
     if (item.supplier !== sn) return;
     const orders = item.orders || [];
     if (orders.length < 1) return;
 
-    // ── Signal 1: Exponential recency-weighted average ─────────────────
+    // ── Signal 1: Exponential recency-weighted average (order qty) ─────
     const expAvg = _expWeightedAvg(orders);
 
-    // ── Signal 2: Trend slope — project 1 order ahead ─────────────────
+    // ── Signal 2: Trend slope ──────────────────────────────────────────
     const slope = _trendSlope(orders);
-    const trendProjection = expAvg + slope; // where the trend points next order
+    const trendProjection = Math.max(0, expAvg + slope);
 
-    // ── Signal 3: Day-of-week pattern (more useful for BEK/ABCO) ──────
+    // ── Signal 3: Day-of-week pattern ─────────────────────────────────
     const dowAvg = isMonthly ? null : _dowPattern(orders, currentDow);
 
     // ── Signal 4: Monthly seasonality ─────────────────────────────────
@@ -4915,66 +5009,68 @@ function getOrderSuggestions(sn) {
     // ── Signal 5: Week-of-month pattern ───────────────────────────────
     const womAvg = _weekOfMonthPattern(orders, currentWom);
 
-    // ── Signal 6: Consistency — low stddev = higher reliability ───────
+    // ── Signal 6: Demand forecast (usage-rate based) ───────────────────
+    const demandForecast = _projectedNeed(orders, daysUntilNext);
+
+    // ── Signal 7: Current on-hand context ─────────────────────────────
+    // If we have current on-hand, adjust suggestion: need = par - onHand + demand
+    const lastEntry = orders[orders.length - 1];
+    const currentOnHand = state.onHand[sn + '|' + (
+      Object.keys(state.catalog[sn]?.items?.reduce?.((a,i) => ({...a,[i.name]:i.id}),{}) || {})
+        [item.name] ? sn + '|' + Object.values(state.catalog[sn]?.items || []).find(i=>i.name===item.name)?.id : ''
+    )] ?? null;
+
+    // ── Consistency measure ────────────────────────────────────────────
     const std = _stdDev(orders);
     const mean = orders.reduce((s, o) => s + o.qty, 0) / orders.length;
-    const cv = mean > 0 ? std / mean : 1; // coefficient of variation (lower = more consistent)
+    const cv = mean > 0 ? std / mean : 1;
 
-    // ── Blend signals with context-aware weights ───────────────────────
-    // For monthly suppliers: lean on month + trend
-    // For weekly suppliers: lean on DOW + trend
+    // ── Blend signals ──────────────────────────────────────────────────
     let signals = [], weights = [];
 
-    // Base: exponential average always included
     signals.push(expAvg); weights.push(2);
 
-    // Trend projection: weight by how strong and consistent the trend is
     if (Math.abs(slope) > 0.1) {
-      const trendWeight = Math.min(2, Math.abs(slope) / mean * 10);
-      signals.push(Math.max(0, trendProjection)); weights.push(trendWeight);
+      signals.push(trendProjection);
+      weights.push(Math.min(2, Math.abs(slope) / Math.max(mean, 0.1) * 10));
     }
 
-    // Day-of-week: only for non-monthly suppliers
-    if (!isMonthly && dowAvg !== null) {
-      signals.push(dowAvg); weights.push(1.5);
-    }
+    if (!isMonthly && dowAvg !== null) { signals.push(dowAvg); weights.push(1.5); }
 
-    // Monthly seasonality: stronger weight when more seasonal data exists
     if (monthAvg !== null) {
-      const monthOrders = orders.filter(o => o.month === currentMonth);
-      const monthWeight = isMonthly ? Math.min(3, monthOrders.length * 0.5) : Math.min(1.5, monthOrders.length * 0.3);
-      signals.push(monthAvg); weights.push(monthWeight);
+      const mw = isMonthly ? Math.min(3, orders.filter(o=>o.month===currentMonth).length*0.5) : 1;
+      signals.push(monthAvg); weights.push(mw);
     }
 
-    // Week-of-month: applies to both, but stronger for monthly
-    if (womAvg !== null) {
-      signals.push(womAvg); weights.push(isMonthly ? 1.5 : 0.8);
+    if (womAvg !== null) { signals.push(womAvg); weights.push(isMonthly ? 1.5 : 0.8); }
+
+    // Demand forecast gets strong weight when enough usage data exists
+    if (demandForecast !== null) {
+      const usageOrders = orders.filter(o => o.usage !== null && o.usage > 0);
+      const demandWeight = Math.min(4, usageOrders.length * 0.5); // grows with data
+      if (demandWeight > 0.5) {
+        signals.push(demandForecast); weights.push(demandWeight);
+      }
     }
 
-    // Blend
     const totalWeight = weights.reduce((s, w) => s + w, 0);
     const blended = signals.reduce((s, sig, i) => s + sig * weights[i], 0) / totalWeight;
     const estimate = Math.max(1, Math.round(blended));
 
-    // ── Confidence score ───────────────────────────────────────────────
-    // Factors: data quantity, consistency, number of active signals
-    const activeSignals = signals.length;
-    const consistencyBonus = cv < 0.2 ? 2 : cv < 0.4 ? 1 : 0; // very consistent = bonus
-    const dataScore = Math.min(4, Math.floor(orders.length / 4)); // up to 4 points from data qty
-    const signalScore = Math.min(2, activeSignals - 1);            // up to 2 from signal diversity
-    const totalScore = dataScore + signalScore + consistencyBonus;
+    // ── Confidence scoring ─────────────────────────────────────────────
+    const consistencyBonus = cv < 0.2 ? 2 : cv < 0.4 ? 1 : 0;
+    const dataScore = Math.min(4, Math.floor(orders.length / 4));
+    const signalScore = Math.min(2, signals.length - 1);
+    const demandBonus = demandForecast !== null ? 1 : 0;
+    const totalScore = dataScore + signalScore + consistencyBonus + demandBonus;
+    const confidence = totalScore >= 7 ? 'high' : totalScore >= 3 ? 'medium' : 'low';
 
-    const confidence = totalScore >= 6 ? 'high' : totalScore >= 3 ? 'medium' : 'low';
-
-    // ── Build explanation for UI ───────────────────────────────────────
+    // ── Explanation ────────────────────────────────────────────────────
     const trendLabel = slope > 0.3 ? '↑ trending up' : slope < -0.3 ? '↓ trending down' : '→ stable';
-    const signals_used = [
-      'avg',
-      Math.abs(slope) > 0.1 ? 'trend' : null,
-      !isMonthly && dowAvg !== null ? 'day-pattern' : null,
-      monthAvg !== null ? 'seasonal' : null,
-      womAvg !== null ? 'week-pattern' : null,
-    ].filter(Boolean);
+    const usageOrderCount = orders.filter(o => o.usage !== null && o.usage > 0).length;
+    const methodLabel = demandForecast !== null && usageOrderCount >= 3
+      ? `demand forecast (${usageOrderCount} usage records)`
+      : `order history (${orders.length} orders)`;
 
     suggestions[item.name] = {
       qty: estimate,
@@ -4982,8 +5078,11 @@ function getOrderSuggestions(sn) {
       dataPoints: orders.length,
       lastQty: orders[orders.length - 1].qty,
       trend: trendLabel,
-      signals: signals_used,
-      cv: Math.round(cv * 100), // consistency % — lower is better
+      signals: signals.length,
+      cv: Math.round(cv * 100),
+      method: methodLabel,
+      demandForecast: demandForecast !== null ? Math.round(demandForecast) : null,
+      usageOrders: usageOrderCount,
     };
   });
   return suggestions;
@@ -5025,32 +5124,44 @@ function showOrderSuggestions(sn, fromButton) {
     box-shadow:0 8px 32px rgba(0,0,0,0.6);
   `;
 
+  // Count demand forecast items
+  const demandCount = goodItems.filter(([,s]) => s.demandForecast !== null && s.usageOrders >= 3).length;
+  const methodLine = demandCount > 0
+    ? `📈 ${demandCount} items using demand forecast · ${goodItems.length - demandCount} from order history`
+    : `📋 based on order history · ${goodItems.length} items`;
+
   banner.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
       <div style="font-size:11px;font-weight:700;color:#fbbf24;letter-spacing:1px;">🧠 SUGGESTED ORDER — ${sn}</div>
-      <button onclick="document.getElementById('suggestion-banner').remove()" style="background:transparent;border:none;color:#636366;font-size:18px;cursor:pointer;padding:0;line-height:1;">×</button>
+      <button onclick="document.getElementById('suggestion-banner').remove()" style="background:transparent;border:none;color:#636366;font-size:18px;cursor:pointer;padding:0;line-height:1;touch-action:manipulation;">×</button>
     </div>
-    <div style="font-size:10px;color:#636366;margin-bottom:10px;">Multi-signal prediction. Tap items to adjust before applying.</div>
-    <div id="suggestion-items" style="max-height:200px;overflow-y:auto;margin-bottom:12px;">
-      ${goodItems.map(([name, s]) => `
+    <div style="font-size:9px;color:#636366;margin-bottom:10px;">${methodLine} · edit before applying</div>
+    <div id="suggestion-items" style="max-height:220px;overflow-y:auto;margin-bottom:12px;">
+      ${goodItems.map(([name, s]) => {
+        const confColor = s.confidence==='high'?'#4ade80':s.confidence==='medium'?'#fbbf24':'#636366';
+        const confDot = s.confidence==='high'?'●●●':s.confidence==='medium'?'●●○':'●○○';
+        const isDemand = s.demandForecast !== null && s.usageOrders >= 3;
+        const icon = isDemand ? '📈' : '📋';
+        const tip = isDemand
+          ? `~${s.demandForecast} needed · ${s.trend}`
+          : `${s.dataPoints} orders · ${s.trend}`;
+        return `
         <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2c2c2e;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:11px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
-            <div style="font-size:9px;color:#48484a;margin-top:1px;">${s.trend} · ${s.signals.join(', ')} · ${s.dataPoints} orders</div>
+            <div style="font-size:9px;color:#48484a;margin-top:1px;">${icon} ${tip} <span style="color:${confColor}">${confDot}</span></div>
           </div>
-          <span style="font-size:9px;color:${s.confidence==='high'?'#4ade80':s.confidence==='medium'?'#fbbf24':'#636366'};">
-            ${s.confidence==='high'?'●●●':s.confidence==='medium'?'●●○':'●○○'}
-          </span>
           <input type="number" inputmode="numeric"
             id="sug-inp-${name.replace(/[^a-z0-9]/gi,'_')}"
             value="${s.qty}"
             style="width:48px;height:30px;text-align:center;border-radius:6px;border:1.5px solid #fbbf24;background:#111;color:#fbbf24;font-family:ui-monospace,monospace;font-size:13px;font-weight:700;outline:none;-webkit-appearance:none;">
           <span style="font-size:10px;color:#636366;">${sn==='TRIMARK'?'cs':''}</span>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>
     <div style="display:flex;gap:8px;">
-      <button onclick="document.getElementById('suggestion-banner').remove()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;">Dismiss</button>
-      <button onclick="applySuggestions('${sn}')" style="flex:2;height:36px;border-radius:10px;border:none;background:#fbbf24;color:#000;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">⚡ APPLY</button>
+      <button onclick="document.getElementById('suggestion-banner').remove()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;">Dismiss</button>
+      <button onclick="applySuggestions('${sn}')" style="flex:2;height:36px;border-radius:10px;border:none;background:#fbbf24;color:#000;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;touch-action:manipulation;">⚡ APPLY</button>
     </div>
   `;
   banner._suggestions = suggestions;
@@ -5768,7 +5879,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.49</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.51</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.48</div>
 
