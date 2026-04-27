@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.51                                           │
+  │  CURRENT VERSION: v1.53                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,28 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.53 — 2026-04-27
+  · BEK# edit field added to item edit sheet — tap ✎ Edit on any BEK item to set/fix its item number directly
+  · BEK# field highlighted in blue, clearly labeled, shows current value pre-filled
+  · commitEdit saves the new item number to catalog and syncs to Firebase immediately
+  · Toast confirms save with BEK# included e.g. "✓ Item updated · BEK# 885622"
+
+  CSS FIXES — black gaps on scroll/tab switch:
+  · html background #000 added — prevents white flash behind app
+  · #app uses -webkit-fill-available fallback for older iOS Safari
+  · topbar height now accounts for safe-area-inset-top (notch/dynamic island)
+  · tabbar minimum 16px bottom padding even on non-notch devices
+  · #content min-height:0 prevents flex overflow causing gaps
+  · All view containers get min-height:0 + background:#000
+  · history-list background:#000 added
+
+  v1.52 — 2026-04-27
+  · getBekItemNum upgraded with 5-level lookup — final level is fuzzy name matching (40% word overlap threshold)
+  · Handles custom-named items like "Hand soap Safeguard" → matches "Soap Hand Anti Bacterial" (167297)
+  · ⚠ NO BEK# warning shown on any BEK item missing an item number — visible in normal view and edit mode
+  · This makes it easy to spot and fix custom items that will cause CSV mismatches
+  · BEK CSV prompt auto-dismiss removed in v1.51 — stays open until tapped
 
   v1.51 — 2026-04-27
   · BEK CSV debug: added console logs at save and download to trace exact items/quantities
@@ -497,7 +519,7 @@
   <style>
     /* System fonts — no internet needed, native on every Apple device */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; height: 100%; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; height: 100%; background: #000; }
     body {
       background: #000;
       overflow: hidden;
@@ -548,17 +570,20 @@
     #app {
       height: 100vh;
       height: 100dvh;
+      height: -webkit-fill-available;
       display: flex;
       flex-direction: column;
       background: #000;
       overflow: hidden;
-      padding-top: env(safe-area-inset-top, 0px);
+      /* Safe areas handled per-element — don't double-pad here */
     }
 
     /* Top bar */
     #topbar {
       background: #111; border-bottom: 1px solid #1c1c1e;
-      padding: 0 16px; height: 52px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top, 0px);
+      height: calc(52px + env(safe-area-inset-top, 0px));
       display: flex; align-items: center; justify-content: space-between;
       flex-shrink: 0;
     }
@@ -591,7 +616,7 @@
     .btn-save:active { transform: scale(0.97); }
 
     /* Content area */
-    #content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    #content { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: #000; }
 
     /* Supplier tab bar */
     .sup-tabs {
@@ -700,7 +725,7 @@
     #tabbar {
       background: #111; border-top: 1px solid #1c1c1e;
       display: flex; flex-shrink: 0;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 16px);
     }
     .tab-btn {
       flex: 1; height: 56px; border: none; background: transparent;
@@ -989,7 +1014,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.51</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.53</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1005,7 +1030,7 @@
   <div id="content">
 
     <!-- ORDER VIEW -->
-    <div id="view-order" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+    <div id="view-order" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;background:#000;">
       <div class="sup-tabs" id="sup-tabs"></div>
       <div class="sup-info" id="sup-info"></div>
       <div class="edit-banner" id="edit-banner" style="display:none;">
@@ -1026,18 +1051,18 @@
     </div>
 
     <!-- HISTORY VIEW -->
-    <div id="view-history" style="flex:1;display:none;flex-direction:column;overflow:hidden;">
+    <div id="view-history" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0;background:#000;">
       <div class="filter-chips" id="filter-chips"></div>
-      <div id="history-list"></div>
+      <div id="history-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#000;"></div>
     </div>
 
     <!-- MUST KNOW VIEW -->
-    <div id="view-mustknow" style="flex:1;display:none;flex-direction:column;overflow:hidden;">
+    <div id="view-mustknow" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0;background:#000;">
       <div id="mustknow-scroll" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
 
     <!-- INVENTORY VIEW -->
-    <div id="view-inventory" style="flex:1;display:none;flex-direction:column;overflow:hidden;">
+    <div id="view-inventory" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0;background:#000;">
       <div id="inventory-header" style="padding:10px 16px 6px;border-bottom:1px solid #1c1c1e;flex-shrink:0;"></div>
       <div id="inventory-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
@@ -1149,6 +1174,14 @@
       <div class="edit-field-label">PAR LEVEL</div>
       <input class="edit-input" type="number" inputmode="decimal" id="edit-par">
     </div>
+    <!-- BEK item number — always shown when editing a BEK item -->
+    <div id="edit-bek-num-wrap" style="display:none;">
+      <div class="edit-field-wrap" style="border:1.5px solid #60a5fa;border-radius:12px;padding:10px 12px;background:rgba(96,165,250,0.06);">
+        <div class="edit-field-label" style="color:#60a5fa;">BEK ITEM # <span style="color:#48484a;font-size:9px;">required for CSV export</span></div>
+        <input class="edit-input" type="number" inputmode="numeric" id="edit-itemnum" placeholder="e.g. 885622" style="border-color:#60a5fa;">
+      </div>
+    </div>
+
     <!-- Extra fields shown only in add mode -->
     <div id="edit-extra-fields" style="display:none;">
       <div class="edit-field-wrap">
@@ -1159,9 +1192,9 @@
         <div class="edit-field-label">UNITS PER CASE <span style="color:#48484a;font-size:9px;">Trimark only</span></div>
         <input class="edit-input" type="number" inputmode="numeric" id="edit-caseqty" placeholder="1">
       </div>
-      <div id="edit-itemnum-wrap" class="edit-field-wrap">
+      <div id="edit-itemnum-add-wrap" class="edit-field-wrap">
         <div class="edit-field-label">BEK ITEM # <span style="color:#48484a;font-size:9px;">BEK only</span></div>
-        <input class="edit-input" type="number" inputmode="numeric" id="edit-itemnum" placeholder="e.g. 885622">
+        <input class="edit-input" type="number" inputmode="numeric" id="edit-itemnum-add" placeholder="e.g. 885622">
       </div>
     </div>
     <div style="margin-bottom:22px;"></div>
@@ -2080,6 +2113,13 @@ function renderOrderView() {
       editBtn.innerHTML = '✎';
       editBtn.onclick = () => startEdit(state.activeSupp, item);
       inner.appendChild(editBtn);
+      // Warn if BEK item is missing itemNum
+      if (state.activeSupp === 'BEK' && !item.itemNum) {
+        const warn = document.createElement('span');
+        warn.style.cssText = 'font-size:9px;font-weight:700;color:#f87171;font-family:ui-monospace,monospace;background:rgba(248,113,113,0.12);padding:1px 5px;border-radius:4px;margin-left:4px;';
+        warn.textContent = '⚠ NO BEK#';
+        inner.appendChild(warn);
+      }
     }
 
     // Name col
@@ -2091,8 +2131,9 @@ function renderOrderView() {
     const usageVal = (state.activeSupp === 'TRIMARK' && beginVal !== undefined && endingVal !== '') ? (parseFloat(beginVal)||0) - (parseFloat(endingVal)||0) : null;
     const brkDisplay = (state.activeSupp === 'TRIMARK' && !state.editMode && beginVal !== undefined)
       ? `<span style="color:#a78bfa;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;margin-left:6px">beg:${beginVal}${usageVal!==null?' used:'+usageVal:''}</span>` : '';
+    const missingBekNum = state.activeSupp === 'BEK' && !item.itemNum;
     nameCol.innerHTML = `
-      <div class="item-name">${item.name}${brkDisplay}</div>
+      <div class="item-name">${item.name}${brkDisplay}${missingBekNum ? '<span style="font-size:9px;color:#f87171;margin-left:6px;font-family:ui-monospace,monospace;">⚠ no BEK#</span>' : ''}</div>
       <div class="item-meta">
         <span>${item.pack}</span><span style="color:#2c2c2e">·</span>
         <span>par <span ${state.editMode ? 'style="color:#fbbf24"' : ''}>${item.par}</span></span>
@@ -3787,9 +3828,18 @@ function startEdit(sn, item) {
   document.getElementById('edit-name').value = item.name;
   document.getElementById('edit-pack').value = item.pack;
   document.getElementById('edit-par').value = item.par;
-  // Hide extra fields in edit mode (keep it simple)
+  // Hide extra fields in add mode
   document.getElementById('edit-extra-fields').style.display = 'none';
   document.getElementById('edit-delete-btn').style.display = 'block';
+  // Show BEK# field for BEK items — always
+  const bekNumWrap = document.getElementById('edit-bek-num-wrap');
+  if (sn === 'BEK') {
+    bekNumWrap.style.display = 'block';
+    document.getElementById('edit-itemnum').value = item.itemNum || '';
+  } else {
+    bekNumWrap.style.display = 'none';
+    document.getElementById('edit-itemnum').value = '';
+  }
   document.getElementById('edit-sheet').style.display = 'flex';
   setTimeout(() => document.getElementById('edit-name').focus(), 100);
 }
@@ -3844,7 +3894,7 @@ function commitEdit() {
 
     const cost     = parseFloat(document.getElementById('edit-cost').value) || 0;
     const caseQty  = parseInt(document.getElementById('edit-caseqty').value) || 1;
-    const itemNum  = parseInt(document.getElementById('edit-itemnum').value) || null;
+    const itemNum  = parseInt(document.getElementById('edit-itemnum-add')?.value || document.getElementById('edit-itemnum')?.value) || null;
 
     // Generate a unique ID — use prefix + timestamp suffix
     const prefix = sn.toLowerCase().slice(0, 3);
@@ -3870,12 +3920,17 @@ function commitEdit() {
     // ── EDIT MODE ─────────────────────────────────────────────────────────
     if (!state.editingItem) return;
     const {sn, id} = state.editingItem;
-    state.catalog[sn].items = state.catalog[sn].items.map(it =>
-      it.id === id ? {...it, name: name||it.name, pack: pack||it.pack, par: isNaN(par) ? it.par : par} : it
-    );
+    const newItemNum = sn === 'BEK' ? (parseInt(document.getElementById('edit-itemnum').value) || null) : undefined;
+    state.catalog[sn].items = state.catalog[sn].items.map(it => {
+      if (it.id !== id) return it;
+      const updated = {...it, name: name||it.name, pack: pack||it.pack, par: isNaN(par) ? it.par : par};
+      if (sn === 'BEK' && newItemNum) updated.itemNum = newItemNum;
+      return updated;
+    });
     saveCatalog();
     cancelEdit();
-    showToast('✓ Item updated');
+    const itemNumNote = sn === 'BEK' && newItemNum ? ` · BEK# ${newItemNum}` : '';
+    showToast('✓ Item updated' + itemNumNote);
     render();
   }
 }
@@ -4125,19 +4180,50 @@ function showBekCsvPrompt(items) {
 function getBekItemNum(snapItem) {
   // Priority: 1) itemNum stored directly on snapshot
   if (snapItem.itemNum) return snapItem.itemNum;
+
   // 2) match by id in live catalog
   const catItems = state.catalog['BEK']?.items || [];
-  const byId   = catItems.find(ci => ci.id   === snapItem.id);
+  const byId = catItems.find(ci => ci.id === snapItem.id);
   if (byId?.itemNum) return byId.itemNum;
-  // 3) match by name in live catalog
+
+  // 3) exact name match in live catalog
   const byName = catItems.find(ci => ci.name === snapItem.name);
   if (byName?.itemNum) return byName.itemNum;
-  // 4) always fall back to DEFAULT_SUPPLIERS — immune to stale Firebase catalog
+
+  // 4) exact match in DEFAULT_SUPPLIERS
   const defItems = DEFAULT_SUPPLIERS['BEK']?.items || [];
   const defById   = defItems.find(di => di.id   === snapItem.id);
   if (defById?.itemNum) return defById.itemNum;
   const defByName = defItems.find(di => di.name === snapItem.name);
-  return defByName?.itemNum || null;
+  if (defByName?.itemNum) return defByName?.itemNum;
+
+  // 5) fuzzy match — normalize both names and find best overlap
+  // Handles custom names like "Hand soap Safeguard" → "Soap Hand Anti Bacterial"
+  function normalize(s) {
+    return s.toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ').trim()
+      .split(' ')
+      .filter(w => w.length > 2); // skip short words
+  }
+  const snapWords = normalize(snapItem.name);
+  let bestMatch = null, bestScore = 0;
+  defItems.forEach(di => {
+    if (!di.itemNum) return;
+    const defWords = normalize(di.name);
+    const shared = snapWords.filter(w => defWords.includes(w)).length;
+    const score = shared / Math.max(snapWords.length, defWords.length);
+    if (score > bestScore && score >= 0.4) { // 40% word overlap threshold
+      bestScore = score;
+      bestMatch = di;
+    }
+  });
+  if (bestMatch) {
+    console.log('[BEK] Fuzzy matched "' + snapItem.name + '" → "' + bestMatch.name + '" (' + bestMatch.itemNum + ') score=' + Math.round(bestScore*100) + '%');
+    return bestMatch.itemNum;
+  }
+
+  return null;
 }
 
 function downloadBekCsv() {
@@ -5879,7 +5965,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.51</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.53</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.48</div>
 
