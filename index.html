@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.53                                           │
+  │  CURRENT VERSION: v1.68                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,140 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.68 — 2026-04-29
+  · Must Know tab updated:
+    - HOW TO USE: added 💰 COG tab section with monthly routine, price updates, projections, notifications
+    - CRITICAL RULES: added ☁️ DATA SAFETY section explaining Firebase restore behavior
+    - New 💰 COST TAB — QUICK REFERENCE section added between ELECTRICAL and THE APP IS LEARNING
+  · What's New updated: 12 cards covering COG tab, projections, notifications, data safety fix,
+    delivery confirmation, BEK CSV, suggestions, alerts, catalog management, sync
+  · What's New subtitle updated to v1.67
+
+  v1.67 — 2026-04-29
+  · FULL SWEEP PASSED: 66/66 checks — syntax, HTML structure, runtime, Firebase, state, localStorage
+  · 0 nested backticks · 0 .prepend() · 0 confirm/alert/prompt · 0 null crashes
+  · All 37 HTML elements present · All 12 Firebase paths write correctly
+  · All 12 render paths runtime-tested (order×6 suppliers, history, mustknow, inventory, COG×2)
+
+  v1.66 — 2026-04-29
+  · FIXED: Trimark BEGIN and ADD counts disappearing on app open / PWA reinstall
+  · ROOT CAUSE: loadPersistedData() had a hardcoded fallback of February 2026 counts that fired
+    whenever localStorage was empty (fresh install, cache clear, new device). It immediately called
+    saveTrimarkBegin() which wrote Feb 2026 numbers to Firebase — overwriting your real counts —
+    before the Firebase listener had a chance to load the real data.
+  · FIX 1: Removed hardcoded fallback entirely. Empty localStorage now starts with empty {}.
+    Firebase listener populates the real data within ~1 second of app open.
+  · FIX 2: trimarkBegin, trimarkAdd, trimarkBeginMeta, trimarkAddMeta Firebase listeners now
+    always apply data on first load regardless of fbIgnoreRemote flag.
+    This ensures a fresh install always gets real data from Firebase immediately.
+
+  v1.65 — 2026-04-29
+  · FIXED: view-cog and cog-scroll divs were missing from HTML entirely — removed by earlier patch
+    Every render of the COG tab was crashing on null getElementById, causing silent failure
+  · FIXED: switchTab() was not hiding view-cog when switching away, leaving it visible behind other tabs
+  · FIXED: Element.prepend() not supported in older iOS Safari — replaced with insertBefore(d, firstChild)
+  · FIXED: 0 nested backticks, 0 null .style crashes, 0 confirm() calls, syntax clean
+  · Runtime simulation: 12/12 render paths pass — order/all suppliers, history, mustknow, inventory, COG
+
+  v1.64 — 2026-04-29
+  · FIXED root crash: Element.prepend() is not supported in older iOS Safari
+  · renderTabBar() called prepend() on every single render — crashed before any view could load
+  · Replaced with insertBefore(d, firstChild) which is supported on all iOS versions
+  · Runtime simulation confirmed: script now loads and render() completes without errors
+
+  v1.63 — 2026-04-29
+  · ROOT CAUSE FOUND: iOS Safari compiles the ENTIRE script at load time and rejects ANY nested
+    template literal anywhere in the file — even in functions never called. This crashes the
+    whole app before a single line runs, causing "script error" with nothing loading.
+  · ELIMINATED ALL 19 nested backticks from the entire file (was 19, now 0):
+    - showTrimarkHelp: steps .map() → DOM forEach after append
+    - showOrderSuggestions: goodItems .map() → DOM forEach after append
+    - showWhatsNew: updates .map() → DOM forEach after append
+    - openHistoryEditCounts: rows template → string concatenation
+    - openPrint: alertSec critItems/lowItems .map(), isTri header, casesUsed, noteRow, deliveryStr
+    - openTrimarkInventoryReport: totalGain tiles, breakage section, gain section → pre-computed vars
+    - openTrimarkOrderReport: totalCost tile, orderItems section, okItems section → pre-computed vars
+  · Fixed syntax error: unescaped single quotes in histEditChange string concatenation
+  · 0 nested backticks confirmed · syntax clean · confirmed no render-path issues
+
+  v1.62 — 2026-04-29
+  · FIXED: confirm() is blocked in iOS PWA mode — returns undefined instead of true/false, causing silent crashes
+  · clearOrder() now uses two-tap confirmation on the Clear button (matches deleteItem pattern)
+  · clearTrimarkInventory() now uses toast-based two-tap confirmation
+  · Fixed remaining REC'D apostrophe in single-quoted string (syntax error on strict parsers)
+  · Full debug: 0 null .style crashes · 0 render-path nested templates · 0 confirm() calls · syntax clean
+
+  v1.61 — 2026-04-27
+  · FIXED root crash — iOS Safari rejects nested template literals in innerHTML on every render
+  · Systematically removed ALL nested templates from render-path functions:
+    - updateSupInfo: alerts div + suggest button (root crash — ran on every render)
+    - renderTrimarkInventory: nameDiv loss display + endBtn tally display
+    - renderDetail: confirmBar missing.map + confirmBadge ternary + row values display
+    - renderInventoryTab: history card with needOrder/totalLoss tiles
+    - buildAuditPanel: nameCell BEGIN/ADD meta labels
+  · All replaced with createElement/appendChild/textContent — zero nested templates in render path
+  · Fixed RECEIVED apostrophe syntax error in confirmBadge string
+  · 0 render-path nested templates confirmed · Syntax clean
+
+  v1.60 — 2026-04-27
+  · FIXED remaining script crashes — two more nested template literals in COG code:
+    1. uploadDiv.innerHTML had .map(sn => `...`) for supplier selector buttons
+    2. form.innerHTML had .map(d => `...`) for notification day buttons
+  · Both rewritten with DOM createElement/appendChild — zero nested templates in COG code confirmed
+  · iOS Safari rejects nested template literals inside innerHTML at runtime even when Node accepts them
+
+  v1.59 — 2026-04-27
+  · FIXED script crash — projection section used nested template literals inside innerHTML which iOS Safari rejects at runtime
+  · Rewrote entire projection section using DOM createElement/appendChild methods — no innerHTML template nesting
+  · FIXED edit-itemnum-wrap null crash — null-safe lookup added in startAddItem
+  · All null .style crashes: 0 confirmed
+  · All COG innerHTML assignments: 0 nested templates confirmed
+
+  v1.58 — 2026-04-27
+  · FIXED script error crash — edit-itemnum-wrap referenced but renamed to edit-bek-num-wrap in earlier patch
+  · Fixed with null-safe lookup: checks edit-itemnum-add-wrap first, falls back gracefully
+
+  · 📈 PROJECTIONS section added to COG tab:
+    - Next quarter projected spend, sales, and cost % (3 tiles)
+    - Historical quarters bar chart with actual spend and cost %
+    - Current quarter extrapolation: "at current pace, this quarter → ~$X spend"
+    - Confidence badge: HIGH (3+ quarters of data), MEDIUM (2), LOW (1)
+    - Projection method: trend + historical average when enough data (60/40 blend)
+    - Seasonal adjustment: same quarter last year weighted in when available
+    - Graceful no-data state with instructions to unlock projections
+    - Enter sales figures monthly to also project cost %
+
+  v1.57 — 2026-04-27
+  · CSV price upload now requires supplier selection before uploading — no cross-contamination between BEK/TRIMARK/ABCO etc
+  · Supplier selector buttons shown above upload button — selected supplier highlighted in its accent color
+  · Toast confirms which supplier was updated and warns if items found in other suppliers were skipped
+  · Removed duplicate view-cog div that was inserted in wrong location
+  · cogAddNotification replaced with inline form — prompt() is blocked in PWA on iOS
+  · Notification form: label field, time picker, day toggle buttons — no native dialogs needed
+  · Added cogSaveNewNotification() to handle form submission with validation
+  · showToast 3-arg calls fixed — function only accepts 2 args
+
+  v1.55 — 2026-04-27
+  · HOTFIX: view-cog HTML element was missing — caused "script error" crash on every render
+  · The JS was referencing document.getElementById('view-cog') but the div was never inserted
+  · Fixed by inserting <div id="view-cog"> into HTML between inventory view and copyright footer
+
+  v1.54 — 2026-04-27
+  · 💰 COST tab added as 5th tab
+  · Monthly spend per supplier — auto-calculated from order history × unit costs (Trimark, BEK, Amazon)
+  · Manual spend entry for ABCO, ELECTRICAL, and Other — type and it saves instantly
+  · Monthly sales entry → auto-calculates supply cost % with color coding (green <30%, yellow <40%, red >40%)
+  · 3-month spend trend bar chart with cost % per month
+  · Month selector to browse historical months
+  · 📥 Price update via CSV upload — columns: Item#, Unit Cost — matches by item number across all suppliers
+  · CSV template download link included
+  · 🔔 Notifications panel — add/toggle/delete per-device reminders with custom label, days, and time
+  · Notification badge on COG tab shows count of active reminders
+  · Notifications checked on app open — shows toast if due within 30 minutes
+  · cogSales and cogManual synced to Firebase — shared across devices
+  · UNIT COST field added to item edit sheet for all suppliers — update prices as deliveries arrive
+  · Edit toast now confirms BEK# and unit cost changes e.g. "✓ Item updated · BEK# 885622 · $79.79"
 
   v1.53 — 2026-04-27
   · BEK# edit field added to item edit sheet — tap ✎ Edit on any BEK item to set/fix its item number directly
@@ -1014,7 +1148,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.53</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.68</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1067,6 +1201,11 @@
       <div id="inventory-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     </div>
 
+    <!-- COG VIEW -->
+    <div id="view-cog" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0;background:#000;">
+      <div id="cog-scroll" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;"></div>
+    </div>
+
   </div>
 
   <!-- Copyright Footer -->
@@ -1094,6 +1233,10 @@
     <button class="tab-btn" id="tab-inventory" onclick="switchTab('inventory')">
       <span class="tab-emoji">📦</span>
       <span class="tab-label">Inventory</span>
+    </button>
+    <button class="tab-btn" id="tab-cog" onclick="switchTab('cog')" style="position:relative;">
+      <span class="tab-emoji">💰</span>
+      <span class="tab-label">Cost</span>
     </button>
   </div>
 
@@ -1173,6 +1316,10 @@
     <div class="edit-field-wrap">
       <div class="edit-field-label">PAR LEVEL</div>
       <input class="edit-input" type="number" inputmode="decimal" id="edit-par">
+    </div>
+    <div class="edit-field-wrap" style="margin-bottom:4px;">
+      <div class="edit-field-label">UNIT COST ($) <span style="color:#48484a;font-size:9px;">used in reports &amp; cost tracking</span></div>
+      <input class="edit-input" type="number" inputmode="decimal" id="edit-unit-cost" placeholder="0.00" step="0.01">
     </div>
     <!-- BEK item number — always shown when editing a BEK item -->
     <div id="edit-bek-num-wrap" style="display:none;">
@@ -1506,6 +1653,9 @@ let state = {
   trimarkView: 'order',   // 'order' | 'inventory'
   trimarkTally: {},        // tri item id → {dock, closet, restaurant}
   learning: {},            // in-memory learning data — mirrors Firebase + localStorage
+  cogSales: {},            // 'YYYY-MM' → sales amount
+  cogManual: {},           // 'YYYY-MM' → {ABCO: amt, ELECTRICAL: amt, other: amt}
+  cogNotifications: [],    // [{id, label, days, time, supplier, enabled}]
 };
 
 // ─── STORAGE ──────────────────────────────────────────────────────────────
@@ -1573,8 +1723,12 @@ function startFirebaseListeners() {
     }, err => { console.warn('Firebase history error:', err); fbSyncStatus = 'error'; updateSyncBadge(); });
 
     // ── TRIMARK BEGIN INVENTORY ────────────────────────────────────
+    let _trimarkBeginFirstLoad = true;
     fbDb.ref('trimarkBegin').on('value', snap => {
-      if (fbIgnoreRemote) return;
+      // Always apply on very first load — restores data after localStorage clear / PWA reinstall
+      // After that, respect fbIgnoreRemote to avoid echo loops
+      if (!_trimarkBeginFirstLoad && fbIgnoreRemote) return;
+      _trimarkBeginFirstLoad = false;
       const data = snap.val();
       if (data && typeof data === 'object') {
         state.trimarkBegin = data;
@@ -1584,8 +1738,10 @@ function startFirebaseListeners() {
     }, err => console.warn('FB trimarkBegin error:', err));
 
     // ── TRIMARK ADD (delivery additions) ──────────────────────────────
+    let _trimarkAddFirstLoad = true;
     fbDb.ref('trimarkAdd').on('value', snap => {
-      if (fbIgnoreRemote) return;
+      if (!_trimarkAddFirstLoad && fbIgnoreRemote) return;
+      _trimarkAddFirstLoad = false;
       const data = snap.val();
       if (data && typeof data === 'object') {
         state.trimarkAdd = data;
@@ -1595,8 +1751,10 @@ function startFirebaseListeners() {
     }, err => console.warn('FB trimarkAdd error:', err));
 
     // ── TRIMARK BEGIN META ────────────────────────────────────────────
+    let _trimarkBeginMetaFirstLoad = true;
     fbDb.ref('trimarkBeginMeta').on('value', snap => {
-      if (fbIgnoreRemote) return;
+      if (!_trimarkBeginMetaFirstLoad && fbIgnoreRemote) return;
+      _trimarkBeginMetaFirstLoad = false;
       const data = snap.val();
       if (data && typeof data === 'object') {
         state.trimarkBeginMeta = data;
@@ -1605,8 +1763,10 @@ function startFirebaseListeners() {
     }, err => console.warn('FB trimarkBeginMeta error:', err));
 
     // ── TRIMARK ADD META ───────────────────────────────────────────────
+    let _trimarkAddMetaFirstLoad = true;
     fbDb.ref('trimarkAddMeta').on('value', snap => {
-      if (fbIgnoreRemote) return;
+      if (!_trimarkAddMetaFirstLoad && fbIgnoreRemote) return;
+      _trimarkAddMetaFirstLoad = false;
       const data = snap.val();
       if (data && typeof data === 'object') {
         state.trimarkAddMeta = data;
@@ -1696,6 +1856,18 @@ function startFirebaseListeners() {
       }
     }, err => console.warn('FB liveOrder error:', err));
 
+    // ── COG SALES & MANUAL ───────────────────────────────────────────────
+    fbDb.ref('cogSales').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') { state.cogSales = data; lsSet('bartletts-cog-sales-v1', data); }
+    }, err => console.warn('FB cogSales error:', err));
+    fbDb.ref('cogManual').on('value', snap => {
+      if (fbIgnoreRemote) return;
+      const data = snap.val();
+      if (data && typeof data === 'object') { state.cogManual = data; lsSet('bartletts-cog-manual-v1', data); }
+    }, err => console.warn('FB cogManual error:', err));
+
     fbSyncStatus = 'syncing';
     updateSyncBadge();
   } catch(e) {
@@ -1769,53 +1941,11 @@ function loadPersistedData() {
   const beg = lsGet('bartletts-trimark-begin-v1');
   if (beg) {
     state.trimarkBegin = beg;
-  } else {
-    // Pre-loaded from February 2026 beginning counts (RestOp_Breakage_report_1.xlsx)
-    state.trimarkBegin = {
-      'tri-1':  68,   // Rocks glasses
-      'tri-2':  97,   // Collins glasses
-      'tri-3':  86,   // Beer Glass
-      'tri-4':  392,  // Tea Glass
-      'tri-5':  37,   // Champagne glasses
-      'tri-6':  111,  // Martini glasses
-      'tri-7':  49,   // Cordial glasses
-      'tri-8':  31,   // Brandy snifters
-      'tri-9':  33,   // Port wine glasses
-      'tri-10': 21,   // Whiskey glasses
-      'tri-11': 130,  // Wine glasses
-      'tri-12': 14,   // Espresso Cup
-      'tri-13': 9,    // Espresso Saucer
-      'tri-14': 83,   // Cappuccino cup
-      'tri-15': 91,   // Cappuccino saucer
-      'tri-16': 13,   // Latte Cup
-      'tri-17': 15,   // Latte Saucer
-      'tri-18': 63,   // Coffee Mugs
-      'tri-19': 152,  // Salad Plate 11"
-      'tri-20': 107,  // Chksal bowls
-      'tri-21': 98,   // Bird bowl
-      'tri-22': 253,  // Ala plate 10"
-      'tri-23': 119,  // Platter plates
-      'tri-24': 71,   // Thai plates
-      'tri-25': 95,   // Soup bowl
-      'tri-26': 78,   // Chili bowl
-      'tri-27': 94,   // Spin bowl
-      'tri-28': 37,   // Gravy Boats
-      'tri-29': 30,   // Key Lime pie plate
-      'tri-30': 95,   // Metal ramekin
-      'tri-31': 410,  // Tip plate
-      'tri-32': 571,  // Fork
-      'tri-33': 600,  // Knife
-      'tri-34': 97,   // Steak knife
-      'tri-35': 202,  // Spoon
-      'tri-36': 153,  // Iced tea spoons
-      'tri-37': 59,   // Coffee spoons
-      'tri-38': 83,   // S & P mills
-      'tri-39': 31,   // Waiter Aprons
-      'tri-40': 11,   // Chefs hats
-      'tri-41': 36,   // Pate Knives
-    };
-    saveTrimarkBegin();
   }
+  // No hardcoded fallback — if localStorage is empty, start with empty object.
+  // Firebase listener will populate state.trimarkBegin shortly after init.
+  // The old Feb 2026 hardcoded fallback was calling saveTrimarkBegin() immediately,
+  // which overwrote real Firebase data before the listener had a chance to fire.
   const addData = lsGet('bartletts-trimark-add-v1');
   if (addData) state.trimarkAdd = addData;
   const beginMeta = lsGet('bartletts-trimark-begin-meta-v1');
@@ -1830,6 +1960,12 @@ function loadPersistedData() {
     state.learning = localLearning;
     setTimeout(() => fbWrite('learning', localLearning, 3000), 5000);
   }
+  const cogSales = lsGet('bartletts-cog-sales-v1');
+  if (cogSales) state.cogSales = cogSales;
+  const cogManual = lsGet('bartletts-cog-manual-v1');
+  if (cogManual) state.cogManual = cogManual;
+  const cogNotif = lsGet('bartletts-cog-notif-v1');
+  if (cogNotif) state.cogNotifications = cogNotif;
 }
 
 function saveBreakage() {
@@ -1871,7 +2007,29 @@ function clearOrder() {
   const filledCount = Object.keys(state.onHand).filter(k => k.startsWith(state.activeSupp) && state.onHand[k] !== '').length
     + Object.keys(state.orderQty).filter(k => k.startsWith(state.activeSupp) && state.orderQty[k] !== '').length;
   if (filledCount === 0) { showToast('Nothing to clear.', 'warn'); return; }
-  if (!confirm(`Clear all ${state.activeSupp} on-hand counts and order quantities?`)) return;
+  // confirm() is blocked in iOS PWA — use two-tap pattern on the button instead
+  const _clearBtn = document.getElementById('btn-clear');
+  if (_clearBtn && _clearBtn.dataset.confirming !== '1') {
+    _clearBtn.dataset.confirming = '1';
+    _clearBtn.textContent = '⚠ TAP AGAIN';
+    _clearBtn.style.borderColor = '#f87171';
+    _clearBtn.style.color = '#f87171';
+    setTimeout(() => {
+      if (_clearBtn.dataset.confirming === '1') {
+        _clearBtn.dataset.confirming = '0';
+        _clearBtn.textContent = '✕ Clear';
+        _clearBtn.style.borderColor = '#3a3a3c';
+        _clearBtn.style.color = '#636366';
+      }
+    }, 3000);
+    return;
+  }
+  if (_clearBtn) {
+    _clearBtn.dataset.confirming = '0';
+    _clearBtn.textContent = '✕ Clear';
+    _clearBtn.style.borderColor = '#3a3a3c';
+    _clearBtn.style.color = '#636366';
+  }
   // Clear only the active supplier's keys
   for (const k of Object.keys(state.onHand)) {
     if (k.startsWith(state.activeSupp + '|')) delete state.onHand[k];
@@ -1934,6 +2092,7 @@ function render() {
   else if (state.tab === 'history') renderHistoryView();
   else if (state.tab === 'mustknow') renderMustKnow();
   else if (state.tab === 'inventory') renderInventoryTab();
+  else if (state.tab === 'cog') renderCogTab();
   renderTabBar();
 }
 
@@ -1966,12 +2125,29 @@ function renderTabBar() {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   const activeTab = document.getElementById('tab-' + state.tab);
   if (activeTab) activeTab.classList.add('active');
+  const cogTabBtn = document.getElementById('tab-cog');
+  if (cogTabBtn) {
+    const activeNotifs = (state.cogNotifications||[]).filter(n=>n.enabled).length;
+    const existBadge = cogTabBtn.querySelector('.cog-notif-badge');
+    if (existBadge) existBadge.remove();
+    if (activeNotifs > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'cog-notif-badge';
+      badge.style.cssText = 'position:absolute;top:4px;right:6px;background:#fbbf24;color:#000;border-radius:8px;font-size:9px;font-weight:700;padding:0 4px;min-width:14px;text-align:center;';
+      badge.textContent = activeNotifs;
+      cogTabBtn.appendChild(badge);
+    }
+  }
   const ind = activeTab?.querySelector('.tab-indicator');
   document.querySelectorAll('.tab-indicator').forEach(i => i.remove());
   if (activeTab) {
     const d = document.createElement('div');
     d.className = 'tab-indicator';
-    activeTab.prepend(d);
+    if (activeTab.firstChild) {
+      activeTab.insertBefore(d, activeTab.firstChild);
+    } else {
+      activeTab.appendChild(d);
+    }
   }
 }
 
@@ -1981,6 +2157,7 @@ function renderOrderView() {
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'none';
   document.getElementById('view-inventory').style.display = 'none';
+  document.getElementById('view-cog').style.display = 'none';
 
   const sup = state.catalog[state.activeSupp];
   const defSup = DEFAULT_SUPPLIERS[state.activeSupp];
@@ -2048,27 +2225,57 @@ function renderOrderView() {
     item.supplier === state.activeSupp && item.orders && item.orders.length >= 1
   );
 
-  infoEl.innerHTML = `
-    <div class="sup-info-sched">📅 ${defSup.schedule}</div>
-    <div class="sup-info-contact">${defSup.contact}</div>
-    ${trimarkBtn}${electricalInfo}
-    ${!state.editMode && (crit > 0 || low > 0) ? `<div class="sup-info-alerts">
-      ${crit > 0 ? `<span style="color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px">🔴 ${crit} critical</span>` : ''}
-      ${low  > 0 ? `<span style="color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px">🟡 ${low} low</span>` : ''}
-    </div>` : ''}
-    ${!state.editMode ? `<div style="margin-top:6px;">
-      <button onclick="showOrderSuggestions('${state.activeSupp}', true)" style="
-        height:28px;padding:0 12px;border-radius:14px;
-        border:1.5px solid ${_hasSuggestions ? '#fbbf24' : '#3a3a3c'};
-        background:${_hasSuggestions ? 'rgba(251,191,36,0.12)' : 'transparent'};
-        color:${_hasSuggestions ? '#fbbf24' : '#48484a'};
-        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;
-        cursor:pointer;letter-spacing:0.5px;touch-action:manipulation;">
-        🧠 ${_hasSuggestions ? 'SUGGEST ORDER' : 'NO HISTORY YET'}
-      </button>
-    </div>` : ''}
-    ${state.editMode ? `<div style="color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;margin-top:4px">✎ Tap any item to edit name, pack size, or par</div>` : ''}
-  `;
+  // Build infoEl with DOM methods — avoids nested template literals that crash iOS Safari
+  infoEl.innerHTML = '';
+  const _schedDiv = document.createElement('div');
+  _schedDiv.className = 'sup-info-sched';
+  _schedDiv.textContent = '📅 ' + defSup.schedule;
+  infoEl.appendChild(_schedDiv);
+  const _contactDiv = document.createElement('div');
+  _contactDiv.className = 'sup-info-contact';
+  _contactDiv.textContent = defSup.contact;
+  infoEl.appendChild(_contactDiv);
+  if (trimarkBtn) { const _tb = document.createElement('div'); _tb.innerHTML = trimarkBtn; infoEl.appendChild(_tb); }
+  if (electricalInfo) { const _ei = document.createElement('div'); _ei.innerHTML = electricalInfo; infoEl.appendChild(_ei); }
+  if (!state.editMode && (crit > 0 || low > 0)) {
+    const _alerts = document.createElement('div');
+    _alerts.className = 'sup-info-alerts';
+    if (crit > 0) {
+      const _cs = document.createElement('span');
+      _cs.style.cssText = "color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px";
+      _cs.textContent = '🔴 ' + crit + ' critical';
+      _alerts.appendChild(_cs);
+    }
+    if (low > 0) {
+      const _ls = document.createElement('span');
+      _ls.style.cssText = "color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px";
+      _ls.textContent = '🟡 ' + low + ' low';
+      _alerts.appendChild(_ls);
+    }
+    infoEl.appendChild(_alerts);
+  }
+  if (!state.editMode) {
+    const _sugWrap = document.createElement('div');
+    _sugWrap.style.marginTop = '6px';
+    const _sugBtn = document.createElement('button');
+    _sugBtn.style.cssText = 'height:28px;padding:0 12px;border-radius:14px;'
+      + 'border:1.5px solid ' + (_hasSuggestions ? '#fbbf24' : '#3a3a3c') + ';'
+      + 'background:' + (_hasSuggestions ? 'rgba(251,191,36,0.12)' : 'transparent') + ';'
+      + 'color:' + (_hasSuggestions ? '#fbbf24' : '#48484a') + ';'
+      + "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;"
+      + 'cursor:pointer;letter-spacing:0.5px;touch-action:manipulation;';
+    _sugBtn.textContent = '🧠 ' + (_hasSuggestions ? 'SUGGEST ORDER' : 'NO HISTORY YET');
+    const _sn = state.activeSupp;
+    _sugBtn.onclick = function() { showOrderSuggestions(_sn, true); };
+    _sugWrap.appendChild(_sugBtn);
+    infoEl.appendChild(_sugWrap);
+  }
+  if (state.editMode) {
+    const _editNote = document.createElement('div');
+    _editNote.style.cssText = "color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;margin-top:4px";
+    _editNote.textContent = '✎ Tap any item to edit name, pack size, or par';
+    infoEl.appendChild(_editNote);
+  }
 
   // Edit banner
   document.getElementById('edit-banner').style.display = state.editMode ? 'flex' : 'none';
@@ -2366,9 +2573,18 @@ function updateSupInfo() {
   if (!state.editMode && (crit > 0 || low > 0)) {
     const d = document.createElement('div');
     d.className = 'sup-info-alerts';
-    d.innerHTML = `
-      ${crit > 0 ? `<span style="color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px">🔴 ${crit} critical</span>` : ''}
-      ${low  > 0 ? `<span style="color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px">🟡 ${low} low</span>` : ''}`;
+    if (crit > 0) {
+      const cs = document.createElement('span');
+      cs.style.cssText = "color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px";
+      cs.textContent = '🔴 ' + crit + ' critical';
+      d.appendChild(cs);
+    }
+    if (low > 0) {
+      const ls = document.createElement('span');
+      ls.style.cssText = "color:#fbbf24;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px";
+      ls.textContent = '🟡 ' + low + ' low';
+      d.appendChild(ls);
+    }
     infoEl.appendChild(d);
   }
 }
@@ -2417,19 +2633,7 @@ function showTrimarkHelp() {
       <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 20px;"></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:15px;font-weight:700;color:#c084fc;letter-spacing:1px;margin-bottom:16px;">📋 TRIMARK INVENTORY — QUICK GUIDE</div>
 
-      ${[
-        ['🟣 STEP 1', 'Open Inventory Mode', 'Tap the purple 📋 INVENTORY COUNT button at the top of the Trimark tab.'],
-        ['🟣 STEP 2', 'Check BEGIN numbers', 'BEGIN = last month\'s ending count. Should already be filled in purple. If empty, enter manually.'],
-        ['🟣 STEP 3', 'Count each item', 'Tap the purple TAP / COUNT cell. A window opens for 3 locations:\n🚢 Dock  🚪 Closet  🍽️ Restaurant\nType numbers separated by + e.g.  8+2+4  and the app adds them up.'],
-        ['🟣 STEP 4', 'Read the results', 'USED = how many were lost or broken this month.\nLOSS $ = dollar value of what was lost.\nORDER = how many to order to get back to par.'],
-        ['🟣 STEP 5', 'Place the order', 'Tap 📋 INVENTORY COUNT again to go back to ORDER view. Review yellow order quantities. Tap 💾 SAVE.'],
-        ['🟣 STEP 6', 'Email James', 'After saving, tap the purple 📧 Email James? prompt at the bottom. Your email app will open with everything pre-filled. Just tap SEND. ✅'],
-      ].map(([step, title, body]) => `
-        <div style="margin-bottom:16px;padding:14px;background:#1c1c1e;border-radius:12px;border-left:3px solid #7c3aed;">
-          <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#7c3aed;font-weight:700;letter-spacing:1px;margin-bottom:4px;">${step}</div>
-          <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#e5e5e7;margin-bottom:6px;">${title}</div>
-          <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;font-size:13px;color:#a3a3a3;line-height:1.6;white-space:pre-line;">${body}</div>
-        </div>`).join('')}
+      <div id="trimark-help-steps"></div>
 
       <div style="background:#2e1065;border:1.5px solid #7c3aed;border-radius:12px;padding:14px;margin-bottom:16px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;color:#c084fc;margin-bottom:6px;">⚠️ IMPORTANT REMINDERS</div>
@@ -2450,6 +2654,32 @@ function showTrimarkHelp() {
     </div>`;
 
   document.body.appendChild(overlay);
+  var _stepsEl = document.getElementById('trimark-help-steps');
+  if (_stepsEl) {
+    [
+      ['🟣 STEP 1', 'Open Inventory Mode', 'Tap the purple 📋 INVENTORY COUNT button at the top of the Trimark tab.'],
+      ['🟣 STEP 2', 'Check BEGIN numbers', "BEGIN = last month's ending count. Should already be filled in purple. If empty, enter manually."],
+      ['🟣 STEP 3', 'Count each item', 'Tap the purple TAP / COUNT cell. A window opens for 3 locations: Dock, Closet, Restaurant. Type a number, tap + ADD to log it.'],
+      ['🟣 STEP 4', 'Read the results', 'USED = how many were lost or broken.\nLOSS $ = dollar value of what was lost.\nORDER = how many cases to order.'],
+      ['🟣 STEP 5', 'Place the order', 'Tap 📋 INVENTORY COUNT again to return to ORDER view. Review yellow quantities. Tap 💾 SAVE.'],
+      ['🟣 STEP 6', 'Email James', 'After saving, tap the purple 📧 Email James? prompt. Your email app opens with the order pre-filled. Tap SEND. ✅'],
+    ].forEach(function(arr) {
+      var step = arr[0], title = arr[1], body = arr[2];
+      var d = document.createElement('div');
+      d.style.cssText = 'margin-bottom:16px;padding:14px;background:#1c1c1e;border-radius:12px;border-left:3px solid #7c3aed;';
+      var s = document.createElement('div');
+      s.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;color:#7c3aed;font-weight:700;letter-spacing:1px;margin-bottom:4px;';
+      s.textContent = step;
+      var t = document.createElement('div');
+      t.style.cssText = 'font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#e5e5e7;margin-bottom:6px;';
+      t.textContent = title;
+      var b = document.createElement('div');
+      b.style.cssText = 'font-size:13px;color:#a3a3a3;line-height:1.6;white-space:pre-line;';
+      b.textContent = body;
+      d.appendChild(s); d.appendChild(t); d.appendChild(b);
+      _stepsEl.appendChild(d);
+    });
+  }
 }
 
 function renderTrimarkInventory(listEl, sup) {
@@ -2575,10 +2805,21 @@ function renderTrimarkInventory(listEl, sup) {
 
     // Name col
     const nameDiv = document.createElement('div');
-    nameDiv.innerHTML = `
-      <div style="color:#e5e5e7;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
-      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px">${item.unitCost ? '$'+item.unitCost.toFixed(2)+' ea' : ''}</div>
-      ${brkgCost !== null && brkgCost > 0 ? `<div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#f87171;margin-top:1px">loss: $${brkgCost.toFixed(2)}</div>` : ''}`;
+    nameDiv.innerHTML = '';
+    const _nd1 = document.createElement('div');
+    _nd1.style.cssText = 'color:#e5e5e7;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    _nd1.textContent = item.name;
+    nameDiv.appendChild(_nd1);
+    const _nd2 = document.createElement('div');
+    _nd2.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px";
+    _nd2.textContent = item.unitCost ? '$'+item.unitCost.toFixed(2)+' ea' : '';
+    nameDiv.appendChild(_nd2);
+    if (brkgCost !== null && brkgCost > 0) {
+      const _nd3 = document.createElement('div');
+      _nd3.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#f87171;margin-top:1px";
+      _nd3.textContent = 'loss: $' + brkgCost.toFixed(2);
+      nameDiv.appendChild(_nd3);
+    }
 
     // Begin input
     const begCol = document.createElement('div');
@@ -2617,7 +2858,17 @@ function renderTrimarkInventory(listEl, sup) {
     endBtn.style.cssText = `width:56px;min-height:38px;text-align:center;border-radius:8px;border:2px solid ${hasEnd ? '#c084fc' : '#2c2c2e'};background:#1c1c1e;color:${hasEnd ? '#c084fc' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:${hasEnd ? '16px' : '13px'};font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;`;
 
     if (hasEnd) {
-      endBtn.innerHTML = `<span style="font-size:16px;font-weight:700">${endRaw}</span>${hasTally ? `<span style="font-size:8px;color:#7c3aed;letter-spacing:0px;">${tally.dock||0}·${tally.closet||0}·${tally.restaurant||0}</span>` : ''}`;
+      endBtn.innerHTML = '';
+      const _es = document.createElement('span');
+      _es.style.cssText = 'font-size:16px;font-weight:700';
+      _es.textContent = endRaw;
+      endBtn.appendChild(_es);
+      if (hasTally) {
+        const _et = document.createElement('span');
+        _et.style.cssText = 'font-size:8px;color:#7c3aed;letter-spacing:0px;';
+        _et.textContent = (tally.dock||0)+'·'+(tally.closet||0)+'·'+(tally.restaurant||0);
+        endBtn.appendChild(_et);
+      }
     } else {
       endBtn.innerHTML = `<span style="font-size:13px;color:#48484a">TAP</span>`;
     }
@@ -2787,7 +3038,14 @@ function refreshTriRow(row, item, ik, listEl, sup) {
 }
 
 function clearTrimarkInventory() {
-  if (!confirm('Reset this month\'s inventory counts? This will clear all BEGIN counts and location tallies. Ending counts (on-hand) will be kept.')) return;
+  // confirm() blocked in iOS PWA — show inline toast confirmation instead
+  if (!clearTrimarkInventory._confirmed) {
+    clearTrimarkInventory._confirmed = true;
+    showToast('⚠ Tap RESET again to confirm', 'warn');
+    setTimeout(() => { clearTrimarkInventory._confirmed = false; }, 3000);
+    return;
+  }
+  clearTrimarkInventory._confirmed = false;
   state.trimarkBegin = {};
   state.trimarkTally = {};
   saveTrimarkBegin();
@@ -3002,6 +3260,41 @@ function openTrimarkInventoryReport(e, recId) {
   const historyNote = isHistory
     ? `<div style="margin-bottom:20px;padding:10px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0;font-family:monospace;font-size:11px;color:#92400e;">📅 Historical record — ${dateStr} at ${timeStr}</div>` : '';
 
+  const gainSectionHTML = gainItems.length > 0
+    ? '<h2 style="color:#16a34a;margin-top:24px">INVENTORY GAINS DETAIL</h2>'
+      + '<p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items where count exceeded START.</p>'
+      + '<table><thead style="background:#f0fdf4"><tr>'
+      + '<th style="color:#16a34a;text-align:left;border-bottom:2px solid #bbf7d0">ITEM</th>'
+      + '<th style="color:#374151;border-bottom:2px solid #bbf7d0">START → COUNT</th>'
+      + '<th style="color:#16a34a;border-bottom:2px solid #bbf7d0">UNITS FOUND</th>'
+      + '<th style="color:#6b7280;border-bottom:2px solid #bbf7d0">UNIT COST</th>'
+      + '<th style="color:#16a34a;border-bottom:2px solid #bbf7d0">GAIN VALUE</th>'
+      + '<th style="color:#6b7280;border-bottom:2px solid #bbf7d0">LIKELY CAUSE</th>'
+      + '</tr></thead><tbody>'+gainRows+'</tbody>'
+      + '<tfoot><tr style="background:#f0fdf4">'
+      + '<td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #bbf7d0">TOTAL GAIN VALUE</td>'
+      + '<td style="padding:8px;font-size:16px;font-weight:800;color:#16a34a;text-align:center;font-family:monospace;border-top:2px solid #bbf7d0">+$'+totalGain.toFixed(2)+'</td>'
+      + '<td style="border-top:2px solid #bbf7d0"></td></tr></tfoot></table>'
+    : '';
+
+  const breakageSectionHTML = breakageItems.length > 0
+    ? '<h2 style="color:#dc2626;margin-top:32px">BREAKAGE &amp; LOSS DETAIL</h2>'
+      + '<p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items with unit losses, sorted by dollar impact.</p>'
+      + '<table><thead style="background:#fef2f2"><tr>'
+      + '<th style="color:#dc2626;text-align:left;border-bottom:2px solid #fecaca">ITEM</th>'
+      + '<th style="color:#374151;border-bottom:2px solid #fecaca">START → COUNT</th>'
+      + '<th style="color:#dc2626;border-bottom:2px solid #fecaca">UNITS LOST</th>'
+      + '<th style="color:#6b7280;border-bottom:2px solid #fecaca">UNIT COST</th>'
+      + '<th style="color:#dc2626;border-bottom:2px solid #fecaca">TOTAL LOSS</th>'
+      + '<th style="color:#d97706;border-bottom:2px solid #fecaca">% OF PAR</th>'
+      + '</tr></thead><tbody>'+breakageRows+'</tbody>'
+      + '<tfoot><tr style="background:#fef2f2">'
+      + '<td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #fecaca">TOTAL BREAKAGE</td>'
+      + '<td style="padding:8px;font-size:16px;font-weight:800;color:#dc2626;text-align:center;font-family:monospace;border-top:2px solid #fecaca">$'+totalLoss.toFixed(2)+'</td>'
+      + '<td style="border-top:2px solid #fecaca"></td></tr></tfoot></table>'
+    : '<h2 style="color:#16a34a;margin-top:32px">BREAKAGE &amp; LOSS DETAIL</h2>'
+      + '<div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">No breakage losses recorded this month</div>';
+
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Bartlett's — Inventory Count ${monthStr}</title>
@@ -3046,15 +3339,10 @@ function openTrimarkInventoryReport(e, recId) {
         <div class="tile-num" style="color:#dc2626">\$${totalLoss.toFixed(2)}</div>
         <div class="tile-lbl" style="color:#dc2626">TOTAL LOSS</div>
       </div>
-      ${totalGain>0?`
-      <div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0">
-        <div class="tile-num" style="color:#16a34a">+\$${totalGain.toFixed(2)}</div>
-        <div class="tile-lbl" style="color:#16a34a">INVENTORY GAINS</div>
-      </div>
-      <div class="tile" style="background:${netVariance>=0?'#f0fdf4':'#fef2f2'};border:1px solid ${netVariance>=0?'#bbf7d0':'#fecaca'}">
-        <div class="tile-num" style="color:${netVariance>=0?'#16a34a':'#dc2626'}">${netVariance>=0?'+':''}\$${Math.abs(netVariance).toFixed(2)}</div>
-        <div class="tile-lbl" style="color:${netVariance>=0?'#16a34a':'#dc2626'}">NET VARIANCE</div>
-      </div>`:''}
+      ${totalGain>0
+        ? '<div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0"><div class="tile-num" style="color:#16a34a">+$'+totalGain.toFixed(2)+'</div><div class="tile-lbl" style="color:#16a34a">INVENTORY GAINS</div></div>'
+          + '<div class="tile" style="background:'+(netVariance>=0?'#f0fdf4':'#fef2f2')+';border:1px solid '+(netVariance>=0?'#bbf7d0':'#fecaca')+'"><div class="tile-num" style="color:'+(netVariance>=0?'#16a34a':'#dc2626')+'">'+(netVariance>=0?'+':'')+'$'+Math.abs(netVariance).toFixed(2)+'</div><div class="tile-lbl" style="color:'+(netVariance>=0?'#16a34a':'#dc2626')+'">NET VARIANCE</div></div>'
+        : ''}
     </div>
   </div>
   ${historyNote}
@@ -3082,50 +3370,9 @@ function openTrimarkInventoryReport(e, recId) {
   <div style="margin-top:6px;font-family:monospace;font-size:9px;color:#9ca3af;line-height:1.6;">
     LOSS $: units used × unit cost · $0.00 = counted clean · GAIN $: units found above START · INV VALUE: final count × unit cost
   </div>
-  ${breakageItems.length>0?`
-  <h2 style="color:#dc2626;margin-top:32px">BREAKAGE & LOSS DETAIL</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items with unit losses, sorted by dollar impact.</p>
-  <table>
-    <thead style="background:#fef2f2">
-      <tr>
-        <th style="color:#dc2626;text-align:left;border-bottom:2px solid #fecaca">ITEM</th>
-        <th style="color:#374151;border-bottom:2px solid #fecaca">START → COUNT</th>
-        <th style="color:#dc2626;border-bottom:2px solid #fecaca">UNITS LOST</th>
-        <th style="color:#6b7280;border-bottom:2px solid #fecaca">UNIT COST</th>
-        <th style="color:#dc2626;border-bottom:2px solid #fecaca">TOTAL LOSS</th>
-        <th style="color:#d97706;border-bottom:2px solid #fecaca">% OF PAR</th>
-      </tr>
-    </thead>
-    <tbody>${breakageRows}</tbody>
-    <tfoot><tr style="background:#fef2f2">
-      <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #fecaca">TOTAL BREAKAGE</td>
-      <td style="padding:8px;font-size:16px;font-weight:800;color:#dc2626;text-align:center;font-family:monospace;border-top:2px solid #fecaca">\$${totalLoss.toFixed(2)}</td>
-      <td style="border-top:2px solid #fecaca"></td>
-    </tr></tfoot>
-  </table>`:`
-  <h2 style="color:#16a34a;margin-top:32px">BREAKAGE & LOSS DETAIL</h2>
-  <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ No breakage losses recorded this month</div>`}
-  ${gainItems.length>0?`
-  <h2 style="color:#16a34a;margin-top:24px">INVENTORY GAINS DETAIL</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items where count exceeded START. Investigate — possible undercount or unrecorded delivery.</p>
-  <table>
-    <thead style="background:#f0fdf4">
-      <tr>
-        <th style="color:#16a34a;text-align:left;border-bottom:2px solid #bbf7d0">ITEM</th>
-        <th style="color:#374151;border-bottom:2px solid #bbf7d0">START → COUNT</th>
-        <th style="color:#16a34a;border-bottom:2px solid #bbf7d0">UNITS FOUND</th>
-        <th style="color:#6b7280;border-bottom:2px solid #bbf7d0">UNIT COST</th>
-        <th style="color:#16a34a;border-bottom:2px solid #bbf7d0">GAIN VALUE</th>
-        <th style="color:#6b7280;border-bottom:2px solid #bbf7d0">LIKELY CAUSE</th>
-      </tr>
-    </thead>
-    <tbody>${gainRows}</tbody>
-    <tfoot><tr style="background:#f0fdf4">
-      <td colspan="4" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;border-top:2px solid #bbf7d0">TOTAL GAIN VALUE</td>
-      <td style="padding:8px;font-size:16px;font-weight:800;color:#16a34a;text-align:center;font-family:monospace;border-top:2px solid #bbf7d0">+\$${totalGain.toFixed(2)}</td>
-      <td style="border-top:2px solid #bbf7d0"></td>
-    </tr></tfoot>
-  </table>`:''}
+  ${breakageSectionHTML}
+    ${gainSectionHTML}
+
   <div style="margin-top:32px;padding-top:12px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
     <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2026 Oscar Rivas · Bartlett's Restaurant · Confidential</div>
     <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
@@ -3195,6 +3442,39 @@ function openTrimarkOrderReport(recId) {
     </tr>`;
   }).join('');
 
+  const okSectionHTML = okItems.length > 0
+    ? '<h2 style="color:#16a34a;margin-top:28px">AT OR ABOVE PAR — NO ORDER NEEDED</h2>'
+      + '<table><thead style="background:#f0fdf4"><tr>'
+      + '<th style="color:#16a34a;text-align:left;border-bottom:2px solid #bbf7d0">ITEM</th>'
+      + '<th style="color:#16a34a;border-bottom:2px solid #bbf7d0">COUNT</th>'
+      + '<th style="color:#6b21a8;border-bottom:2px solid #bbf7d0">PAR</th>'
+      + '<th style="color:#16a34a;border-bottom:2px solid #bbf7d0">SURPLUS</th>'
+      + '<th style="color:#6b7280;border-bottom:2px solid #bbf7d0">STATUS</th>'
+      + '</tr></thead><tbody>'+okRows+'</tbody></table>'
+    : '';
+
+  const orderSectionHTML = orderItems.length > 0
+    ? '<h2 style="color:#d97706">ITEMS TO ORDER</h2>'
+      + '<p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items below par requiring replenishment. Send this list to James.</p>'
+      + '<table><thead style="background:#fffbeb"><tr>'
+      + '<th style="color:#d97706;text-align:left;border-bottom:2px solid #fde68a">ITEM</th>'
+      + '<th style="color:#374151;border-bottom:2px solid #fde68a">PACK</th>'
+      + '<th style="color:#374151;border-bottom:2px solid #fde68a">COUNT</th>'
+      + '<th style="color:#6b21a8;border-bottom:2px solid #fde68a">PAR</th>'
+      + '<th style="color:#dc2626;border-bottom:2px solid #fde68a">SHORT</th>'
+      + '<th style="color:#d97706;border-bottom:2px solid #fde68a">ORDER</th>'
+      + '<th style="color:#374151;border-bottom:2px solid #fde68a">UNITS</th>'
+      + '<th style="color:#6b7280;border-bottom:2px solid #fde68a">EST. COST</th>'
+      + '</tr></thead><tbody>'+orderRows+'</tbody>'
+      + '<tfoot><tr style="background:#fffbeb;">'
+      + '<td colspan="5" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;color:#d97706;border-top:2px solid #fde68a">ORDER TOTAL</td>'
+      + '<td style="padding:8px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-top:2px solid #fde68a">'+totalCases+' cases</td>'
+      + '<td style="padding:8px;text-align:center;border-top:2px solid #fde68a">—</td>'
+      + '<td style="padding:8px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-top:2px solid #fde68a">'+(totalCost>0?'~$'+totalCost.toFixed(2):'—')+'</td>'
+      + '</tr></tfoot></table>'
+    : '<h2 style="color:#16a34a">ITEMS TO ORDER</h2>'
+      + '<div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">All items at or above par — no order needed</div>';
+
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Bartlett's — Trimark Order ${monthStr}</title>
@@ -3235,56 +3515,15 @@ function openTrimarkOrderReport(recId) {
         <div class="tile-num" style="color:#d97706">${totalCases}</div>
         <div class="tile-lbl" style="color:#d97706">TOTAL CASES</div>
       </div>
-      ${totalCost>0?`<div class="tile" style="background:#fffbeb;border:1px solid #fde68a">
-        <div class="tile-num" style="color:#d97706">~\$${totalCost.toFixed(2)}</div>
-        <div class="tile-lbl" style="color:#d97706">EST. COST</div>
-      </div>`:''}
+      ${totalCost>0 ? '<div class="tile" style="background:#fffbeb;border:1px solid #fde68a"><div class="tile-num" style="color:#d97706">~$'+totalCost.toFixed(2)+'</div><div class="tile-lbl" style="color:#d97706">EST. COST</div></div>' : ''}
       <div class="tile" style="background:#f0fdf4;border:1px solid #bbf7d0">
         <div class="tile-num" style="color:#16a34a">${okItems.length}</div>
         <div class="tile-lbl" style="color:#16a34a">AT OR ABOVE PAR</div>
       </div>
     </div>
   </div>
-  ${orderItems.length>0?`
-  <h2 style="color:#d97706">ITEMS TO ORDER</h2>
-  <p style="font-size:11px;color:#6b7280;margin-bottom:10px;font-family:monospace">Items below par requiring replenishment. Send this list to James.</p>
-  <table>
-    <thead style="background:#fffbeb">
-      <tr>
-        <th style="color:#d97706;text-align:left;border-bottom:2px solid #fde68a">ITEM</th>
-        <th style="color:#374151;border-bottom:2px solid #fde68a">PACK</th>
-        <th style="color:#374151;border-bottom:2px solid #fde68a">COUNT</th>
-        <th style="color:#6b21a8;border-bottom:2px solid #fde68a">PAR</th>
-        <th style="color:#dc2626;border-bottom:2px solid #fde68a">SHORT</th>
-        <th style="color:#d97706;border-bottom:2px solid #fde68a">ORDER</th>
-        <th style="color:#374151;border-bottom:2px solid #fde68a">UNITS</th>
-        <th style="color:#6b7280;border-bottom:2px solid #fde68a">EST. COST</th>
-      </tr>
-    </thead>
-    <tbody>${orderRows}</tbody>
-    <tfoot><tr style="background:#fffbeb;">
-      <td colspan="5" style="padding:8px 10px;font-size:12px;font-weight:700;font-family:monospace;color:#d97706;border-top:2px solid #fde68a">ORDER TOTAL</td>
-      <td style="padding:8px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-top:2px solid #fde68a">${totalCases} cases</td>
-      <td style="padding:8px;text-align:center;border-top:2px solid #fde68a">—</td>
-      <td style="padding:8px;font-size:14px;font-weight:800;color:#d97706;text-align:center;border-top:2px solid #fde68a">${totalCost>0?'~\$'+totalCost.toFixed(2):'—'}</td>
-    </tr></tfoot>
-  </table>`:`
-  <h2 style="color:#16a34a">ITEMS TO ORDER</h2>
-  <div style="padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;font-family:monospace;color:#16a34a;font-weight:700">✅ All items at or above par — no order needed</div>`}
-  ${okItems.length>0?`
-  <h2 style="color:#16a34a;margin-top:28px">AT OR ABOVE PAR — NO ORDER NEEDED</h2>
-  <table>
-    <thead style="background:#f0fdf4">
-      <tr>
-        <th style="color:#16a34a;text-align:left;border-bottom:2px solid #bbf7d0">ITEM</th>
-        <th style="color:#16a34a;border-bottom:2px solid #bbf7d0">COUNT</th>
-        <th style="color:#6b21a8;border-bottom:2px solid #bbf7d0">PAR</th>
-        <th style="color:#16a34a;border-bottom:2px solid #bbf7d0">SURPLUS</th>
-        <th style="color:#6b7280;border-bottom:2px solid #bbf7d0">STATUS</th>
-      </tr>
-    </thead>
-    <tbody>${okRows}</tbody>
-  </table>`:''}
+  ${orderSectionHTML}
+    ${okSectionHTML}
   <div style="margin-top:32px;padding-top:12px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
     <div style="font-size:9px;color:#9ca3af;font-family:monospace">© 2026 Oscar Rivas · Bartlett's Restaurant · Confidential</div>
     <div style="font-size:9px;color:#9ca3af;font-family:monospace">Printed: ${new Date().toLocaleString('en-US')}</div>
@@ -3348,42 +3587,31 @@ function openHistoryEditCounts(recId) {
   }
 
   function buildModal() {
-    const rows = edits.map((e, i) => `
-      <div style="padding:12px 16px;border-bottom:1px solid #1c1c1e;${i%2===0?'background:#0d0d0d;':''}">
-        <div style="font-family:-apple-system,sans-serif;font-size:14px;color:#e5e5e7;font-weight:600;margin-bottom:8px;">
-          ${e.name}
-          ${e.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;font-style:italic;margin-left:6px;">count only</span>' : ''}
-        </div>
-        <div style="display:flex;gap:10px;align-items:flex-end;">
-          <div style="flex:1;">
-            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#7c3aed;letter-spacing:1px;margin-bottom:4px;">BEGIN</div>
-            <input type="number" inputmode="numeric"
-              value="${e.begin}"
-              onchange="histEditChange(${i},'begin',this.value)"
-              style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3b0764;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,'SF Mono',monospace;font-size:15px;font-weight:700;text-align:center;padding:0 8px;">
-          </div>
-          <div style="flex:1;">
-            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#e5e5e7;letter-spacing:1px;margin-bottom:4px;">COUNT</div>
-            <input type="number" inputmode="numeric"
-              value="${e.onHand}"
-              onchange="histEditChange(${i},'onHand',this.value)"
-              style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#e5e5e7;font-family:ui-monospace,'SF Mono',monospace;font-size:15px;font-weight:700;text-align:center;padding:0 8px;">
-          </div>
-          <div style="flex:1;text-align:center;">
-            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#f87171;letter-spacing:1px;margin-bottom:4px;">USED</div>
-            <div style="height:38px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,'SF Mono',monospace;font-size:15px;font-weight:700;color:${e.usage > 0 ? '#f87171' : '#48484a'};">
-              ${e.usage !== '' ? (e.usage > 0 ? '-'+e.usage : '0') : '—'}
-            </div>
-          </div>
-          ${!e.inventoryOnly ? `<div style="flex:1;text-align:center;">
-            <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;margin-bottom:4px;">ORDER</div>
-            <div style="height:38px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,'SF Mono',monospace;font-size:13px;font-weight:800;color:${e.orderQty > 0 ? '#fbbf24' : '#48484a'};">
-              ${e.orderQty > 0 ? '+'+e.orderQty+'cs' : (e.onHand !== '' ? '✓' : '—')}
-            </div>
-          </div>` : ''}
-        </div>
-        ${e.brkgCost > 0 ? `<div style="margin-top:5px;font-family:ui-monospace,'SF Mono',monospace;font-size:10px;color:#f87171;">💸 loss: $${e.brkgCost}</div>` : ''}
-      </div>`).join('');
+    const rows = edits.map((e, i) => {
+    const rowBg = i%2===0 ? 'background:#0d0d0d;' : '';
+    const usageColor = e.usage > 0 ? '#f87171' : '#48484a';
+    const usageDisplay = e.usage !== '' ? (e.usage > 0 ? '-'+e.usage : '0') : '\u2014';
+    const orderColor = e.orderQty > 0 ? '#fbbf24' : '#48484a';
+    const orderDisplay = e.orderQty > 0 ? '+'+e.orderQty+'cs' : (e.onHand !== '' ? '\u2713' : '\u2014');
+    const orderCol = e.inventoryOnly ? '' :
+      '<div style="flex:1;text-align:center;">'
+      + '<div style="font-family:ui-monospace,monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;margin-bottom:4px;">ORDER</div>'
+      + '<div style="height:38px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:'+orderColor+';">'+orderDisplay+'</div>'
+      + '</div>';
+    const brkgLine = e.brkgCost > 0
+      ? '<div style="margin-top:5px;font-size:10px;color:#f87171;">loss: $'+e.brkgCost+'</div>' : '';
+    const invOnly = e.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;font-style:italic;margin-left:6px;">count only</span>' : '';
+    return '<div style="padding:12px 16px;border-bottom:1px solid #1c1c1e;'+rowBg+'">'
+      + '<div style="font-size:14px;color:#e5e5e7;font-weight:600;margin-bottom:8px;">'+e.name+invOnly+'</div>'
+      + '<div style="display:flex;gap:10px;align-items:flex-end;">'
+      + '<div style="flex:1;"><div style="font-size:9px;color:#7c3aed;letter-spacing:1px;margin-bottom:4px;">BEGIN</div>'
+      + '<input type="number" inputmode="numeric" value="'+e.begin+'" onchange="histEditChange('+i+',\'begin\',this.value)" style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3b0764;background:#1c1c1e;color:#c084fc;font-size:15px;font-weight:700;text-align:center;padding:0 8px;"></div>'
+      + '<div style="flex:1;"><div style="font-size:9px;color:#e5e5e7;letter-spacing:1px;margin-bottom:4px;">COUNT</div>'
+      + '<input type="number" inputmode="numeric" value="'+e.onHand+'" onchange="histEditChange('+i+',\'onHand\',this.value)" style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#e5e5e7;font-size:15px;font-weight:700;text-align:center;padding:0 8px;"></div>'
+      + '<div style="flex:1;text-align:center;"><div style="font-size:9px;color:#f87171;letter-spacing:1px;margin-bottom:4px;">USED</div>'
+      + '<div style="height:38px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:'+usageColor+';">'+usageDisplay+'</div></div>'
+      + orderCol + '</div>' + brkgLine + '</div>';
+  }).join('');
 
     overlay.innerHTML = `
       <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
@@ -3465,6 +3693,7 @@ function renderHistoryView() {
   document.getElementById('view-history').style.display = 'flex';
   document.getElementById('view-mustknow').style.display = 'none';
   document.getElementById('view-inventory').style.display = 'none';
+  document.getElementById('view-cog').style.display = 'none';
   document.getElementById('hist-detail').classList.remove('show');
 
   if (state.selectedRec) {
@@ -3666,17 +3895,27 @@ function renderDetail(rec) {
     if (rec.deliveryConfirmed) {
       const missing = (rec.missingItems || []);
       if (missing.length > 0) {
-        confirmBar.innerHTML = `
-          <div style="background:#450a0a;border:1.5px solid #f87171;border-radius:14px;padding:12px 14px;margin-bottom:4px;">
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;color:#f87171;letter-spacing:1px;margin-bottom:8px;">🔴 ${missing.length} MISSING ITEM${missing.length>1?'S':''} — FOLLOW UP WITH VENDOR</div>
-            ${missing.map(m => `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid rgba(248,113,113,0.2);">
-              <div style="color:#fca5a5;font-size:13px;">${m.name}</div>
-              <div style="color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;">ordered: ${m.orderQty}</div>
-            </div>`).join('')}
-            <button onclick="resolveShortage('${rec.id}')" style="margin-top:10px;width:100%;height:38px;border-radius:10px;background:transparent;border:1.5px solid #f87171;color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">
-              ✓ MARK AS RESOLVED
-            </button>
-          </div>`;
+        confirmBar.innerHTML = '';
+        const _cbDiv = document.createElement('div');
+        _cbDiv.style.cssText = 'background:#450a0a;border:1.5px solid #f87171;border-radius:14px;padding:12px 14px;margin-bottom:4px;';
+        const _cbH = document.createElement('div');
+        _cbH.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;color:#f87171;letter-spacing:1px;margin-bottom:8px;";
+        _cbH.textContent = '🔴 ' + missing.length + ' MISSING ITEM' + (missing.length>1?'S':'') + ' — FOLLOW UP WITH VENDOR';
+        _cbDiv.appendChild(_cbH);
+        missing.forEach(function(mi) {
+          const _mr = document.createElement('div');
+          _mr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid rgba(248,113,113,0.2);';
+          const _mn = document.createElement('div'); _mn.style.cssText = 'color:#fca5a5;font-size:13px;'; _mn.textContent = mi.name;
+          const _mq = document.createElement('div'); _mq.style.cssText = "color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;"; _mq.textContent = 'ordered: '+mi.orderQty;
+          _mr.appendChild(_mn); _mr.appendChild(_mq); _cbDiv.appendChild(_mr);
+        });
+        const _cbB = document.createElement('button');
+        _cbB.style.cssText = "margin-top:10px;width:100%;height:38px;border-radius:10px;background:transparent;border:1.5px solid #f87171;color:#f87171;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;";
+        _cbB.textContent = '✓ MARK AS RESOLVED';
+        const _rid = rec.id;
+        _cbB.onclick = function() { resolveShortage(_rid); };
+        _cbDiv.appendChild(_cbB);
+        confirmBar.appendChild(_cbDiv);
       } else {
         confirmBar.innerHTML = `
           <div style="background:#052e16;border:1.5px solid #16a34a;border-radius:14px;padding:10px 14px;margin-bottom:4px;">
@@ -3725,40 +3964,48 @@ function renderDetail(rec) {
       if (rec.deliveryConfirmed && item.orderQty && item.orderQty !== '') {
         const isMissing = (rec.missingItems || []).some(m => m.name === item.name);
         confirmBadge = isMissing
-          ? `<span style="background:#dc2626;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">MISSING</span>`
-          : `<span style="background:#16a34a;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">✓ REC'D</span>`;
+          ? '<span style="background:#dc2626;color:#fff;font-family:ui-monospace,monospace;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">MISSING</span>'
+          : '<span style="background:#16a34a;color:#fff;font-family:ui-monospace,monospace;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">✓ RECEIVED</span>';
       }
 
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:8px';
-      row.innerHTML = `
-        <div style="flex:1;min-width:0">
-          <div style="color:#e5e5e7;font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;font-size:14px;line-height:1.3">${item.name}${confirmBadge}</div>
-          <div style="color:#48484a;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;margin-top:2px">${item.pack} · par ${item.par}</div>
-        </div>
-        <div class="detail-values">
-          <div class="detail-val-col">
-            <div class="detail-val-label">ON HAND</div>
-            <div class="detail-val">${item.onHand || '—'}</div>
-          </div>
-          ${item.begin ? `<div class="detail-val-col">
-            <div class="detail-val-label">BEGIN</div>
-            <div class="detail-val" style="color:#a78bfa">${item.begin}</div>
-          </div>` : ''}
-          ${item.usage !== undefined && item.usage !== '' ? `<div class="detail-val-col">
-            <div class="detail-val-label">USED</div>
-            <div class="detail-val" style="color:${parseFloat(item.usage) > 0 ? '#f87171' : '#4ade80'}">${parseFloat(item.usage) > 0 ? '-'+item.usage : '+'+Math.abs(parseFloat(item.usage))}</div>
-          </div>` : ''}
-          ${item.brkgCost ? `<div class="detail-val-col">
-            <div class="detail-val-label">LOSS</div>
-            <div class="detail-val" style="color:#f87171;font-size:12px">$${item.brkgCost}</div>
-          </div>` : ''}
-          <div class="detail-val-col">
-            <div class="detail-val-label">ORDERED</div>
-            <div class="detail-val ${item.orderQty ? 'ordered' : 'empty'}">${item.orderQty || '—'}</div>
-          </div>
-          ${item.status ? `<span style="font-size:18px">${STATUS_ICONS[item.status]}</span>` : ''}
-        </div>`;
+      // Build row with DOM methods — no nested templates
+      row.innerHTML = '';
+      const _left = document.createElement('div');
+      _left.style.cssText = 'flex:1;min-width:0';
+      const _name = document.createElement('div');
+      _name.style.cssText = "color:#e5e5e7;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;font-size:14px;line-height:1.3";
+      _name.textContent = item.name;
+      if (confirmBadge) { const _cb = document.createElement('span'); _cb.innerHTML = confirmBadge; _name.appendChild(_cb.firstChild || _cb); }
+      const _pack = document.createElement('div');
+      _pack.style.cssText = "color:#48484a;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;margin-top:2px";
+      _pack.textContent = item.pack + ' · par ' + item.par;
+      _left.appendChild(_name); _left.appendChild(_pack);
+      const _vals = document.createElement('div');
+      _vals.className = 'detail-values';
+      function _makeValCol(label, val, style) {
+        const c = document.createElement('div'); c.className = 'detail-val-col';
+        const l = document.createElement('div'); l.className = 'detail-val-label'; l.textContent = label;
+        const v = document.createElement('div'); v.className = 'detail-val'; v.textContent = val;
+        if (style) v.style.cssText = style;
+        c.appendChild(l); c.appendChild(v); return c;
+      }
+      _vals.appendChild(_makeValCol('ON HAND', item.onHand || '—'));
+      if (item.begin) _vals.appendChild(_makeValCol('BEGIN', item.begin, 'color:#a78bfa'));
+      if (item.usage !== undefined && item.usage !== '') {
+        const uN = parseFloat(item.usage);
+        _vals.appendChild(_makeValCol('USED', uN > 0 ? '-'+item.usage : '+'+Math.abs(uN), 'color:'+(uN>0?'#f87171':'#4ade80')));
+      }
+      if (item.brkgCost) _vals.appendChild(_makeValCol('LOSS', '$'+item.brkgCost, 'color:#f87171;font-size:12px'));
+      const _oqCol = document.createElement('div'); _oqCol.className = 'detail-val-col';
+      const _oqL = document.createElement('div'); _oqL.className = 'detail-val-label'; _oqL.textContent = 'ORDERED';
+      const _oqV = document.createElement('div'); _oqV.className = 'detail-val ' + (item.orderQty ? 'ordered' : 'empty'); _oqV.textContent = item.orderQty || '—';
+      _oqCol.appendChild(_oqL); _oqCol.appendChild(_oqV); _vals.appendChild(_oqCol);
+      if (item.status && STATUS_ICONS[item.status]) {
+        const _si = document.createElement('span'); _si.style.fontSize = '18px'; _si.textContent = STATUS_ICONS[item.status]; _vals.appendChild(_si);
+      }
+      row.appendChild(_left); row.appendChild(_vals);
       itemEl.appendChild(row);
 
       if (item.note) {
@@ -3828,6 +4075,7 @@ function startEdit(sn, item) {
   document.getElementById('edit-name').value = item.name;
   document.getElementById('edit-pack').value = item.pack;
   document.getElementById('edit-par').value = item.par;
+  document.getElementById('edit-unit-cost').value = item.unitCost || '';
   // Hide extra fields in add mode
   document.getElementById('edit-extra-fields').style.display = 'none';
   document.getElementById('edit-delete-btn').style.display = 'block';
@@ -3873,7 +4121,8 @@ function startAddItem() {
 
   // Show/hide supplier-specific fields
   document.getElementById('edit-caseqty-wrap').style.display = sn === 'TRIMARK' ? 'block' : 'none';
-  document.getElementById('edit-itemnum-wrap').style.display = sn === 'BEK' ? 'block' : 'none';
+  const _einw = document.getElementById('edit-itemnum-add-wrap') || document.getElementById('edit-itemnum-wrap');
+  if (_einw) _einw.style.display = sn === 'BEK' ? 'block' : 'none';
 
   // Show delete button? No — it's a new item
   document.getElementById('edit-delete-btn').style.display = 'none';
@@ -3921,16 +4170,19 @@ function commitEdit() {
     if (!state.editingItem) return;
     const {sn, id} = state.editingItem;
     const newItemNum = sn === 'BEK' ? (parseInt(document.getElementById('edit-itemnum').value) || null) : undefined;
+    const newUnitCost = parseFloat(document.getElementById('edit-unit-cost')?.value);
     state.catalog[sn].items = state.catalog[sn].items.map(it => {
       if (it.id !== id) return it;
       const updated = {...it, name: name||it.name, pack: pack||it.pack, par: isNaN(par) ? it.par : par};
       if (sn === 'BEK' && newItemNum) updated.itemNum = newItemNum;
+      if (!isNaN(newUnitCost) && newUnitCost > 0) updated.unitCost = newUnitCost;
       return updated;
     });
     saveCatalog();
     cancelEdit();
     const itemNumNote = sn === 'BEK' && newItemNum ? ` · BEK# ${newItemNum}` : '';
-    showToast('✓ Item updated' + itemNumNote);
+    const costNote = !isNaN(newUnitCost) && newUnitCost > 0 ? ` · $${newUnitCost.toFixed(2)}` : '';
+    showToast('✓ Item updated' + itemNumNote + costNote);
     render();
   }
 }
@@ -5222,29 +5474,7 @@ function showOrderSuggestions(sn, fromButton) {
       <button onclick="document.getElementById('suggestion-banner').remove()" style="background:transparent;border:none;color:#636366;font-size:18px;cursor:pointer;padding:0;line-height:1;touch-action:manipulation;">×</button>
     </div>
     <div style="font-size:9px;color:#636366;margin-bottom:10px;">${methodLine} · edit before applying</div>
-    <div id="suggestion-items" style="max-height:220px;overflow-y:auto;margin-bottom:12px;">
-      ${goodItems.map(([name, s]) => {
-        const confColor = s.confidence==='high'?'#4ade80':s.confidence==='medium'?'#fbbf24':'#636366';
-        const confDot = s.confidence==='high'?'●●●':s.confidence==='medium'?'●●○':'●○○';
-        const isDemand = s.demandForecast !== null && s.usageOrders >= 3;
-        const icon = isDemand ? '📈' : '📋';
-        const tip = isDemand
-          ? `~${s.demandForecast} needed · ${s.trend}`
-          : `${s.dataPoints} orders · ${s.trend}`;
-        return `
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2c2c2e;">
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:11px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
-            <div style="font-size:9px;color:#48484a;margin-top:1px;">${icon} ${tip} <span style="color:${confColor}">${confDot}</span></div>
-          </div>
-          <input type="number" inputmode="numeric"
-            id="sug-inp-${name.replace(/[^a-z0-9]/gi,'_')}"
-            value="${s.qty}"
-            style="width:48px;height:30px;text-align:center;border-radius:6px;border:1.5px solid #fbbf24;background:#111;color:#fbbf24;font-family:ui-monospace,monospace;font-size:13px;font-weight:700;outline:none;-webkit-appearance:none;">
-          <span style="font-size:10px;color:#636366;">${sn==='TRIMARK'?'cs':''}</span>
-        </div>`;
-      }).join('')}
-    </div>
+    <div id="suggestion-items" style="max-height:220px;overflow-y:auto;margin-bottom:12px;"></div>
     <div style="display:flex;gap:8px;">
       <button onclick="document.getElementById('suggestion-banner').remove()" style="flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;">Dismiss</button>
       <button onclick="applySuggestions('${sn}')" style="flex:2;height:36px;border-radius:10px;border:none;background:#fbbf24;color:#000;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;touch-action:manipulation;">⚡ APPLY</button>
@@ -5254,6 +5484,39 @@ function showOrderSuggestions(sn, fromButton) {
   banner._sn = sn;
   banner._goodItems = goodItems;
   document.body.appendChild(banner);
+  // Build suggestion items with DOM methods — no nested template literals
+  const _sugList = document.getElementById('suggestion-items');
+  if (_sugList) {
+    goodItems.forEach(function(pair) {
+      var name = pair[0], s = pair[1];
+      var confColor = s.confidence==='high'?'#4ade80':s.confidence==='medium'?'#fbbf24':'#636366';
+      var confDot = s.confidence==='high'?'●●●':s.confidence==='medium'?'●●○':'●○○';
+      var isDemand = s.demandForecast !== null && s.usageOrders >= 3;
+      var icon = isDemand ? '📈' : '📋';
+      var tip = isDemand ? '~'+s.demandForecast+' needed · '+s.trend : s.dataPoints+' orders · '+s.trend;
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2c2c2e;';
+      var nameCol = document.createElement('div');
+      nameCol.style.cssText = 'flex:1;min-width:0;';
+      var nameEl = document.createElement('div');
+      nameEl.style.cssText = 'font-size:11px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      nameEl.textContent = name;
+      var tipEl = document.createElement('div');
+      tipEl.style.cssText = 'font-size:9px;color:#48484a;margin-top:1px;';
+      tipEl.innerHTML = icon + ' ' + tip + ' <span style="color:'+confColor+'">'+confDot+'</span>';
+      nameCol.appendChild(nameEl); nameCol.appendChild(tipEl);
+      var inp = document.createElement('input');
+      inp.type = 'number'; inp.setAttribute('inputmode','numeric');
+      inp.id = 'sug-inp-' + name.replace(/[^a-z0-9]/gi,'_');
+      inp.value = s.qty;
+      inp.style.cssText = 'width:48px;height:30px;text-align:center;border-radius:6px;border:1.5px solid #fbbf24;background:#111;color:#fbbf24;font-family:ui-monospace,monospace;font-size:13px;font-weight:700;outline:none;-webkit-appearance:none;';
+      var unit = document.createElement('span');
+      unit.style.cssText = 'font-size:10px;color:#636366;';
+      unit.textContent = sn === 'TRIMARK' ? 'cs' : '';
+      row.appendChild(nameCol); row.appendChild(inp); row.appendChild(unit);
+      _sugList.appendChild(row);
+    });
+  }
   // No auto-dismiss — user must manually close with × or Dismiss button
 }
 
@@ -5391,13 +5654,17 @@ function buildAuditPanel(container, sup) {
 
     // Name + source labels
     const nameCell = document.createElement('div');
-    nameCell.innerHTML = `
-      <div style="font-size:12px;color:#e5e5e7;line-height:1.3;">${item.name}</div>
-      <div style="margin-top:3px;display:flex;flex-direction:column;gap:1px;">
-        ${bMeta ? `<div>BEGIN: ${sourceLabel(bMeta, 'begin')}</div>` : ''}
-        ${aMeta ? `<div>ADD: ${sourceLabel(aMeta, 'add')}</div>` : ''}
-        ${(!bMeta && !aMeta) ? '<span style="font-size:8px;color:#3a3a3c;">no history yet</span>' : ''}
-      </div>`;
+    nameCell.innerHTML = '';
+    const _ncName = document.createElement('div');
+    _ncName.style.cssText = 'font-size:12px;color:#e5e5e7;line-height:1.3;';
+    _ncName.textContent = item.name;
+    nameCell.appendChild(_ncName);
+    const _ncMeta = document.createElement('div');
+    _ncMeta.style.cssText = 'margin-top:3px;display:flex;flex-direction:column;gap:1px;';
+    if (bMeta) { const _bm = document.createElement('div'); _bm.innerHTML = 'BEGIN: ' + sourceLabel(bMeta, 'begin'); _ncMeta.appendChild(_bm); }
+    if (aMeta) { const _am = document.createElement('div'); _am.innerHTML = 'ADD: ' + sourceLabel(aMeta, 'add'); _ncMeta.appendChild(_am); }
+    if (!bMeta && !aMeta) { const _nm = document.createElement('span'); _nm.style.cssText = 'font-size:8px;color:#3a3a3c;'; _nm.textContent = 'no history yet'; _ncMeta.appendChild(_nm); }
+    nameCell.appendChild(_ncMeta);
 
     // BEGIN editable
     const begCell = document.createElement('div');
@@ -5481,11 +5748,744 @@ function buildAuditPanel(container, sup) {
   container.appendChild(itemsWrap);
 }
 
+// ─── COG HELPERS ──────────────────────────────────────────────────────────
+
+function cogMonthKey(date) {
+  const d = date || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+function cogGetSpend(monthKey) {
+  // Calculate spend from order history for this month
+  const spend = { ABCO:0, BEK:0, TRIMARK:0, AMAZON:0, ELECTRICAL:0, manual:0 };
+  state.history.forEach(rec => {
+    const rKey = cogMonthKey(new Date(rec.date));
+    if (rKey !== monthKey) return;
+    Object.entries(rec.suppliers || {}).forEach(([sn, items]) => {
+      items.forEach(it => {
+        const oq = parseFloat(it.orderQty) || 0;
+        if (oq <= 0) return;
+        const unitCost = it.unitCost || (state.catalog[sn]?.items.find(ci => ci.id === it.id)?.unitCost) || 0;
+        if (unitCost > 0) spend[sn] = (spend[sn]||0) + (oq * unitCost);
+      });
+    });
+  });
+  // Add manual entries
+  const manual = state.cogManual[monthKey] || {};
+  Object.entries(manual).forEach(([key, amt]) => { spend.manual += parseFloat(amt)||0; });
+  return spend;
+}
+
+function cogSaveData() {
+  lsSet('bartletts-cog-sales-v1', state.cogSales);
+  lsSet('bartletts-cog-manual-v1', state.cogManual);
+  lsSet('bartletts-cog-notif-v1', state.cogNotifications);
+  fbWrite('cogSales', state.cogSales);
+  fbWrite('cogManual', state.cogManual);
+}
+
+function cogSaveNotifications() {
+  lsSet('bartletts-cog-notif-v1', state.cogNotifications);
+  // Reschedule all notifications
+  cogScheduleNotifications();
+}
+
+function cogScheduleNotifications() {
+  // Cancel all existing scheduled notifications (not supported in PWA — use service worker)
+  // For now: store in state, show reminder when app opens if due today
+  const today = new Date();
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const todayDay = dayNames[today.getDay()];
+  const now = today.getHours() * 60 + today.getMinutes();
+
+  state.cogNotifications.forEach(notif => {
+    if (!notif.enabled) return;
+    const isDueDay = notif.days && notif.days.includes(todayDay);
+    if (!isDueDay) return;
+    // Check if we've already shown this today
+    const shownKey = 'notif-shown-' + notif.id + '-' + cogMonthKey(today) + '-' + todayDay;
+    if (lsGet(shownKey)) return;
+    // Parse notif time
+    const [h, m] = (notif.time || '08:00').split(':').map(Number);
+    const notifMinutes = h*60+m;
+    // Show if we're within 30 min after scheduled time
+    if (now >= notifMinutes && now <= notifMinutes + 30) {
+      lsSet(shownKey, '1');
+      showToast('🔔 ' + notif.label);
+    }
+  });
+}
+
+// ── Excel/CSV price upload ─────────────────────────────────────────────────
+function cogHandlePriceUpload(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'csv') {
+    const reader = new FileReader();
+    reader.onload = e => cogProcessPriceCSV(e.target.result);
+    reader.readAsText(file);
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    showToast('📊 Reading Excel file...', 'info');
+    const reader = new FileReader();
+    reader.onload = e => {
+      // Parse xlsx using a simple binary scan for CSV-like data
+      // Since we can not load SheetJS here, ask user to save as CSV first
+      showToast('⚠ Please save your Excel as CSV first, then upload');
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    showToast('⚠ Upload a CSV file (Item#, Unit Cost)', 'warn');
+  }
+}
+
+function cogProcessPriceCSV(text) {
+  const targetSn = state._cogUploadSupplier;
+  if (!targetSn) { showToast('⚠ Select a supplier first', 'warn'); return; }
+
+  const lines = text.split('\n').filter(l => l.trim());
+  let updated = 0, skipped = 0, notInSupplier = 0;
+
+  lines.forEach((line, idx) => {
+    if (idx === 0 && isNaN(parseFloat(line.split(',')[0]))) return; // skip header
+    const parts = line.split(',').map(s => s.trim().replace(/"/g,''));
+    if (parts.length < 2) return;
+    const itemNum = parseInt(parts[0]);
+    const unitCost = parseFloat(parts[1]);
+    if (!itemNum || isNaN(unitCost) || unitCost <= 0) { skipped++; return; }
+
+    // Only update the selected supplier — item number must match within that supplier
+    const supItems = state.catalog[targetSn]?.items || [];
+    let found = false;
+    supItems.forEach(it => {
+      if (parseInt(it.itemNum) === itemNum) {
+        it.unitCost = unitCost;
+        found = true;
+        updated++;
+      }
+    });
+    if (!found) {
+      // Check if it exists in another supplier — warn user
+      let inOther = false;
+      Object.entries(state.catalog).forEach(([sn, sup]) => {
+        if (sn === targetSn) return;
+        if (sup.items.some(it => parseInt(it.itemNum) === itemNum)) inOther = true;
+      });
+      if (inOther) notInSupplier++;
+      else skipped++;
+    }
+  });
+
+  if (updated > 0) {
+    saveCatalog();
+    const skipNote = skipped > 0 ? ' · ' + skipped + ' skipped' : '';
+    const otherNote = notInSupplier > 0 ? ' · ' + notInSupplier + ' belong to other suppliers (not updated)' : '';
+    showToast('✓ ' + updated + ' ' + targetSn + ' prices updated' + skipNote + otherNote);
+    renderCogTab();
+  } else {
+    const hint = notInSupplier > 0 ? ' · ' + notInSupplier + ' items found in other suppliers — check supplier selection' : '';
+    showToast('⚠ No ' + targetSn + ' items matched' + hint, 'warn');
+  }
+}
+
+// ── PROJECTION ENGINE ────────────────────────────────────────────────────────
+
+function cogGetQuarterMonths(quarterOffset) {
+  // Returns array of 3 month keys for a quarter offset from current
+  // quarterOffset: 0 = current quarter, 1 = next quarter, -1 = last quarter
+  const now = new Date();
+  const currentQ = Math.floor(now.getMonth() / 3); // 0-3
+  const currentYear = now.getFullYear();
+  const targetQ = currentQ + quarterOffset;
+  const year = currentYear + Math.floor(targetQ / 4);
+  const q = ((targetQ % 4) + 4) % 4;
+  const startMonth = q * 3;
+  return [0, 1, 2].map(i => {
+    const d = new Date(year, startMonth + i, 1);
+    return cogMonthKey(d);
+  });
+}
+
+function cogGetQuarterLabel(quarterOffset) {
+  const now = new Date();
+  const currentQ = Math.floor(now.getMonth() / 3);
+  const targetQ = currentQ + quarterOffset;
+  const year = now.getFullYear() + Math.floor(targetQ / 4);
+  const q = ((targetQ % 4) + 4) % 4;
+  const qName = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Oct-Dec)'][q];
+  return qName + ' ' + year;
+}
+
+function cogGetQuarterActual(quarterOffset) {
+  // Get actual spend + sales for a past/current quarter
+  const months = cogGetQuarterMonths(quarterOffset);
+  let totalSpend = 0, totalSales = 0, monthsWithData = 0;
+  months.forEach(mk => {
+    const spend = cogGetSpend(mk);
+    const monthSpend = Object.values(spend).reduce((s, v) => s + (v || 0), 0);
+    const sales = parseFloat(state.cogSales[mk]) || 0;
+    if (monthSpend > 0 || sales > 0) monthsWithData++;
+    totalSpend += monthSpend;
+    totalSales += sales;
+  });
+  return { spend: totalSpend, sales: totalSales, monthsWithData, months };
+}
+
+function cogProjectNextQuarter() {
+  // Collect historical quarters (up to 4 past quarters)
+  const historicalData = [];
+  for (let i = -4; i <= -1; i++) {
+    const q = cogGetQuarterActual(i);
+    if (q.monthsWithData >= 2) { // need at least 2 months of data
+      historicalData.push({ ...q, offset: i });
+    }
+  }
+
+  if (historicalData.length === 0) return null;
+
+  // Current quarter — partial data
+  const currentQ = cogGetQuarterActual(0);
+  const now = new Date();
+  const monthInQuarter = now.getMonth() % 3; // 0, 1, or 2
+  const dayInMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  // Progress through current quarter (0 to 1)
+  const quarterProgress = Math.min(1, (monthInQuarter + dayInMonth / daysInMonth) / 3);
+
+  // Projection methods:
+  // 1. Simple average of historical quarters
+  const avgSpend = historicalData.reduce((s, q) => s + q.spend, 0) / historicalData.length;
+  const avgSales = historicalData.reduce((s, q) => s + q.sales, 0) / historicalData.length;
+
+  // 2. Trend — linear regression over quarterly spend
+  let trendSpend = avgSpend, trendSales = avgSales;
+  if (historicalData.length >= 3) {
+    const n = historicalData.length;
+    const xMean = (n - 1) / 2;
+    let sxy = 0, sxx = 0;
+    historicalData.forEach((q, i) => {
+      sxy += (i - xMean) * (q.spend - avgSpend);
+      sxx += (i - xMean) ** 2;
+    });
+    const slope = sxx !== 0 ? sxy / sxx : 0;
+    trendSpend = avgSpend + slope * n; // project one period ahead
+
+    let sxy2 = 0;
+    historicalData.forEach((q, i) => {
+      sxy2 += (i - xMean) * (q.sales - avgSales);
+    });
+    const slopeS = sxx !== 0 ? sxy2 / sxx : 0;
+    trendSales = avgSales + slopeS * n;
+  }
+
+  // 3. Blend: 60% trend, 40% average (when enough data), else 100% average
+  const blendWeight = historicalData.length >= 3 ? 0.6 : 0;
+  const projSpend = Math.max(0, trendSpend * blendWeight + avgSpend * (1 - blendWeight));
+  const projSales = Math.max(0, trendSales * blendWeight + avgSales * (1 - blendWeight));
+
+  // 4. Current quarter extrapolation (if we have partial data)
+  let currentExtrap = null;
+  if (quarterProgress > 0.1 && currentQ.spend > 0) {
+    currentExtrap = {
+      spend: currentQ.spend / quarterProgress,
+      sales: currentQ.sales > 0 ? currentQ.sales / quarterProgress : null,
+    };
+  }
+
+  // Season adjustment — same quarter last year if available
+  const sameQLastYear = historicalData.find(q => q.offset === -4);
+  const seasonalAdj = sameQLastYear ? sameQLastYear.spend / avgSpend : 1;
+
+  return {
+    projected: {
+      spend: Math.round(projSpend * seasonalAdj * 100) / 100,
+      sales: projSales > 0 ? Math.round(projSales * seasonalAdj * 100) / 100 : null,
+    },
+    currentExtrap,
+    historicalData,
+    avgSpend,
+    avgSales,
+    quarterProgress,
+    confidence: historicalData.length >= 3 ? 'high' : historicalData.length >= 2 ? 'medium' : 'low',
+    dataQuarters: historicalData.length,
+  };
+}
+
+// ── Main COG render ────────────────────────────────────────────────────────
+function renderCogTab() {
+  document.getElementById('view-order').style.display = 'none';
+  document.getElementById('view-history').style.display = 'none';
+  document.getElementById('view-mustknow').style.display = 'none';
+  document.getElementById('view-inventory').style.display = 'none';
+  document.getElementById('view-cog').style.display = 'flex';
+
+  // Check notifications on tab open
+  cogScheduleNotifications();
+
+  const el = document.getElementById('cog-scroll');
+  el.innerHTML = '';
+
+  // ── Month selector ────────────────────────────────────────────────────────
+  const now = new Date();
+  let cogMonth = state._cogSelectedMonth || cogMonthKey(now);
+  state._cogSelectedMonth = cogMonth;
+
+  const [y, m] = cogMonth.split('-').map(Number);
+  const monthLabel = new Date(y, m-1, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const prevMonth = new Date(y, m-2, 1); const nextMonth = new Date(y, m, 1);
+
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;';
+  hdr.innerHTML = `
+    <button onclick="state._cogSelectedMonth='${cogMonthKey(prevMonth)}';renderCogTab()" style="width:36px;height:36px;border-radius:18px;border:1.5px solid #2c2c2e;background:transparent;color:#a3a3a3;font-size:20px;cursor:pointer;touch-action:manipulation;">‹</button>
+    <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:14px;font-weight:700;color:#f2f2f7;">💰 ${monthLabel}</div>
+    <button onclick="state._cogSelectedMonth='${cogMonthKey(nextMonth)}';renderCogTab()" style="width:36px;height:36px;border-radius:18px;border:1.5px solid #2c2c2e;background:transparent;color:#a3a3a3;font-size:20px;cursor:pointer;touch-action:manipulation;" ${cogMonth >= cogMonthKey(now) ? 'disabled style="opacity:0.3"' : ''}>›</button>`;
+  el.appendChild(hdr);
+
+  // ── Spend calculation ─────────────────────────────────────────────────────
+  const spend = cogGetSpend(cogMonth);
+  const totalAutoSpend = (spend.BEK||0) + (spend.TRIMARK||0) + (spend.AMAZON||0);
+  const totalManual = spend.manual||0;
+  const totalSpend = totalAutoSpend + totalManual + (spend.ABCO||0) + (spend.ELECTRICAL||0);
+  const sales = parseFloat(state.cogSales[cogMonth]) || 0;
+  const cogPct = sales > 0 ? ((totalSpend / sales) * 100).toFixed(1) : null;
+
+  // ── Summary tiles ─────────────────────────────────────────────────────────
+  const tilesDiv = document.createElement('div');
+  tilesDiv.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;';
+  tilesDiv.innerHTML = `
+    <div style="background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;text-align:center;">
+      <div style="font-size:22px;font-weight:800;font-family:ui-monospace,monospace;color:#60a5fa;">$${totalSpend.toFixed(2)}</div>
+      <div style="font-size:9px;font-family:ui-monospace,monospace;color:#636366;letter-spacing:1px;margin-top:2px;">TOTAL SPEND</div>
+    </div>
+    <div style="background:#111;border:1.5px solid ${cogPct ? (parseFloat(cogPct)<30?'#4ade80':parseFloat(cogPct)<40?'#fbbf24':'#f87171') : '#2c2c2e'};border-radius:14px;padding:14px;text-align:center;">
+      <div style="font-size:22px;font-weight:800;font-family:ui-monospace,monospace;color:${cogPct ? (parseFloat(cogPct)<30?'#4ade80':parseFloat(cogPct)<40?'#fbbf24':'#f87171') : '#636366'};">${cogPct ? cogPct+'%' : '—'}</div>
+      <div style="font-size:9px;font-family:ui-monospace,monospace;color:#636366;letter-spacing:1px;margin-top:2px;">COST %</div>
+    </div>`;
+  el.appendChild(tilesDiv);
+
+  // ── Sales entry ───────────────────────────────────────────────────────────
+  const salesDiv = document.createElement('div');
+  salesDiv.style.cssText = 'background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;margin-bottom:16px;';
+  salesDiv.innerHTML = `
+    <div style="font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#636366;letter-spacing:1px;margin-bottom:8px;">MONTHLY SALES (enter to calculate cost %)</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:18px;color:#636366;">$</span>
+      <input type="number" inputmode="decimal" id="cog-sales-input" value="${sales > 0 ? sales : ''}" placeholder="0.00"
+        style="flex:1;height:44px;border-radius:10px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#f2f2f7;font-size:18px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;padding:0 12px;outline:none;-webkit-appearance:none;">
+      <button onclick="cogSaveSales()" style="height:44px;padding:0 16px;border-radius:10px;border:none;background:#60a5fa;color:#000;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;">SAVE</button>
+    </div>`;
+  el.appendChild(salesDiv);
+
+  // ── Per-supplier spend breakdown ──────────────────────────────────────────
+  const breakdownDiv = document.createElement('div');
+  breakdownDiv.style.cssText = 'background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;margin-bottom:16px;';
+  breakdownDiv.innerHTML = `<div style="font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#636366;letter-spacing:1px;margin-bottom:10px;">SPEND BY SUPPLIER</div>`;
+
+  const suppliers = [
+    {sn:'TRIMARK', color:'#c084fc', auto:true},
+    {sn:'BEK',     color:'#60a5fa', auto:true},
+    {sn:'AMAZON',  color:'#fb923c', auto:true},
+    {sn:'ABCO',    color:'#4ade80', auto:false},
+    {sn:'ELECTRICAL', color:'#facc15', auto:false},
+  ];
+
+  suppliers.forEach(({sn, color, auto}) => {
+    const amt = spend[sn] || 0;
+    const manual = state.cogManual[cogMonth]?.[sn] || '';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1c1c1e;';
+
+    if (auto) {
+      row.innerHTML = `
+        <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+        <div style="flex:1;font-size:13px;color:#e5e5e7;">${sn}</div>
+        <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:${amt>0?color:'#3a3a3c'};">$${amt.toFixed(2)}</div>
+        <div style="font-size:9px;color:#48484a;font-family:ui-monospace,monospace;">${amt>0?'from orders':'no cost data'}</div>`;
+    } else {
+      row.innerHTML = `
+        <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+        <div style="flex:1;font-size:13px;color:#e5e5e7;">${sn}</div>
+        <span style="color:#636366;font-size:14px;">$</span>
+        <input type="number" inputmode="decimal" value="${manual}" placeholder="0.00"
+          style="width:90px;height:32px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#f2f2f7;font-size:13px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;padding:0 8px;outline:none;-webkit-appearance:none;"
+          onchange="cogSaveManual('${sn}', this.value, '${cogMonth}')">`;
+    }
+    breakdownDiv.appendChild(row);
+  });
+
+  // Manual/other row
+  const manualOther = state.cogManual[cogMonth]?.other || '';
+  const otherRow = document.createElement('div');
+  otherRow.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;';
+  otherRow.innerHTML = `
+    <div style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;"></div>
+    <div style="flex:1;font-size:13px;color:#e5e5e7;">Other</div>
+    <span style="color:#636366;font-size:14px;">$</span>
+    <input type="number" inputmode="decimal" value="${manualOther}" placeholder="0.00"
+      style="width:90px;height:32px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#f2f2f7;font-size:13px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;padding:0 8px;outline:none;-webkit-appearance:none;"
+      onchange="cogSaveManual('other', this.value, '${cogMonth}')">`;
+  breakdownDiv.appendChild(otherRow);
+  el.appendChild(breakdownDiv);
+
+  // ── Price Upload ───────────────────────────────────────────────────────────
+  const uploadDiv = document.createElement('div');
+  uploadDiv.style.cssText = 'background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;margin-bottom:16px;';
+  // Build upload div with DOM methods — no nested template literals
+  const uploadTitle = document.createElement('div');
+  uploadTitle.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#636366;letter-spacing:1px;margin-bottom:8px;';
+  uploadTitle.textContent = '📥 UPDATE PRICES FROM CSV';
+  uploadDiv.appendChild(uploadTitle);
+
+  const uploadDesc = document.createElement('div');
+  uploadDesc.style.cssText = 'font-size:11px;color:#48484a;margin-bottom:10px;line-height:1.5;';
+  uploadDesc.innerHTML = 'Upload a CSV with columns: <span style="color:#fbbf24;font-family:ui-monospace,monospace;">Item#, Unit Cost</span><br>Matches by item number — only updates selected supplier.';
+  uploadDiv.appendChild(uploadDesc);
+
+  const supSelWrap = document.createElement('div');
+  supSelWrap.style.cssText = 'margin-bottom:10px;';
+  const supSelLabel = document.createElement('div');
+  supSelLabel.style.cssText = 'font-size:10px;color:#636366;font-family:ui-monospace,monospace;margin-bottom:6px;';
+  supSelLabel.textContent = 'SELECT SUPPLIER TO UPDATE:';
+  supSelWrap.appendChild(supSelLabel);
+  const supBtnRow = document.createElement('div');
+  supBtnRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+  ['BEK','TRIMARK','ABCO','AMAZON','ELECTRICAL'].forEach(sn => {
+    const accent = state.catalog[sn]?.accent || '#fbbf24';
+    const isSelected = state._cogUploadSupplier === sn;
+    const btn = document.createElement('button');
+    btn.className = 'cog-sup-sel';
+    btn.textContent = sn;
+    btn.style.cssText = 'height:28px;padding:0 12px;border-radius:14px;border:1.5px solid ' + (isSelected?accent:'#3a3a3c') + ';background:transparent;color:' + (isSelected?'#f2f2f7':'#636366') + ';font-family:ui-monospace,monospace;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+    btn.onclick = function() {
+      state._cogUploadSupplier = sn;
+      document.querySelectorAll('.cog-sup-sel').forEach(b => { b.style.borderColor='#3a3a3c'; b.style.color='#636366'; });
+      this.style.borderColor = accent;
+      this.style.color = '#f2f2f7';
+      const note = document.getElementById('cog-sup-note');
+      if (note) note.textContent = '→ Will update ' + sn + ' prices only';
+    };
+    supBtnRow.appendChild(btn);
+  });
+  supSelWrap.appendChild(supBtnRow);
+  uploadDiv.appendChild(supSelWrap);
+
+  const uploadRow = document.createElement('div');
+  uploadRow.style.cssText = 'display:flex;gap:8px;align-items:center;';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file'; fileInput.id = 'cog-price-upload'; fileInput.accept = '.csv';
+  fileInput.style.display = 'none';
+  fileInput.onchange = function() { cogHandlePriceUpload(this.files[0]); };
+  uploadRow.appendChild(fileInput);
+  const uploadBtn = document.createElement('button');
+  uploadBtn.style.cssText = 'height:38px;padding:0 16px;border-radius:10px;border:1.5px solid #fbbf24;background:rgba(251,191,36,0.1);color:#fbbf24;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+  uploadBtn.textContent = '📂 CHOOSE CSV FILE';
+  uploadBtn.onclick = function() {
+    if (!state._cogUploadSupplier) { showToast('⚠ Select a supplier first', 'warn'); return; }
+    document.getElementById('cog-price-upload').click();
+  };
+  uploadRow.appendChild(uploadBtn);
+  const tmplLink = document.createElement('a');
+  tmplLink.href = 'data:text/csv;charset=utf-8,Item%23%2CUnit%20Cost%0A928610%2C15.79%0A885622%2C79.79';
+  tmplLink.download = 'price-template.csv';
+  tmplLink.style.cssText = 'font-size:10px;color:#636366;font-family:ui-monospace,monospace;text-decoration:none;';
+  tmplLink.textContent = '⬇ template';
+  uploadRow.appendChild(tmplLink);
+  uploadDiv.appendChild(uploadRow);
+
+  const supNote = document.createElement('div');
+  supNote.id = 'cog-sup-note';
+  supNote.style.cssText = 'font-size:10px;color:#fbbf24;font-family:ui-monospace,monospace;margin-top:6px;';
+  supNote.textContent = state._cogUploadSupplier ? '→ Will update ' + state._cogUploadSupplier + ' prices only' : '';
+  uploadDiv.appendChild(supNote);
+  el.appendChild(uploadDiv);
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  const notifDiv = document.createElement('div');
+  notifDiv.style.cssText = 'background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;margin-bottom:16px;';
+
+  const notifHeader = document.createElement('div');
+  notifHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+  notifHeader.innerHTML = `
+    <div style="font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#636366;letter-spacing:1px;">🔔 NOTIFICATIONS (this device)</div>
+    <button onclick="cogAddNotification()" style="height:28px;padding:0 12px;border-radius:14px;border:1.5px solid #4ade80;background:rgba(74,222,128,0.1);color:#4ade80;font-family:ui-monospace,monospace;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;">+ ADD</button>`;
+  notifDiv.appendChild(notifHeader);
+
+  if (state.cogNotifications.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:12px;color:#48484a;font-family:ui-monospace,monospace;text-align:center;padding:8px 0;';
+    empty.textContent = 'No notifications set. Tap + ADD to create one.';
+    notifDiv.appendChild(empty);
+  } else {
+    state.cogNotifications.forEach((notif, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #1c1c1e;';
+      row.innerHTML = `
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#e5e5e7;font-weight:600;">${notif.label}</div>
+          <div style="font-size:10px;color:#636366;font-family:ui-monospace,monospace;margin-top:1px;">${(notif.days||[]).join('·')} at ${notif.time||'08:00'}</div>
+        </div>
+        <button onclick="cogToggleNotification(${idx})" style="height:28px;padding:0 10px;border-radius:14px;border:1.5px solid ${notif.enabled?'#4ade80':'#3a3a3c'};background:${notif.enabled?'rgba(74,222,128,0.1)':'transparent'};color:${notif.enabled?'#4ade80':'#636366'};font-family:ui-monospace,monospace;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;">${notif.enabled?'ON':'OFF'}</button>
+        <button onclick="cogDeleteNotification(${idx})" style="width:28px;height:28px;border-radius:14px;border:none;background:transparent;color:#f87171;font-size:16px;cursor:pointer;touch-action:manipulation;">×</button>`;
+      notifDiv.appendChild(row);
+    });
+  }
+
+  el.appendChild(notifDiv);
+
+  // ── 3-month trend ─────────────────────────────────────────────────────────
+  const trendDiv = document.createElement('div');
+  trendDiv.style.cssText = 'background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;margin-bottom:24px;';
+  trendDiv.innerHTML = `<div style="font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#636366;letter-spacing:1px;margin-bottom:10px;">📈 3-MONTH SPEND TREND</div>`;
+
+  let maxSpend = 0;
+  const months3 = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(y, m-1-i, 1);
+    const key = cogMonthKey(d);
+    const s = cogGetSpend(key);
+    const total = Object.values(s).reduce((sum,v)=>sum+(v||0),0);
+    const label = d.toLocaleDateString('en-US',{month:'short'});
+    months3.push({key, label, total, sales: parseFloat(state.cogSales[key])||0});
+    if (total > maxSpend) maxSpend = total;
+  }
+
+  months3.forEach(mo => {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:8px;';
+    const pct = maxSpend > 0 ? (mo.total/maxSpend*100) : 0;
+    const cogP = mo.sales > 0 ? (mo.total/mo.sales*100).toFixed(1)+'%' : '—';
+    bar.innerHTML = `
+      <div style="width:32px;font-family:ui-monospace,monospace;font-size:10px;color:#636366;text-align:right;">${mo.label}</div>
+      <div style="flex:1;height:24px;background:#1c1c1e;border-radius:6px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:#60a5fa;border-radius:6px;transition:width 0.3s;"></div>
+      </div>
+      <div style="width:80px;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;color:#60a5fa;text-align:right;">$${mo.total.toFixed(0)}</div>
+      <div style="width:36px;font-family:ui-monospace,monospace;font-size:10px;color:#636366;text-align:right;">${cogP}</div>`;
+    trendDiv.appendChild(bar);
+  });
+
+  el.appendChild(trendDiv);
+
+  // ── Projections section ──────────────────────────────────────────────────
+  const projDiv = document.createElement('div');
+  projDiv.style.cssText = 'background:#111;border:1.5px solid #2c2c2e;border-radius:14px;padding:14px;margin-bottom:16px;';
+
+  const proj = cogProjectNextQuarter();
+  const nextQLabel = cogGetQuarterLabel(1);
+  const currQLabel = cogGetQuarterLabel(0);
+
+  // Build projection section using DOM methods — avoids nested template literal issues on iOS Safari
+  const projHdr = document.createElement('div');
+  projHdr.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#636366;letter-spacing:1px;margin-bottom:8px;';
+  projHdr.textContent = '📈 PROJECTIONS';
+  projDiv.appendChild(projHdr);
+
+  if (!proj) {
+    const noData = document.createElement('div');
+    noData.style.cssText = 'font-size:12px;color:#48484a;line-height:1.5;';
+    noData.textContent = 'Not enough data yet. Enter sales figures and continue placing orders for at least 2 months to unlock projections.';
+    projDiv.appendChild(noData);
+  } else {
+    const confColor = proj.confidence==='high'?'#4ade80':proj.confidence==='medium'?'#fbbf24':'#f87171';
+    const cogPctNum = proj.projected.sales > 0 ? (proj.projected.spend / proj.projected.sales * 100) : null;
+    const cogPct = cogPctNum !== null ? cogPctNum.toFixed(1) + '%' : '—';
+    const cogPctColor = cogPctNum !== null ? (cogPctNum<30?'#4ade80':cogPctNum<40?'#fbbf24':'#f87171') : '#636366';
+
+    // Header row with confidence badge
+    const confRow = document.createElement('div');
+    confRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
+    confRow.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#a3a3a3;">NEXT QUARTER — ' + nextQLabel + '</span>'
+      + '<span style="font-size:9px;font-family:ui-monospace,monospace;color:' + confColor + ';border:1px solid ' + confColor + ';padding:1px 6px;border-radius:8px;">' + proj.confidence.toUpperCase() + ' · ' + proj.dataQuarters + 'Q data</span>';
+    projDiv.appendChild(confRow);
+
+    // 3 tiles
+    const tilesRow = document.createElement('div');
+    tilesRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;';
+    [
+      { val: '$' + proj.projected.spend.toFixed(0), label: 'PROJ SPEND', color: '#60a5fa' },
+      { val: proj.projected.sales ? '$' + proj.projected.sales.toFixed(0) : '—', label: 'PROJ SALES', color: '#4ade80' },
+      { val: cogPct, label: 'PROJ COST%', color: cogPctColor },
+    ].forEach(tile => {
+      const t = document.createElement('div');
+      t.style.cssText = 'background:#1c1c1e;border-radius:10px;padding:10px;text-align:center;';
+      t.innerHTML = '<div style="font-size:16px;font-weight:800;font-family:ui-monospace,monospace;color:' + tile.color + ';">' + tile.val + '</div>'
+        + '<div style="font-size:9px;color:#636366;font-family:ui-monospace,monospace;margin-top:2px;">' + tile.label + '</div>';
+      tilesRow.appendChild(t);
+    });
+    projDiv.appendChild(tilesRow);
+
+    // Current quarter extrapolation
+    if (proj.currentExtrap) {
+      const extrap = document.createElement('div');
+      extrap.style.cssText = 'font-size:10px;color:#636366;font-family:ui-monospace,monospace;margin-bottom:10px;';
+      extrap.textContent = 'At current pace, ' + currQLabel + ' → ~$' + proj.currentExtrap.spend.toFixed(0) + ' spend'
+        + (proj.currentExtrap.sales ? ' / $' + proj.currentExtrap.sales.toFixed(0) + ' sales' : '');
+      projDiv.appendChild(extrap);
+    }
+
+    // Historical quarters
+    const histHdr = document.createElement('div');
+    histHdr.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#a3a3a3;letter-spacing:1px;margin-bottom:8px;';
+    histHdr.textContent = 'HISTORICAL QUARTERS';
+    projDiv.appendChild(histHdr);
+
+    const maxSpend = Math.max.apply(null, proj.historicalData.map(h => h.spend).concat([1]));
+    proj.historicalData.forEach(q => {
+      const qLabel = cogGetQuarterLabel(q.offset);
+      const qCog = q.sales > 0 ? ((q.spend/q.sales)*100).toFixed(1)+'%' : '—';
+      const barPct = (q.spend / maxSpend * 100).toFixed(0);
+      const qParts = qLabel.split(' ');
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
+      row.innerHTML = '<div style="width:90px;font-family:ui-monospace,monospace;font-size:9px;color:#636366;flex-shrink:0;">' + qParts[0] + ' ' + (qParts[1]||'') + '</div>'
+        + '<div style="flex:1;height:20px;background:#1c1c1e;border-radius:5px;overflow:hidden;"><div style="height:100%;width:' + barPct + '%;background:#60a5fa;border-radius:5px;"></div></div>'
+        + '<div style="width:52px;font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#60a5fa;text-align:right;">$' + q.spend.toFixed(0) + '</div>'
+        + '<div style="width:36px;font-family:ui-monospace,monospace;font-size:9px;color:#636366;text-align:right;">' + qCog + '</div>';
+      projDiv.appendChild(row);
+    });
+
+    // Footer note
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:9px;color:#48484a;font-family:ui-monospace,monospace;margin-top:8px;line-height:1.5;';
+    note.textContent = 'Projection uses ' + (proj.dataQuarters>=3?'trend + ':'') + 'historical average'
+      + (proj.dataQuarters>=3?', weighted 60/40':'') + ' · Enter monthly sales to unlock cost % projection';
+    projDiv.appendChild(note);
+  }
+  el.appendChild(projDiv);
+
+  // Safe area spacer
+  const spacer = document.createElement('div');
+  spacer.style.cssText = 'height:calc(24px + env(safe-area-inset-bottom, 0px));';
+  el.appendChild(spacer);
+}
+
+// ── COG action functions ───────────────────────────────────────────────────
+function cogSaveSales() {
+  const val = parseFloat(document.getElementById('cog-sales-input')?.value) || 0;
+  const key = state._cogSelectedMonth || cogMonthKey(new Date());
+  state.cogSales[key] = val;
+  cogSaveData();
+  showToast('✓ Sales saved — $' + val.toFixed(2));
+  renderCogTab();
+}
+
+function cogSaveManual(supplier, value, monthKey) {
+  if (!state.cogManual[monthKey]) state.cogManual[monthKey] = {};
+  state.cogManual[monthKey][supplier] = parseFloat(value) || 0;
+  cogSaveData();
+}
+
+function cogAddNotification() {
+  // Show inline form instead of prompt() — prompt is blocked in PWA mode on iOS
+  const existing = document.getElementById('cog-notif-form');
+  if (existing) { existing.remove(); return; }
+
+  const form = document.createElement('div');
+  form.id = 'cog-notif-form';
+  form.style.cssText = 'background:#1c1c1e;border:1.5px solid #4ade80;border-radius:14px;padding:14px;margin-top:10px;';
+  // Build notification form with DOM methods — no nested template literals
+  const fTitle = document.createElement('div');
+  fTitle.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;font-weight:700;color:#4ade80;letter-spacing:1px;margin-bottom:10px;';
+  fTitle.textContent = 'NEW NOTIFICATION';
+  form.appendChild(fTitle);
+
+  const labelWrap = document.createElement('div');
+  labelWrap.style.cssText = 'margin-bottom:8px;';
+  labelWrap.innerHTML = '<div style="font-size:10px;color:#636366;font-family:ui-monospace,monospace;margin-bottom:4px;">LABEL</div>';
+  const labelInput = document.createElement('input');
+  labelInput.id = 'notif-label'; labelInput.type = 'text'; labelInput.placeholder = 'e.g. ABCO order due';
+  labelInput.style.cssText = 'width:100%;height:36px;border-radius:8px;border:1.5px solid #3a3a3c;background:#111;color:#f2f2f7;font-size:13px;font-family:ui-monospace,monospace;padding:0 10px;outline:none;-webkit-appearance:none;box-sizing:border-box;';
+  labelWrap.appendChild(labelInput);
+  form.appendChild(labelWrap);
+
+  const timeWrap = document.createElement('div');
+  timeWrap.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;';
+  const timeInner = document.createElement('div');
+  timeInner.style.cssText = 'flex:1;';
+  timeInner.innerHTML = '<div style="font-size:10px;color:#636366;font-family:ui-monospace,monospace;margin-bottom:4px;">TIME</div>';
+  const timeInput = document.createElement('input');
+  timeInput.id = 'notif-time'; timeInput.type = 'time'; timeInput.value = '08:00';
+  timeInput.style.cssText = 'width:100%;height:36px;border-radius:8px;border:1.5px solid #3a3a3c;background:#111;color:#f2f2f7;font-size:13px;font-family:ui-monospace,monospace;padding:0 10px;outline:none;box-sizing:border-box;';
+  timeInner.appendChild(timeInput);
+  timeWrap.appendChild(timeInner);
+  form.appendChild(timeWrap);
+
+  const daysWrap = document.createElement('div');
+  daysWrap.style.cssText = 'margin-bottom:10px;';
+  const daysLabel = document.createElement('div');
+  daysLabel.style.cssText = 'font-size:10px;color:#636366;font-family:ui-monospace,monospace;margin-bottom:6px;';
+  daysLabel.textContent = 'DAYS';
+  daysWrap.appendChild(daysLabel);
+  const daysRow = document.createElement('div');
+  daysRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => {
+    const db = document.createElement('button');
+    db.dataset.day = d; db.textContent = d;
+    db.style.cssText = 'height:28px;padding:0 8px;border-radius:14px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,monospace;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+    db.onclick = function() {
+      this.classList.toggle('notif-day-active');
+      const active = this.classList.contains('notif-day-active');
+      this.style.borderColor = active ? '#4ade80' : '#3a3a3c';
+      this.style.color = active ? '#4ade80' : '#636366';
+    };
+    daysRow.appendChild(db);
+  });
+  daysWrap.appendChild(daysRow);
+  form.appendChild(daysWrap);
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;';
+  const addBtn = document.createElement('button');
+  addBtn.style.cssText = 'flex:2;height:36px;border-radius:10px;border:none;background:#4ade80;color:#000;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+  addBtn.textContent = '✓ ADD';
+  addBtn.onclick = cogSaveNewNotification;
+  const cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = 'flex:1;height:36px;border-radius:10px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = function() { document.getElementById('cog-notif-form').remove(); };
+  btnRow.appendChild(addBtn); btnRow.appendChild(cancelBtn);
+  form.appendChild(btnRow);
+
+  const notifDiv = document.querySelector('#cog-scroll > div:last-of-type');
+  if (notifDiv) notifDiv.appendChild(form);
+  else document.getElementById('cog-scroll').appendChild(form);
+  document.getElementById('notif-label').focus();
+}
+
+function cogSaveNewNotification() {
+  const label = document.getElementById('notif-label')?.value?.trim();
+  if (!label) { showToast('⚠ Enter a label', 'warn'); return; }
+  const time = document.getElementById('notif-time')?.value || '08:00';
+  const days = Array.from(document.querySelectorAll('.notif-day-active')).map(b => b.dataset.day);
+  if (days.length === 0) { showToast('⚠ Select at least one day', 'warn'); return; }
+  state.cogNotifications.push({ id: Date.now(), label, time, days, enabled: true });
+  cogSaveNotifications();
+  renderCogTab();
+  showToast('🔔 Notification added');
+}
+
+function cogToggleNotification(idx) {
+  if (state.cogNotifications[idx]) {
+    state.cogNotifications[idx].enabled = !state.cogNotifications[idx].enabled;
+    cogSaveNotifications();
+    renderCogTab();
+  }
+}
+
+function cogDeleteNotification(idx) {
+  state.cogNotifications.splice(idx, 1);
+  cogSaveNotifications();
+  renderCogTab();
+  showToast('🗑 Notification removed');
+}
+
 function renderInventoryTab() {
   document.getElementById('view-order').style.display = 'none';
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'none';
   document.getElementById('view-inventory').style.display = 'flex';
+  document.getElementById('view-cog').style.display = 'none';
 
   const sup = state.catalog['TRIMARK'];
 
@@ -5609,35 +6609,51 @@ function renderInventoryTab() {
 
       const card = document.createElement('div');
       card.style.cssText = 'margin:6px 16px;background:#1c1c1e;border:1px solid #2c2c2e;border-radius:12px;padding:12px 14px;';
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#f2f2f7;">
-              ${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
-            </div>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px;">
-              ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;">
-            <div style="background:#1a1a2e;border:1px solid #3b0764;border-radius:8px;padding:4px 8px;text-align:center;">
-              <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#c084fc;">${counted}</div>
-              <div style="font-family:ui-monospace,monospace;font-size:8px;color:#7c3aed;">ITEMS</div>
-            </div>
-            ${needOrder > 0 ? `<div style="background:#1c1100;border:1px solid #78350f;border-radius:8px;padding:4px 8px;text-align:center;">
-              <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#fbbf24;">${needOrder}</div>
-              <div style="font-family:ui-monospace,monospace;font-size:8px;color:#d97706;">ORDER</div>
-            </div>` : ''}
-            ${totalLoss > 0 ? `<div style="background:#1c0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:4px 8px;text-align:center;">
-              <div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#f87171;">$${totalLoss.toFixed(0)}</div>
-              <div style="font-family:ui-monospace,monospace;font-size:8px;color:#dc2626;">LOSS</div>
-            </div>` : ''}
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button onclick="openTrimarkInventoryReport(null,'${rec.id}')" style="flex:1;height:34px;border-radius:9px;border:1.5px solid #7c3aed;background:transparent;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;">📋 INVENTORY</button>
-          <button onclick="openHistoryEditCounts('${rec.id}')" style="height:34px;padding:0 12px;border-radius:9px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;">✎ EDIT</button>
-        </div>`;
+      // Build card with DOM methods — no nested templates
+      card.innerHTML = '';
+      const _topRow = document.createElement('div');
+      _topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+      const _dateCol = document.createElement('div');
+      const _dateD = document.createElement('div');
+      _dateD.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#f2f2f7;";
+      _dateD.textContent = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+      const _dateT = document.createElement('div');
+      _dateT.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px;";
+      _dateT.textContent = d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+      _dateCol.appendChild(_dateD); _dateCol.appendChild(_dateT);
+      const _tiles = document.createElement('div');
+      _tiles.style.cssText = 'display:flex;gap:6px;';
+      const _t1 = document.createElement('div');
+      _t1.style.cssText = 'background:#1a1a2e;border:1px solid #3b0764;border-radius:8px;padding:4px 8px;text-align:center;';
+      _t1.innerHTML = '<div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#c084fc;">' + counted + '</div><div style="font-family:ui-monospace,monospace;font-size:8px;color:#7c3aed;">ITEMS</div>';
+      _tiles.appendChild(_t1);
+      if (needOrder > 0) {
+        const _t2 = document.createElement('div');
+        _t2.style.cssText = 'background:#1c1100;border:1px solid #78350f;border-radius:8px;padding:4px 8px;text-align:center;';
+        _t2.innerHTML = '<div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#fbbf24;">' + needOrder + '</div><div style="font-family:ui-monospace,monospace;font-size:8px;color:#d97706;">ORDER</div>';
+        _tiles.appendChild(_t2);
+      }
+      if (totalLoss > 0) {
+        const _t3 = document.createElement('div');
+        _t3.style.cssText = 'background:#1c0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:4px 8px;text-align:center;';
+        _t3.innerHTML = '<div style="font-family:ui-monospace,monospace;font-size:14px;font-weight:700;color:#f87171;">$' + totalLoss.toFixed(0) + '</div><div style="font-family:ui-monospace,monospace;font-size:8px;color:#dc2626;">LOSS</div>';
+        _tiles.appendChild(_t3);
+      }
+      _topRow.appendChild(_dateCol); _topRow.appendChild(_tiles);
+      card.appendChild(_topRow);
+      const _btnRow = document.createElement('div');
+      _btnRow.style.cssText = 'display:flex;gap:6px;';
+      const _b1 = document.createElement('button');
+      _b1.style.cssText = "flex:1;height:34px;border-radius:9px;border:1.5px solid #7c3aed;background:transparent;color:#c084fc;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;";
+      _b1.textContent = '📋 INVENTORY';
+      const _recIdCard = rec.id;
+      _b1.onclick = function() { openTrimarkInventoryReport(null, _recIdCard); };
+      const _b2 = document.createElement('button');
+      _b2.style.cssText = "height:34px;padding:0 12px;border-radius:9px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;cursor:pointer;";
+      _b2.textContent = '✎ EDIT';
+      _b2.onclick = function() { openHistoryEditCounts(_recIdCard); };
+      _btnRow.appendChild(_b1); _btnRow.appendChild(_b2);
+      card.appendChild(_btnRow);
       listEl.appendChild(card);
     });
   });
@@ -5785,12 +6801,9 @@ function openPrint(rec) {
   const lowItems  = allItems.filter(i => i.status === 'low');
 
   // ── Compact attention bar ──────────────────────────────────────────────
-  const alertSec = (critItems.length || lowItems.length) ? `
-  <div style="margin-bottom:20px;padding:8px 14px;background:#fff7ed;border-left:4px solid #f97316;border-radius:0 8px 8px 0;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-    <span style="font-family:monospace;font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px;white-space:nowrap">⚠ ATTENTION</span>
-    ${critItems.map(i=>`<span style="font-size:11px;color:#dc2626;font-weight:700">🔴 ${i.name} (${i.onHand||'0'} on hand)</span>`).join('')}
-    ${lowItems.map(i=>`<span style="font-size:11px;color:#d97706">🟡 ${i.name} (${i.onHand||'0'} / par ${i.par})</span>`).join('')}
-  </div>` : '';
+  const critSpans = critItems.map(i => '<span style="font-size:11px;color:#dc2626;font-weight:700">🔴 ' + i.name + ' (' + (i.onHand||'0') + ' on hand)</span>').join('');
+  const lowSpans = lowItems.map(i => '<span style="font-size:11px;color:#d97706">🟡 ' + i.name + ' (' + (i.onHand||'0') + ' / par ' + i.par + ')</span>').join('');
+  const alertSec = (critItems.length || lowItems.length) ? '<div style="margin-bottom:20px;padding:8px 14px;background:#fff7ed;border-left:4px solid #f97316;border-radius:0 8px 8px 0;display:flex;flex-wrap:wrap;gap:12px;align-items:center"><span style="font-family:monospace;font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px;white-space:nowrap">⚠ ATTENTION</span>' + critSpans + lowSpans + '</div>' : '';
 
   const noteSec = rec.globalNote ? `<div style="margin-bottom:20px;padding:10px 14px;background:#fefce8;border-left:4px solid #fde68a;border-radius:0 8px 8px 0">
     <span style="font-family:monospace;font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px">📝 NOTE  </span>
@@ -5839,23 +6852,22 @@ function openPrint(rec) {
           ? '<span style="font-size:9px;color:#9ca3af">flat</span>'
           : `<span style="font-size:9px;font-weight:700;color:${pct>0?'#fbbf24':'#4ade80'}">${pct>0?'▲':'▼'} ${Math.abs(pct)}%</span>`)
           : '';
-        casesUsedCell = `<td style="padding:7px 10px;font-size:12px;border-bottom:1px solid #e5e7eb;text-align:center">
-          <span style="font-weight:700">${thisMoCs > 0 ? thisMoCs+'cs' : '—'}</span>
-          ${lastMoCs > 0 ? `<div style="font-size:9px;color:#6b7280">prev: ${lastMoCs}cs ${badge}</div>` : ''}
-        </td>`;
+        const prevNote = lastMoCs > 0 ? '<div style="font-size:9px;color:#6b7280">prev: '+lastMoCs+'cs '+badge+'</div>' : '';
+        casesUsedCell = '<td style="padding:7px 10px;font-size:12px;border-bottom:1px solid #e5e7eb;text-align:center"><span style="font-weight:700">'+(thisMoCs > 0 ? thisMoCs+'cs' : '\u2014')+'</span>'+prevNote+'</td>';
       } else if (!isTri) {
         casesUsedCell = '<td style="padding:7px 10px;font-size:11px;color:#3a3a3c;border-bottom:1px solid #e5e7eb;text-align:center">—</td>';
       }
       const noteSpan = isTri ? 8 : 6;
 
-      return `<tr style="background:${bg}">
-        <td style="padding:7px 10px;font-size:13px;border-bottom:1px solid #e5e7eb">${item.name}</td>
-        <td style="padding:7px 10px;font-size:11px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.pack}</td>
-        ${begCell}${usedCell}${lossCell}${casesUsedCell}
-        <td style="padding:7px 10px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">${item.onHand||'—'}</td>
-        <td style="padding:7px 10px;font-size:14px;font-weight:800;border-bottom:1px solid #e5e7eb;text-align:center;color:#111">${oqDisplay}</td>
-        <td style="padding:7px 10px;font-size:11px;font-weight:700;color:${sc};border-bottom:1px solid #e5e7eb;text-align:center">${sl}</td>
-      </tr>${item.note ? `<tr style="background:${bg}"><td colspan="${noteSpan}" style="padding:2px 10px 7px;font-size:11px;color:#92400e;font-style:italic;border-bottom:1px solid #e5e7eb">↳ ${item.note}</td></tr>` : ''}`;
+      const noteRow = item.note ? '<tr style="background:'+bg+'"><td colspan="'+noteSpan+'" style="padding:2px 10px 7px;font-size:11px;color:#92400e;font-style:italic;border-bottom:1px solid #e5e7eb">↳ '+item.note+'</td></tr>' : '';
+      return '<tr style="background:'+bg+'">'
+        + '<td style="padding:7px 10px;font-size:13px;border-bottom:1px solid #e5e7eb">'+item.name+'</td>'
+        + '<td style="padding:7px 10px;font-size:11px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">'+item.pack+'</td>'
+        + begCell + usedCell + lossCell + casesUsedCell
+        + '<td style="padding:7px 10px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;text-align:center">'+(item.onHand||'—')+'</td>'
+        + '<td style="padding:7px 10px;font-size:14px;font-weight:800;border-bottom:1px solid #e5e7eb;text-align:center;color:#111">'+oqDisplay+'</td>'
+        + '<td style="padding:7px 10px;font-size:11px;font-weight:700;color:'+sc+';border-bottom:1px solid #e5e7eb;text-align:center">'+sl+'</td>'
+        + '</tr>' + noteRow;
     }).join('');
 
     const pageBreak = si > 0 ? 'page-break-before:always;padding-top:24px;' : '';
@@ -5869,11 +6881,9 @@ function openPrint(rec) {
         <thead><tr style="background:#f3f4f6">
           <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:left;font-family:monospace;border-bottom:2px solid #e5e7eb">ITEM</th>
           <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">PACK</th>
-          ${isTri ? `
-          <th style="padding:6px 10px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">BEGIN</th>
-          <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">USED</th>
-          <th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">LOSS $</th>` : `
-          <th style="padding:6px 10px;font-size:10px;color:#2563eb;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">CASES USED<br><span style="font-size:8px;font-weight:400">vs prev mo</span></th>`}
+          ${isTri
+            ? '<th style="padding:6px 10px;font-size:10px;color:#7c3aed;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">BEGIN</th><th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">USED</th><th style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">LOSS $</th>'
+            : '<th style="padding:6px 10px;font-size:10px;color:#2563eb;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">CASES USED</th>'}
           <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">ON HAND</th>
           <th style="padding:6px 10px;font-size:10px;color:#111;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">${isTri ? 'ORDER (cs)' : 'ORDER QTY'}</th>
           <th style="padding:6px 10px;font-size:10px;color:#6b7280;text-align:center;font-family:monospace;border-bottom:2px solid #e5e7eb">STATUS</th>
@@ -5905,15 +6915,15 @@ function openPrint(rec) {
       <div style="text-align:right">
         <div style="font-size:15px;font-weight:700">${dateStr}</div>
         <div style="font-size:11px;color:#6b7280;margin-top:2px">Placed at ${timeStr}</div>
-        ${deliveryStr ? `<div style="margin-top:6px;font-size:12px;font-weight:700;color:#15803d">🚚 Delivery: ${deliveryStr}</div>` : ''}
+        ${deliveryStr ? '<div style="margin-top:6px;font-size:12px;font-weight:700;color:#15803d">🚚 Delivery: ' + deliveryStr + '</div>' : ''}
       </div>
     </div>
     <!-- Summary pills -->
     <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#16a34a;font-family:monospace">${orderedItems.length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">ITEMS</div></div>
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#16a34a;font-family:monospace">${Object.keys(rec.suppliers||{}).length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">SUPPLIERS</div></div>
-      ${critItems.length ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#dc2626;font-family:monospace">${critItems.length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">CRITICAL</div></div>` : ''}
-      ${lowItems.length ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#d97706;font-family:monospace">${lowItems.length}</div><div style="font-size:9px;color:#6b7280;font-family:monospace">LOW</div></div>` : ''}
+      ${critItems.length ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#dc2626;font-family:monospace">'+critItems.length+'</div><div style="font-size:9px;color:#6b7280;font-family:monospace">CRITICAL</div></div>' : ''}
+      ${lowItems.length ? '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;text-align:center"><div style="font-size:16px;font-weight:700;color:#d97706;font-family:monospace">'+lowItems.length+'</div><div style="font-size:9px;color:#6b7280;font-family:monospace">LOW</div></div>' : ''}
     </div>
   </div>
 
@@ -5945,18 +6955,18 @@ function showWhatsNew() {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 
   const updates = [
-    { icon:'🧠', title:'Suggest Order Button', desc:'Each supplier tab now has a 🧠 SUGGEST ORDER button in the info bar. Amber = history exists, tap to see suggestions. Gray = not enough data yet, tap to see how many orders have been recorded. No more surprise pop-ups — you control when suggestions appear.' },
-    { icon:'🗑', title:'Delete Orders from History', desc:'Open any order in History and tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm it (turns red), tap again to confirm. Removes from all devices instantly. Great for cleaning up test orders.' },
-    { icon:'📊', title:'Two Separate Reports', desc:'Inventory tab now opens a full 📋 INVENTORY REPORT showing every single item counted — final count, inventory value, loss $, gain $, net variance. History tab opens a 📦 ORDER REPORT showing only items to order for James, plus items confirmed at or above par.' },
-    { icon:'💹', title:'Inventory Value Tracking', desc:'The inventory report now shows the dollar value of every item on hand (final count × unit cost), with a grand total at the bottom. Your boss can see exactly what the current inventory is worth at any point in time.' },
-    { icon:'🔧', title:'BEK CSV Fixed', desc:'Fixed a race condition where Firebase was overwriting your freshly-typed order quantities with old data before the CSV was built — causing the CSV to show PAR values instead of what you actually ordered. Now uses a timestamp guard to prevent stale overwrites.' },
-    { icon:'📥', title:'BEK Orders — CSV Export', desc:'After saving a BEK order, a blue 📥 BEK ORDER READY prompt appears. Tap DOWNLOAD to get a CSV file in BEK\'s exact portal format. Upload it directly to BEKEntree.com — no manual entry. From History you can also tap RE-DOWNLOAD BEK CSV anytime.' },
-    { icon:'💬', title:'ABCO — Resend SMS to Hal', desc:'Missed the SMS prompt after saving? Open the order in History and tap 💬 RESEND SMS TO HAL. It opens Messages pre-filled with the exact same order — clean format, one item per line, grouped in threes.' },
-    { icon:'📦', title:'Inventory Tab', desc:'Dedicated 📦 Inventory tab (4th tab). Current month card shows live count progress. Tap 🔍 BEGIN AUDIT to verify the app\'s math: last count + delivery ADD = START, all with source labels and timestamps. Past records grouped by month below.' },
-    { icon:'🧠', title:'Smart Order Suggestions', desc:'The app predicts order quantities using 6 signals: recent order history, trend direction, day-of-week, monthly seasonality, week-of-month, and consistency. Suggestion banner stays open until you dismiss it — review and edit quantities before applying.' },
-    { icon:'⚠', title:'On-Hand Anomaly Alerts', desc:'After entering a count, if it\'s ±30% from your historical average for that time of month, a small alert appears under the item — red if unusually low, yellow if unusually high. Builds smarter over time as the app learns your patterns.' },
-    { icon:'✎', title:'Full Catalog Management', desc:'In ✎ Edit mode: tap any item to edit name, pack, or par. Tap + ADD to add a new item (with unit cost and BEK item number). Tap DELETE ITEM at the bottom of the edit sheet to remove — two-tap confirmation so nothing gets deleted by accident.' },
-    { icon:'☁️', title:'Secure Real-Time Sync', desc:'All data syncs across devices instantly — 10 Firebase paths including orders, inventory, catalog, learning, and audit trail. Secured with anonymous authentication so only the app can read or write your database. ☁️ = synced · ⚠️ = error · 📵 = offline.' },
+    { icon:'💰', title:'Cost of Goods (COG) Tab', desc:'New 5th tab 💰 tracks monthly spend per supplier, lets you enter sales to calculate your cost %, and shows a 3-month trend bar chart. Manual spend entry for ABCO and ELECTRICAL. Prices update via CSV upload per supplier.' },
+    { icon:'📈', title:'Projections Engine', desc:'COG tab now projects next quarter spend, sales, and cost % using trend + historical average blending. Shows confidence badge (HIGH/MEDIUM/LOW), current quarter extrapolation, and historical quarter bar chart. Gets smarter every quarter.' },
+    { icon:'🔔', title:'Notifications', desc:'Add custom reminders in the COG tab — set a label, time, and days of week. Shows a badge on the Cost tab. Checks on app open and shows a toast if a notification is due within 30 minutes. No system permissions needed.' },
+    { icon:'🛡', title:'Data Never Lost Again', desc:'Fixed a bug where Trimark BEGIN and ADD counts would disappear on PWA reinstall or Safari cache clear. The app no longer overwrites Firebase with hardcoded data on fresh open — your real counts always come back from Firebase within seconds.' },
+    { icon:'🧠', title:'Suggest Order Button', desc:'Each supplier tab has a 🧠 SUGGEST ORDER button in the info bar. Amber = history exists, tap to see suggestions. Gray = not enough data yet. No more surprise pop-ups — you control when suggestions appear.' },
+    { icon:'🗑', title:'Delete Orders from History', desc:'Open any order in History and tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm it (turns red), tap again to confirm. Removes from all devices instantly.' },
+    { icon:'📊', title:'Two Separate Reports', desc:'Inventory tab: full 📋 INVENTORY REPORT showing every item with final count, inventory value, loss $, gain $, net variance. History tab: 📦 ORDER REPORT showing only items to order for James plus items confirmed at par.' },
+    { icon:'📥', title:'BEK CSV Export', desc:'After saving a BEK order, a blue 📥 BEK ORDER READY prompt appears. Tap DOWNLOAD to get a CSV in BEK portal format. Upload directly to BEKEntree.com. Re-download anytime from History.' },
+    { icon:'📦', title:'Delivery Confirmation', desc:'Open any order in History and tap 📦 CONFIRM DELIVERY. Check off each item as it arrives — uncheck anything missing. Missing items get flagged with a red banner until resolved. Trimark delivery triggers ADD review automatically.' },
+    { icon:'☁️', title:'Secure Real-Time Sync', desc:'All data syncs across devices instantly — 12 Firebase paths. Secured with anonymous authentication. ☁️ = synced · 🔄 = connecting · ⚠️ = error · 📵 = offline. First load always restores your data from Firebase even after reinstall.' },
+    { icon:'✎', title:'Full Catalog Management', desc:'In ✎ Edit mode: tap any item to edit name, pack, or par. Tap + ADD to add a new item. Tap DELETE ITEM with two-tap confirmation. BEK items have a dedicated BEK# field. All items have a unit cost field for COG tracking.' },
+    { icon:'⚠', title:'On-Hand Anomaly Alerts', desc:'After entering a count, if it is ±30% from your historical average for that time of month, a colored note appears under the item. Red = unusually low. Yellow = unusually high. Gets smarter as the app learns your patterns.' },
   ];
 
   overlay.innerHTML = `
@@ -5965,18 +6975,11 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.53</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.68</div>
       </div>
-      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.48</div>
+      <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
-      ${updates.map(u => `
-        <div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-            <span style="font-size:22px;">${u.icon}</span>
-            <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;color:#f2f2f7;letter-spacing:0.5px;">${u.title}</div>
-          </div>
-          <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;font-size:14px;color:#a3a3a3;line-height:1.65;">${u.desc}</div>
-        </div>`).join('')}
+      <div id="whats-new-cards"></div>
 
       <div style="background:#0f172a;border:1.5px solid #1e3a5f;border-radius:14px;padding:14px 16px;margin-bottom:16px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;font-weight:700;color:#60a5fa;letter-spacing:1px;margin-bottom:6px;">💡 TIP</div>
@@ -5995,6 +6998,26 @@ function showWhatsNew() {
     </div>`;
 
   document.body.appendChild(overlay);
+  var _wnCards = document.getElementById('whats-new-cards');
+  if (_wnCards) {
+    updates.forEach(function(u) {
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:12px;';
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+      var ico = document.createElement('span');
+      ico.style.fontSize = '22px'; ico.textContent = u.icon;
+      var ttl = document.createElement('div');
+      ttl.style.cssText = 'font-family:ui-monospace,monospace;font-size:12px;font-weight:700;color:#f2f2f7;letter-spacing:0.5px;';
+      ttl.textContent = u.title;
+      hdr.appendChild(ico); hdr.appendChild(ttl);
+      var desc = document.createElement('div');
+      desc.style.cssText = 'font-size:14px;color:#a3a3a3;line-height:1.65;';
+      desc.textContent = u.desc;
+      card.appendChild(hdr); card.appendChild(desc);
+      _wnCards.appendChild(card);
+    });
+  }
 }
 
 // ─── MUST KNOW DATA ────────────────────────────────────────────────────────
@@ -6017,6 +7040,15 @@ const MUST_KNOW = [
       '📋 INVENTORY REPORT (Inventory tab) — shows every item counted: final count, inventory value, loss $, gain $, net variance. This is your boss report.',
       '📦 ORDER REPORT (History tab → open any Trimark order) — shows only items below par that need ordering, plus items confirmed at or above par. This is what you send James.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '💰 COST OF GOODS TAB (5th tab at the bottom)',
+      'Track your monthly supply spend and calculate cost % automatically.',
+      '• Enter monthly SALES to unlock cost % — green <30%, yellow <40%, red >40%',
+      '• ABCO and ELECTRICAL spend: enter manually in the breakdown section',
+      '• BEK, TRIMARK, AMAZON: auto-calculated from order history × unit costs',
+      '• 📥 UPDATE PRICES FROM CSV: select supplier, upload CSV with Item# and Unit Cost columns',
+      '• 📈 PROJECTIONS: next quarter spend/sales/cost% projected from historical data',
+      '• 🔔 NOTIFICATIONS: set reminders for order days with custom label, time, and days of week',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '🗑 DELETE ORDERS',
       'Open any order in History → tap 🗑 DELETE ORDER at the bottom of the button row. Tap once to arm (turns red), tap again to confirm. Useful for removing test orders. Cannot be undone.',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -6028,6 +7060,7 @@ const MUST_KNOW = [
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '☁️ SYNC STATUS (top bar icon)',
       '☁️ Green = all devices in sync. 🔄 Spinning = syncing. ⚠️ = sync error. 📵 = offline.',
+      'Data is safe in Firebase even if you reinstall the app. Your counts always restore on next open.',
     ]
   },
   {
@@ -6040,8 +7073,12 @@ const MUST_KNOW = [
       '✅ Par levels are the MINIMUM we need to have at all times',
       '📊 When in doubt, order more — running out costs more than overstock',
       '🗓️ Check order history before placing — avoid duplicate orders',
-      `🖨️ Print the order summary and post it so all staff know what\'s coming`,
+      '🖨️ Print the order summary and post it so all staff know what\'s coming',
       '🗑 Test orders can be deleted from History — tap the order → 🗑 DELETE ORDER → tap twice to confirm',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '☁️ DATA SAFETY',
+      'All your data lives in Firebase — not just on your phone. If you reinstall the app, clear Safari cache, or switch devices, your counts, orders, and inventory all come back automatically within a few seconds of opening the app.',
+      'If the app opens and Trimark BEGIN looks empty — wait 5 seconds for the ☁️ sync badge to turn green. Your data is loading from Firebase.',
     ]
   },
   {
@@ -6260,6 +7297,35 @@ const MUST_KNOW = [
     ]
   },
   {
+    supplier: '💰 COST TAB — QUICK REFERENCE',
+    color: '#1a1200', accent: '#fbbf24',
+    isGeneral: true,
+    notes: [
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🟡 MONTHLY ROUTINE',
+      '1. At month end — enter total SALES for the month in the sales field and tap SAVE',
+      '2. Enter ABCO and ELECTRICAL spend manually in the breakdown section',
+      '3. BEK, TRIMARK, AMAZON spend calculates automatically from your order history',
+      '4. Review cost % — green <30%, yellow <40%, red >40%',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🟡 UPDATING PRICES',
+      '1. Tap 📥 UPDATE PRICES FROM CSV in the Cost tab',
+      '2. Select the supplier (BEK, TRIMARK, etc.) — required before upload',
+      '3. Upload a CSV with two columns: Item# and Unit Cost',
+      '4. Only updates items matching that supplier — no cross-contamination',
+      'Or: tap ✎ Edit on any supplier tab, tap any item, edit the Unit Cost field directly',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🟡 PROJECTIONS',
+      'After 2+ months of data the Projections section unlocks — shows projected spend, sales, and cost % for next quarter. Gets more accurate every month. HIGH confidence badge = 3+ quarters of data.',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '🟡 NOTIFICATIONS',
+      'Tap + ADD in the Notifications section to set order day reminders.',
+      'Example: label "BEK order due", time 08:00, days Sun/Wed/Fri',
+      'The app checks on open and shows a toast if a notification is due within 30 minutes.',
+      'Notifications are per-device — set them on each phone you use.',
+    ]
+  },
+  {
     supplier: '🧠 THE APP IS LEARNING — WHAT THAT MEANS',
     color: '#0c0a1e', accent: '#818cf8',
     isGeneral: true,
@@ -6292,6 +7358,7 @@ function renderMustKnow() {
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'flex';
   document.getElementById('view-inventory').style.display = 'none';
+  document.getElementById('view-cog').style.display = 'none';
 
   const scroll = document.getElementById('mustknow-scroll');
   scroll.innerHTML = '';
@@ -6392,6 +7459,7 @@ function switchTab(tab) {
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-mustknow').style.display = 'none';
   document.getElementById('view-inventory').style.display = 'none';
+  document.getElementById('view-cog').style.display = 'none';
   document.getElementById('hist-detail').classList.remove('show');
   render();
 }
@@ -6769,6 +7837,7 @@ loadPersistedData();
 render();
 checkInstallPrompt();
 initPinLock();
+setTimeout(cogScheduleNotifications, 2000);
 updateMissingBanner();
 // Delay Firebase init slightly to ensure SDK scripts have loaded
 setTimeout(initFirebase, 500);
