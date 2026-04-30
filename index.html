@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.69                                           │
+  │  CURRENT VERSION: v1.70                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,14 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.70 — 2026-04-30
+  · FIXED: Inventory count list scrolling horizontally instead of vertically
+    Root cause: 8 grid columns totaled 372px fixed width — wider than iPhone screen (358px available)
+    Causing the entire row to overflow and the list to shift left/right
+    Fix: columns tightened (372px → 306px), padding reduced (16px → 10px sides), fonts reduced
+    overflow-x:hidden added to inventory-list container to hard-block horizontal scroll
+    All 8 columns now fit on screen with 50px+ for the item name column
 
   v1.69 — 2026-04-30
   · FIXED: BEGIN and ADD columns showing — (empty) in inventory count view
@@ -1159,7 +1167,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.69</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.70</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1209,7 +1217,7 @@
     <!-- INVENTORY VIEW -->
     <div id="view-inventory" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0;background:#000;">
       <div id="inventory-header" style="padding:10px 16px 6px;border-bottom:1px solid #1c1c1e;flex-shrink:0;"></div>
-      <div id="inventory-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
+      <div id="inventory-list" style="flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;"></div>
     </div>
 
     <!-- COG VIEW -->
@@ -2787,7 +2795,7 @@ function renderTrimarkInventory(listEl, sup) {
 
   // Column header
   const colHdr = document.createElement('div');
-  colHdr.style.cssText = 'padding:6px 16px;background:#111;display:grid;grid-template-columns:1fr 44px 52px 44px 52px 64px 52px 64px;gap:4px;align-items:center;border-bottom:1px solid #222;';
+  colHdr.style.cssText = 'padding:6px 10px;background:#111;display:grid;grid-template-columns:1fr 36px 42px 36px 44px 52px 44px 52px;gap:2px;align-items:center;border-bottom:1px solid #222;';
   colHdr.innerHTML = `
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#636366;letter-spacing:1px;">ITEM</span>
     <span style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;color:#6b21a8;letter-spacing:1px;text-align:center;">PAR</span>
@@ -2823,22 +2831,22 @@ function renderTrimarkInventory(listEl, sup) {
     const isCrit = hasEnd && !isNaN(endVal) && endVal <= 0;
 
     const row = document.createElement('div');
-    row.style.cssText = `padding:10px 16px;border-bottom:1px solid #1c1c1e;display:grid;grid-template-columns:1fr 44px 52px 44px 52px 64px 52px 64px;gap:4px;align-items:center;background:${isCrit ? 'rgba(248,113,113,0.09)' : isLow ? 'rgba(251,191,36,0.05)' : idx%2===0 ? '#0a0a0a' : 'transparent'};`;
+    row.style.cssText = `padding:8px 10px;border-bottom:1px solid #1c1c1e;display:grid;grid-template-columns:1fr 36px 42px 36px 44px 52px 44px 52px;gap:2px;align-items:center;background:${isCrit ? 'rgba(248,113,113,0.09)' : isLow ? 'rgba(251,191,36,0.05)' : idx%2===0 ? '#0a0a0a' : 'transparent'};`;
 
     // Name col
     const nameDiv = document.createElement('div');
     nameDiv.innerHTML = '';
     const _nd1 = document.createElement('div');
-    _nd1.style.cssText = 'color:#e5e5e7;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    _nd1.style.cssText = 'color:#e5e5e7;font-size:12px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     _nd1.textContent = item.name;
     nameDiv.appendChild(_nd1);
     const _nd2 = document.createElement('div');
-    _nd2.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-top:1px";
+    _nd2.style.cssText = 'font-family:ui-monospace,monospace;font-size:9px;color:#48484a;margin-top:1px';
     _nd2.textContent = item.unitCost ? '$'+item.unitCost.toFixed(2)+' ea' : '';
     nameDiv.appendChild(_nd2);
     if (brkgCost !== null && brkgCost > 0) {
       const _nd3 = document.createElement('div');
-      _nd3.style.cssText = "font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#f87171;margin-top:1px";
+      _nd3.style.cssText = 'font-family:ui-monospace,monospace;font-size:9px;color:#f87171;margin-top:1px';
       _nd3.textContent = 'loss: $' + brkgCost.toFixed(2);
       nameDiv.appendChild(_nd3);
     }
@@ -2850,7 +2858,7 @@ function renderTrimarkInventory(listEl, sup) {
     begInp.type='number'; begInp.inputMode='decimal';
     begInp.value = hasBeg ? begRaw : '';
     begInp.placeholder = '—';
-    begInp.style.cssText = `width:56px;height:38px;text-align:center;border-radius:8px;border:2px solid ${hasBeg ? '#7c3aed' : '#2c2c2e'};background:#1c1c1e;color:${hasBeg ? '#a78bfa' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
+    begInp.style.cssText = `width:38px;height:34px;text-align:center;border-radius:8px;border:2px solid ${hasBeg ? '#7c3aed' : '#2c2c2e'};background:#1c1c1e;color:${hasBeg ? '#a78bfa' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
     begInp.addEventListener('input', e => {
       const val = e.target.value;
       if (val !== '') {
@@ -2877,7 +2885,7 @@ function renderTrimarkInventory(listEl, sup) {
     const hasTally = tally && (tally.dock || tally.closet || tally.restaurant);
 
     const endBtn = document.createElement('div');
-    endBtn.style.cssText = `width:56px;min-height:38px;text-align:center;border-radius:8px;border:2px solid ${hasEnd ? '#c084fc' : '#2c2c2e'};background:#1c1c1e;color:${hasEnd ? '#c084fc' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:${hasEnd ? '16px' : '13px'};font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;`;
+    endBtn.style.cssText = `width:50px;min-height:34px;text-align:center;border-radius:8px;border:2px solid ${hasEnd ? '#c084fc' : '#2c2c2e'};background:#1c1c1e;color:${hasEnd ? '#c084fc' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:${hasEnd ? '16px' : '13px'};font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;`;
 
     if (hasEnd) {
       endBtn.innerHTML = '';
@@ -2937,20 +2945,20 @@ function renderTrimarkInventory(listEl, sup) {
     // Usage display
     const usageCol = document.createElement('div');
     usageCol.className = 'tri-usage-' + item.id;
-    usageCol.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:16px;font-weight:700;';
+    usageCol.style.cssText = 'text-align:center;font-family:ui-monospace,monospace;font-size:13px;font-weight:700;';
     usageCol.style.color = usagePos !== null ? (usagePos > 0 ? '#f87171' : usagePos < 0 ? '#4ade80' : '#48484a') : '#48484a';
     usageCol.textContent = usagePos !== null ? (usagePos > 0 ? '-'+usagePos : usagePos < 0 ? '+'+Math.abs(usagePos) : '0') : '—';
 
     // Order qty display
     const orderCol = document.createElement('div');
     orderCol.className = 'tri-order-' + item.id;
-    orderCol.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:14px;font-weight:700;';
+    orderCol.style.cssText = 'text-align:center;font-family:ui-monospace,monospace;font-size:12px;font-weight:700;';
     orderCol.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
     orderCol.textContent = orderQty !== null ? (orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : '✓') : '—';
 
     // PAR cell
     const parCell = document.createElement('div');
-    parCell.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:13px;font-weight:700;color:#6b21a8;';
+    parCell.style.cssText = 'text-align:center;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;color:#6b21a8;';
     parCell.textContent = item.par || '—';
 
     // ADD input (editable)
@@ -2960,7 +2968,7 @@ function renderTrimarkInventory(listEl, sup) {
     addInp.type = 'number'; addInp.inputMode = 'decimal';
     addInp.value = addVal !== null ? addVal : '';
     addInp.placeholder = '—';
-    addInp.style.cssText = `width:40px;height:38px;text-align:center;border-radius:8px;border:2px solid ${addVal !== null ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addVal !== null ? '#4ade80' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:14px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
+    addInp.style.cssText = `width:34px;height:34px;text-align:center;border-radius:8px;border:2px solid ${addVal !== null ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addVal !== null ? '#4ade80' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:14px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
     const updateStart = () => {
       const b = parseFloat(begInp.value);
       const a = parseFloat(addInp.value);
@@ -2986,7 +2994,7 @@ function renderTrimarkInventory(listEl, sup) {
 
     // START cell (live: begin + add, read-only display)
     const startCell = document.createElement('div');
-    startCell.style.cssText = 'text-align:center;font-family:ui-monospace,"SF Mono","Courier New",monospace;font-size:13px;font-weight:700;color:#60a5fa;';
+    startCell.style.cssText = 'text-align:center;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;color:#60a5fa;';
     startCell.textContent = startVal !== null ? startVal : '—';
 
     // Wire BEGIN input to also update START when it changes
@@ -4726,7 +4734,7 @@ function openDeliveryConfirmation(recId) {
     <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
       <div style="padding:16px 20px;border-bottom:1px solid #1c1c1e;flex-shrink:0;">
         <div style="width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 14px;"></div>
-        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:13px;font-weight:700;color:#60a5fa;letter-spacing:1px;margin-bottom:4px;">📦 CONFIRM DELIVERY</div>
+        <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px;margin-bottom:4px;">📦 CONFIRM DELIVERY</div>
         <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;font-size:13px;color:#636366;">
           Check off each item as it arrives. Uncheck anything missing.
         </div>
@@ -5695,7 +5703,7 @@ function buildAuditPanel(container, sup) {
     begInp.type='number'; begInp.inputMode='decimal';
     begInp.value = begRaw;
     begInp.placeholder = '—';
-    begInp.style.cssText = `width:50px;height:34px;text-align:center;border-radius:7px;border:1.5px solid ${begRaw !== '' ? '#7c3aed' : '#2c2c2e'};background:#1c1c1e;color:${begRaw !== '' ? '#a78bfa' : '#636366'};font-family:ui-monospace,monospace;font-size:14px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;`;
+    begInp.style.cssText = `width:38px;height:32px;text-align:center;border-radius:7px;border:1.5px solid ${begRaw !== '' ? '#7c3aed' : '#2c2c2e'};background:#1c1c1e;color:${begRaw !== '' ? '#a78bfa' : '#636366'};font-family:ui-monospace,monospace;font-size:14px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;`;
     begInp.addEventListener('change', e => {
       const val = e.target.value;
       if (val !== '') {
@@ -5721,7 +5729,7 @@ function buildAuditPanel(container, sup) {
     addInp.type='number'; addInp.inputMode='decimal';
     addInp.value = addRaw;
     addInp.placeholder = '—';
-    addInp.style.cssText = `width:50px;height:34px;text-align:center;border-radius:7px;border:1.5px solid ${addRaw !== '' ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addRaw !== '' ? '#4ade80' : '#636366'};font-family:ui-monospace,monospace;font-size:14px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;`;
+    addInp.style.cssText = `width:38px;height:32px;text-align:center;border-radius:7px;border:1.5px solid ${addRaw !== '' ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addRaw !== '' ? '#4ade80' : '#636366'};font-family:ui-monospace,monospace;font-size:14px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;`;
     addInp.addEventListener('change', e => {
       const val = e.target.value;
       if (val !== '') {
@@ -6997,7 +7005,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.69</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.70</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
