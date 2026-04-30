@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.68                                           │
+  │  CURRENT VERSION: v1.69                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,17 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.69 — 2026-04-30
+  · FIXED: BEGIN and ADD columns showing — (empty) in inventory count view
+    Root cause: Firebase listeners only re-rendered when activeSupp === 'TRIMARK'
+    but Inventory tab doesn't change activeSupp — so data loaded but view never refreshed
+    Fix: all trimark Firebase listeners now also re-render when state.tab === 'inventory'
+  · FIXED: Tally modal cut off on smaller screens — content overflowed viewport
+    Fix: tally sheet now has max-height:92vh + overflow-y:auto so it scrolls on small phones
+    Tally key height reduced 56px→52px to fit more content in view
+  · ADDED: Loading indicator in inventory count — if BEGIN is empty on open,
+    shows "🔄 Loading..." while Firebase syncs, or "⚠ not loaded" if already synced
 
   v1.68 — 2026-04-29
   · Must Know tab updated:
@@ -965,7 +976,7 @@
     .sheet-sub { color: #8e8e93; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; font-size: 15px; line-height: 1.55; margin-bottom: 24px; }
     .tally-key {
     touch-action: manipulation; /* removes 300ms tap delay on iOS */
-      height: 56px; border-radius: 12px; border: none;
+      height: 52px; border-radius: 12px; border: none;
       background: #2c2c2e; color: #e5e5e7;
       font-family: ui-monospace, 'SF Mono', 'Courier New', monospace;
       font-size: 22px; font-weight: 600; cursor: pointer;
@@ -973,7 +984,7 @@
     }
     .tally-key:active { background: #48484a; }
     .tally-key-add {
-      background: #7c3aed; color: #fff; font-size: 15px; letter-spacing: 0.5px;
+      background: #7c3aed; color: #fff; font-size: 14px; letter-spacing: 0.5px;
     }
     .tally-key-add:active { background: #6d28d9; }
     .tally-key-back { background: #1c1c1e; color: #a78bfa; font-size: 20px; }
@@ -1148,7 +1159,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.68</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.69</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1359,7 +1370,7 @@
 
 <!-- Location Tally Modal -->
 <div class="sheet-overlay" id="tally-modal" style="display:none;" onclick="closeTallyModal()">
-  <div class="sheet" onclick="event.stopPropagation()" style="padding-bottom:max(24px,env(safe-area-inset-bottom));">
+  <div class="sheet" onclick="event.stopPropagation()" style="padding-bottom:max(24px,env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
     <div class="sheet-handle"></div>
     <div id="tally-item-name" style="font-size:15px;font-weight:700;color:#e5e5e7;margin-bottom:2px;"></div>
     <div id="tally-item-sub" style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#636366;letter-spacing:1px;margin-bottom:20px;"></div>
@@ -1733,7 +1744,8 @@ function startFirebaseListeners() {
       if (data && typeof data === 'object') {
         state.trimarkBegin = data;
         lsSet('bartletts-trimark-begin-v1', data);
-        if (state.activeSupp === 'TRIMARK') render();
+        // Re-render if on TRIMARK order view OR the Inventory tab
+        if (state.activeSupp === 'TRIMARK' || state.tab === 'inventory') render();
       }
     }, err => console.warn('FB trimarkBegin error:', err));
 
@@ -1746,7 +1758,8 @@ function startFirebaseListeners() {
       if (data && typeof data === 'object') {
         state.trimarkAdd = data;
         lsSet('bartletts-trimark-add-v1', data);
-        if (state.activeSupp === 'TRIMARK') render();
+        // Re-render if on TRIMARK order view OR the Inventory tab
+        if (state.activeSupp === 'TRIMARK' || state.tab === 'inventory') render();
       }
     }, err => console.warn('FB trimarkAdd error:', err));
 
@@ -1759,6 +1772,7 @@ function startFirebaseListeners() {
       if (data && typeof data === 'object') {
         state.trimarkBeginMeta = data;
         lsSet('bartletts-trimark-begin-meta-v1', data);
+        if (state.tab === 'inventory') render();
       }
     }, err => console.warn('FB trimarkBeginMeta error:', err));
 
@@ -2688,6 +2702,14 @@ function renderTrimarkInventory(listEl, sup) {
   // Header
   const hdr = document.createElement('div');
   hdr.style.cssText = 'padding:14px 16px 10px;background:#1c1c1e;border-bottom:1px solid #2c2c2e;';
+  // Show sync warning if BEGIN data hasn't loaded yet
+  const _beginEmpty = sup.items.filter(i => state.trimarkBegin[i.id] !== undefined).length === 0;
+  const _syncStatus = fbSyncStatus;
+  const _syncNote = _beginEmpty
+    ? (_syncStatus === 'synced'
+        ? '<div style="margin-top:4px;font-family:ui-monospace,monospace;font-size:10px;color:#fbbf24;">⚠ BEGIN numbers not loaded — try scrolling up to refresh, or wait for ☁️ sync</div>'
+        : '<div style="margin-top:4px;font-family:ui-monospace,monospace;font-size:10px;color:#fbbf24;">🔄 Loading BEGIN numbers from Firebase...</div>')
+    : '';
   hdr.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:12px;font-weight:700;color:#c084fc;letter-spacing:1px;">📋 MONTHLY INVENTORY COUNT</div>
@@ -2699,7 +2721,7 @@ function renderTrimarkInventory(listEl, sup) {
     </div>
     <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#636366;line-height:1.5">
       Tap any COUNT cell to enter by location. Tap ❓ HOW TO if you need help.
-    </div>`;
+    </div>${_syncNote}`;
   listEl.appendChild(hdr);
 
   // Hints zone — shows contextual tips
@@ -6975,7 +6997,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.68</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.69</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
