@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.80                                           │
+  │  CURRENT VERSION: v1.81                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,19 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.81 — 2026-05-01
+  · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear — DEFINITIVE FIX
+    Removed the inventoryOnly concept entirely from all render logic
+    No more flags, no more race conditions, no more migration failures
+    These items now appear in: order view, ✎ edit mode, inventory count, reports, email to James
+    Changes made:
+    · Render gate removed — all items show in all views
+    · History edit modal forces inventoryOnly=false so old records are editable
+    · doSave never stores inventoryOnly flag in new snapshots
+    · orderQty saved for all items (was suppressed for inventoryOnly items)
+    · All report filters, labels, and style checks for inventoryOnly removed
+    · stripRemovedInventoryOnly() still runs as a safety net on catalog load
 
   v1.80 — 2026-05-01
   · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear still stuck as inventoryOnly
@@ -1276,7 +1289,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.80</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.81</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -2504,9 +2517,7 @@ function renderOrderView() {
   }
 
   sup.items.forEach(item => {
-    // inventoryOnly items (e.g. Nutra Clear, Firewood) only appear in inventory count
-    // and in edit mode — never in normal order view
-    if (item.inventoryOnly && state.trimarkView !== 'inventory' && !state.editMode) return;
+    // Note: inventoryOnly concept removed — all items show in all views
 
     const ik  = ikey(state.activeSupp, item.id);
     const oh  = state.onHand[ik] ?? '';
@@ -3414,7 +3425,7 @@ function buildTrimarkItemData(recId) {
       const gainCost = usageN !== null && usageN < 0 ? Math.abs(usageN) * (item.unitCost || 0) : null;
       return {
         name: item.name, par: item.par, unitCost: item.unitCost,
-        caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
+        caseQty: item.caseQty, pack: item.pack,
         beg: histBeg, add: savedAdd !== null ? String(savedAdd) : '',
         start: histStart, end: saved.onHand ?? '',
         usage: saved.usage ?? null, brkgCost: saved.brkgCost ?? null,
@@ -3437,7 +3448,7 @@ function buildTrimarkItemData(recId) {
       const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _cq) : null;
       return {
         name: item.name, par: item.par, unitCost: item.unitCost,
-        caseQty: item.caseQty, inventoryOnly: item.inventoryOnly, pack: item.pack,
+        caseQty: item.caseQty, pack: item.pack,
         beg, add: addRaw, start: startV !== null ? String(startV) : beg,
         end, usage, brkgCost, gainCost, orderQty,
       };
@@ -3517,7 +3528,7 @@ function openTrimarkInventoryReport(e, recId) {
     const startDisplay = item.start || item.beg || '—';
     const usageColor = usageN !== null ? (usageN > 0 ? '#dc2626' : usageN < 0 ? '#16a34a' : '#374151') : '#9ca3af';
     const usageDisplay = usageN !== null ? (usageN > 0 ? '-'+usageN : usageN < 0 ? '+'+Math.abs(usageN) : '0') : '—';
-    const lossDisplay = hasLoss ? '$'+lossN.toFixed(2) : (hasEnd && !item.inventoryOnly ? '$0.00' : '—');
+    const lossDisplay = hasLoss ? '$'+lossN.toFixed(2) : (hasEnd ? '$0.00' : '—');
     const lossColor = hasLoss ? '#dc2626' : '#9ca3af';
     const statusColor = !hasEnd ? '#9ca3af' : isLow ? '#d97706' : '#16a34a';
     const statusLabel = !hasEnd ? 'PENDING' : isLow ? '↓ LOW' : '✓ OK';
@@ -3525,7 +3536,7 @@ function openTrimarkInventoryReport(e, recId) {
     const bg = hasLoss ? '#fff8f8' : hasGain ? '#f0fdf4' : !hasEnd ? '#fafafa' : idx%2===0 ? '#f9fafb' : '#fff';
     const borderLeft = hasLoss ? ';border-left:3px solid #fca5a5' : hasGain ? ';border-left:3px solid #86efac' : '';
     return `<tr style="background:${bg}${borderLeft}">
-      <td style="padding:6px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;${item.inventoryOnly?'color:#6b7280;font-style:italic':''}${!hasEnd?'opacity:0.65':''}">${item.name}${item.inventoryOnly?'<span style="font-size:9px;margin-left:4px">(count only)</span>':''}</td>
+      <td style="padding:6px 8px;font-size:12px;border-bottom:1px solid #e5e7eb;${!hasEnd?'opacity:0.65':''}">${item.name}</td>
       <td style="padding:6px 8px;font-size:11px;font-weight:700;color:#6b21a8;text-align:center;border-bottom:1px solid #e5e7eb;font-family:monospace">${item.par||'—'}</td>
       <td style="padding:6px 8px;font-size:12px;color:#7c3aed;text-align:center;border-bottom:1px solid #e5e7eb">${item.beg||'—'}</td>
       <td style="padding:6px 8px;font-size:12px;font-weight:700;color:${item.add?'#16a34a':'#9ca3af'};text-align:center;border-bottom:1px solid #e5e7eb">${addDisplay}</td>
@@ -3733,9 +3744,9 @@ function openTrimarkOrderReport(recId) {
   const monthStr = now.toLocaleDateString('en-US', {month:'long', year:'numeric'});
 
   // Items needing order
-  const orderItems = itemData.filter(i => !i.inventoryOnly && i.orderQty && i.orderQty !== '0' && i.orderQty !== '');
+  const orderItems = itemData.filter(i => i.orderQty && i.orderQty !== '0' && i.orderQty !== '');
   // Items at or above par
-  const okItems = itemData.filter(i => !i.inventoryOnly && i.end !== '' && (!i.orderQty || i.orderQty === '0' || i.orderQty === ''));
+  const okItems = itemData.filter(i => i.end !== '' && (!i.orderQty || i.orderQty === '0' || i.orderQty === ''));
 
   let totalCases = 0, totalCost = 0;
   orderItems.forEach(i => {
@@ -3891,7 +3902,7 @@ function openHistoryEditCounts(recId) {
     begin: String(it.begin ?? ''),
     add: String(it.add ?? ''),
     onHand: String(it.onHand ?? ''),
-    inventoryOnly: !!it.inventoryOnly,
+    inventoryOnly: false, // inventoryOnly concept removed — all items orderable
     unitCost: it.unitCost ?? 0,
     par: it.par,
     pack: it.pack,
@@ -3915,7 +3926,7 @@ function openHistoryEditCounts(recId) {
     const catItem = (state.catalog['TRIMARK']?.items || []).find(ci => ci.name === e.name);
     const caseQty = catItem?.caseQty || 1;
     const parVal = parseFloat(e.par) || 0;
-    if (hasEnd && !isNaN(endV) && !e.inventoryOnly) {
+    if (hasEnd && !isNaN(endV)) {
       const needed = Math.max(0, parVal - endV);
       const _cqEdit = caseQty || 1;
       const cs = Math.ceil(needed / _cqEdit);
@@ -3933,14 +3944,14 @@ function openHistoryEditCounts(recId) {
     const usageDisplay = e.usage !== '' ? (e.usage > 0 ? '-'+e.usage : '0') : '\u2014';
     const orderColor = e.orderQty > 0 ? '#fbbf24' : '#48484a';
     const orderDisplay = e.orderQty > 0 ? '+'+e.orderQty+'cs' : (e.onHand !== '' ? '\u2713' : '\u2014');
-    const orderCol = e.inventoryOnly ? '<div></div>' :
+    const orderCol =
       '<div style="text-align:center;">'
       + '<div style="font-family:ui-monospace,monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;margin-bottom:3px;">ORDER</div>'
       + '<div style="height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:'+orderColor+';">'+orderDisplay+'</div>'
       + '</div>';
     const brkgLine = e.brkgCost > 0
       ? '<div style="margin-top:5px;font-size:10px;color:#f87171;">loss: $'+e.brkgCost+'</div>' : '';
-    const invOnly = e.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;font-style:italic;margin-left:6px;">count only</span>' : '';
+    const invOnly = '';
     const addV2 = e.add !== '' ? parseFloat(e.add) : null;
     const begV2 = parseFloat(e.begin);
     const startV2 = !isNaN(begV2) && addV2 !== null ? begV2 + addV2 : (!isNaN(begV2) ? begV2 : null);
@@ -4021,7 +4032,7 @@ window.saveHistoryEditCounts = function(recId) {
     orderQty: e.orderQty,
     note: e.note,
     status: e.status,
-    ...(e.inventoryOnly ? {inventoryOnly: true} : {}),
+    // inventoryOnly not saved
   }));
 
   // Persist
@@ -4227,7 +4238,7 @@ function renderDetail(rec) {
   }
 
   // TRIMARK resend email button
-  const trimarkOrderedResend = (rec.suppliers?.['TRIMARK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
+  const trimarkOrderedResend = (rec.suppliers?.['TRIMARK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
   if (trimarkOrderedResend.length > 0) {
     btns.push(`<button onclick="resendTrimarkEmail('${rec.id}')" style="
         height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #c084fc;
@@ -4662,9 +4673,9 @@ function doSave() {
       if (oh !== '' || oq !== '' || nt !== '') {
         acc.push({id:it.id, name:it.name, pack:it.pack, par:it.par, onHand:oh,
           ...(it.itemNum ? {itemNum: it.itemNum} : {}),  // BEK item number for CSV export
-          orderQty: it.inventoryOnly ? '' : oq,  // never save an order qty for inventory-only items
+          orderQty: oq,
           note:nt, status:getStatus(oh, it.par),
-          ...(it.inventoryOnly ? {inventoryOnly:true} : {}),
+          // inventoryOnly not stored — concept removed
           ...(brk !== '' && brk !== '0' ? {breakage: brk} : {}),
           ...(beg !== '' ? {begin:beg} : {}),
           ...(usageCalc !== '' && usageCalc !== '0' ? {usage:usageCalc} : {}),
@@ -4749,7 +4760,7 @@ function doSave() {
 
   // If TRIMARK had items ordered, show email prompt
   const triItems = snap.suppliers['TRIMARK'] || [];
-  const triOrdered = triItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
+  const triOrdered = triItems.filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
   if (triOrdered.length > 0) {
     setTimeout(() => showTrimarkEmailPrompt(triOrdered), abcoOrdered.length > 0 ? 1400 : 600);
   }
@@ -5151,7 +5162,7 @@ function openTrimarkEmail() {
 function resendTrimarkEmail(recId) {
   const rec = state.history.find(r => r.id === recId);
   if (!rec) return;
-  const items = (rec.suppliers?.['TRIMARK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
+  const items = (rec.suppliers?.['TRIMARK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0');
   if (!items.length) { showToast('No Trimark items in this order', 'warn'); return; }
   _sendTrimarkEmail(items, new Date(rec.date));
 }
@@ -5166,7 +5177,7 @@ function openDeliveryConfirmation(recId) {
   Object.entries(rec.suppliers || {}).forEach(([sn, items]) => {
     if (!CONFIRM_SUPS.includes(sn)) return;
     items.forEach(it => {
-      if (it.orderQty && it.orderQty !== '' && it.orderQty !== '0' && !it.inventoryOnly) {
+      if (it.orderQty && it.orderQty !== '' && it.orderQty !== '0') {
         orderedItems.push({...it, supplier: sn});
       }
     });
@@ -5317,7 +5328,7 @@ function saveDeliveryConfirmation(recId) {
 
   // If this is a Trimark order, open the ADD review modal
   const trimarkItems = (rec.suppliers?.['TRIMARK'] || []).filter(i =>
-    i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly
+    i.orderQty && i.orderQty !== '' && i.orderQty !== '0'
   );
   const receivedTrimark = trimarkItems.filter(i =>
     !missing.some(m => m.name === i.name && m.supplier === 'TRIMARK')
@@ -7283,7 +7294,7 @@ function openPrint(rec) {
     ? new Date(rec.deliveryDate).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'})
     : null;
   const allItems = Object.values(rec.suppliers||{}).flat();
-  const orderedItems = allItems.filter(i => i.orderQty && i.orderQty !== '' && !i.inventoryOnly);
+  const orderedItems = allItems.filter(i => i.orderQty && i.orderQty !== '');
   const critItems = allItems.filter(i => i.status === 'critical');
   const lowItems  = allItems.filter(i => i.status === 'low');
 
@@ -7300,7 +7311,7 @@ function openPrint(rec) {
   // ── Per-supplier pages ─────────────────────────────────────────────────
   const supBlocks = Object.entries(rec.suppliers||{}).map(([sn, items], si) => {
     const sup = state.catalog[sn] || DEFAULT_SUPPLIERS[sn];
-    const ordered = items.filter(i => i.orderQty && i.orderQty !== '' && !i.inventoryOnly);
+    const ordered = items.filter(i => i.orderQty && i.orderQty !== '');
     if (!ordered.length) return '';
 
     const isTri = sn === 'TRIMARK';
@@ -7462,7 +7473,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.80</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.81</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
