@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.78                                           │
+  │  CURRENT VERSION: v1.79                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,13 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.79 — 2026-05-01
+  · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear not editable in ✎ Edit mode
+    Root cause: renderTrimarkInventory skips inventoryOnly items unless trimarkView=inventory
+    Edit mode (✎ Edit button) also uses trimarkView=order so these items were invisible
+    Fix: items are now shown in edit mode too — tap ✎ Edit on TRIMARK tab to see and edit them
+    They still hide from normal order view to keep the list clean during ordering
 
   v1.78 — 2026-05-01
   · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear still showing as inventory-only
@@ -1260,7 +1267,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.78</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.79</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -2466,8 +2473,9 @@ function renderOrderView() {
   }
 
   sup.items.forEach(item => {
-    // inventoryOnly items (e.g. Nutra Clear, Firewood) only appear in inventory count, never in order view
-    if (item.inventoryOnly && state.trimarkView !== 'inventory') return;
+    // inventoryOnly items (e.g. Nutra Clear, Firewood) only appear in inventory count
+    // and in edit mode — never in normal order view
+    if (item.inventoryOnly && state.trimarkView !== 'inventory' && !state.editMode) return;
 
     const ik  = ikey(state.activeSupp, item.id);
     const oh  = state.onHand[ik] ?? '';
@@ -7423,7 +7431,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.78</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.79</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
