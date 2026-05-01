@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.70                                           │
+  │  CURRENT VERSION: v1.72                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,39 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.72 — 2026-05-01
+  · ADDED: Automatic background sync from Firebase
+    Problem: iOS suspends PWA Firebase listeners when app goes to background,
+    so picking up your phone didn't show the latest data from the restaurant device
+    Fix 1: visibilitychange listener — fires forceSyncFromFirebase() every time
+            you switch back to the app (e.g. from Messages back to Bartlett's)
+    Fix 2: window focus listener — backup trigger for cases visibilitychange misses
+    Fix 3: Periodic sync every 3 minutes while app is visible — keeps data fresh
+            during long sessions without manual refresh
+    forceSyncFromFirebase() does a .once() pull on all 10 critical Firebase paths:
+    trimarkBegin, trimarkAdd, trimarkBeginMeta, trimarkAddMeta, trimarkTally,
+    breakage, catalog, liveOrder, cogSales, cogManual + history
+    Shows 🔄 syncing badge during pull, renders fresh data when complete
+
+  v1.71 — 2026-05-01
+  · FIXED: USED column wrong — was calculating BEGIN - COUNT instead of START - COUNT
+    START = BEGIN + ADD (includes delivery), so USED must be START - COUNT
+    Example: BEGIN=100 ADD=20 START=120 COUNT=110 → USED=10 ✓ (was showing -10 / gain)
+    Fixed in: renderTrimarkInventory, refreshTriRow, getTrimarkSummary,
+              buildTrimarkItemData (inventory + order reports), doSave snapshot,
+              openHistoryEditCounts recalc — ALL usage calculations now use START
+
+  · FIXED: Final COUNT not carrying into Trimark order view ON HAND column
+    Tally callback was setting state.onHand but NOT calling saveLiveOrder()
+    So counts were lost when Firebase liveOrder listener fired from another device
+    Fix: tally callback now calls saveLiveOrder() immediately after setting count
+
+  · FIXED: Changing ADD doesn't update USED/ORDER columns live
+    ADD input change now calls refreshTriRow() to recalculate USED and ORDER
+
+  · FIXED: Report (inventory + order) LOSS $ / variance wrong for same reason
+    buildTrimarkItemData now uses startV - endVal consistently
 
   v1.70 — 2026-04-30
   · FIXED: Inventory count list scrolling horizontally instead of vertically
@@ -1167,7 +1200,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.70</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.72</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -2628,7 +2661,10 @@ function getTrimarkSummary(sup) {
     const hasBeg = state.trimarkBegin[item.id] !== undefined;
     const hasEnd = (state.onHand[ik] ?? '') !== '';
     if (hasBeg && hasEnd) {
-      const usage = begVal - endVal;
+      const addRawS = state.trimarkAdd[item.id] ?? '';
+      const addValS = addRawS !== '' ? parseFloat(addRawS) : null;
+      const startValS = addValS !== null ? begVal + addValS : begVal;
+      const usage = startValS - endVal;
       if (usage > 0) {
         totalUsage += usage;
         const cost = (item.unitCost || 0) * usage;
@@ -2816,7 +2852,7 @@ function renderTrimarkInventory(listEl, sup) {
     const endVal = parseFloat(endRaw);
     const hasBeg = begRaw !== undefined && begRaw !== '';
     const hasEnd = endRaw !== '';
-    const usage = (hasBeg && hasEnd && !isNaN(begVal) && !isNaN(endVal)) ? begVal - endVal : null;
+    const usage = (startVal !== null && hasEnd && !isNaN(endVal)) ? startVal - endVal : null;
     const usagePos = usage; // allow negative (gain) — no clamp
     const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
     const parVal = parseFloat(item.par) || 0;
@@ -2872,6 +2908,12 @@ function renderTrimarkInventory(listEl, sup) {
       saveTrimarkMeta();
       begInp.style.borderColor = val !== '' ? '#7c3aed' : '#2c2c2e';
       begInp.style.color = val !== '' ? '#a78bfa' : '#636366';
+      // Also update START display live when BEGIN changes
+      const _addV = state.trimarkAdd[item.id];
+      const _addN = _addV !== undefined ? parseFloat(_addV) : null;
+      const _begN = parseFloat(val);
+      const _startN = !isNaN(_begN) && _addN !== null ? _begN + _addN : (!isNaN(_begN) ? _begN : null);
+      startCell.textContent = _startN !== null ? _startN : '—';
       refreshTriRow(row, item, ik, listEl, sup);
     });
     begCol.appendChild(begInp);
@@ -2918,6 +2960,8 @@ function renderTrimarkInventory(listEl, sup) {
         } else {
           state.orderQty[ik] = '';
         }
+        // Persist count to Firebase immediately so other devices and re-renders don't overwrite it
+        saveLiveOrder();
         // Update button display
         const newTally = state.trimarkTally[item.id] || {};
         const nt = newTally;
@@ -2989,6 +3033,8 @@ function renderTrimarkInventory(listEl, sup) {
       addInp.style.borderColor = val !== '' ? '#4ade80' : '#2c2c2e';
       addInp.style.color = val !== '' ? '#4ade80' : '#636366';
       updateStart();
+      // Refresh USED and ORDER columns when ADD changes
+      refreshTriRow(row, item, ik, listEl, sup);
     });
     addCol.appendChild(addInp);
 
@@ -3043,7 +3089,10 @@ function refreshTriRow(row, item, ik, listEl, sup) {
   const endVal = parseFloat(endRaw);
   const hasBeg = begRaw !== undefined && begRaw !== '';
   const hasEnd = endRaw !== '';
-  const usage = (hasBeg && hasEnd && !isNaN(begVal) && !isNaN(endVal)) ? begVal - endVal : null;
+  const addRawR = state.trimarkAdd[item.id] ?? '';
+  const addValR = addRawR !== '' ? parseFloat(addRawR) : null;
+  const startValR = hasBeg && addValR !== null ? (begVal + addValR) : (hasBeg ? begVal : null);
+  const usage = (startValR !== null && hasEnd && !isNaN(endVal)) ? startValR - endVal : null;
   const usagePos = usage; // no clamp — allow gains
   const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
   const parVal = parseFloat(item.par) || 0;
@@ -3122,7 +3171,7 @@ function buildTrimarkItemData(recId) {
       const begV = parseFloat(beg), endV = parseFloat(end);
       const addV = addRaw !== '' ? parseFloat(addRaw) : null;
       const startV = !isNaN(begV) && addV !== null ? begV + addV : !isNaN(begV) ? begV : null;
-      const usage = (beg !== '' && end !== '' && !isNaN(begV) && !isNaN(endV)) ? begV - endV : null;
+      const usage = (startV !== null && end !== '' && !isNaN(endV)) ? startV - endV : null;
       const brkgCost = usage !== null && usage > 0 ? (usage * (item.unitCost || 0)) : null;
       const gainCost = usage !== null && usage < 0 ? (Math.abs(usage) * (item.unitCost || 0)) : null;
       const parVal = parseFloat(item.par) || 0;
@@ -3598,7 +3647,10 @@ function openHistoryEditCounts(recId) {
   function recalc(e) {
     const begV = parseFloat(e.begin), endV = parseFloat(e.onHand);
     const hasBeg = e.begin !== '', hasEnd = e.onHand !== '';
-    const usage = (hasBeg && hasEnd && !isNaN(begV) && !isNaN(endV)) ? Math.max(0, begV - endV) : null;
+    // Usage = START - COUNT where START = BEGIN + ADD
+    const addV = e.add !== undefined && e.add !== '' ? parseFloat(e.add) : null;
+    const startV = !isNaN(begV) && addV !== null ? begV + addV : (!isNaN(begV) ? begV : null);
+    const usage = (startV !== null && hasEnd && !isNaN(endV)) ? Math.max(0, startV - endV) : null;
     e.usage = usage !== null ? String(usage) : '';
     e.brkgCost = (usage !== null && e.unitCost) ? (usage * e.unitCost).toFixed(2) : '';
     // Recalc order qty using catalog caseQty
@@ -4320,7 +4372,11 @@ function doSave() {
       const brk = sn === 'TRIMARK' ? (state.breakage[it.id] ?? '') : '';
       const beg = sn === 'TRIMARK' ? (state.trimarkBegin[it.id] ?? '') : '';
       const begV = parseFloat(beg), ohV = parseFloat(oh);
-      const usageCalc = sn === 'TRIMARK' && beg !== '' && oh !== '' && !isNaN(begV) && !isNaN(ohV) ? String(begV - ohV) : '';
+      // Usage = START - COUNT where START = BEGIN + ADD (not just BEGIN)
+      const addSave = sn === 'TRIMARK' ? (state.trimarkAdd[it.id] ?? '') : '';
+      const addVSave = addSave !== '' ? parseFloat(addSave) : null;
+      const startVSave = !isNaN(begV) && addVSave !== null ? begV + addVSave : (!isNaN(begV) ? begV : NaN);
+      const usageCalc = sn === 'TRIMARK' && beg !== '' && oh !== '' && !isNaN(startVSave) && !isNaN(ohV) ? String(startVSave - ohV) : '';
       if (oh !== '' || oq !== '' || nt !== '') {
         acc.push({id:it.id, name:it.name, pack:it.pack, par:it.par, onHand:oh,
           ...(it.itemNum ? {itemNum: it.itemNum} : {}),  // BEK item number for CSV export
@@ -7005,7 +7061,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.70</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.72</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
@@ -7871,6 +7927,134 @@ setTimeout(cogScheduleNotifications, 2000);
 updateMissingBanner();
 // Delay Firebase init slightly to ensure SDK scripts have loaded
 setTimeout(initFirebase, 500);
+
+// ─── BACKGROUND SYNC ──────────────────────────────────────────────────────
+// iOS PWA suspends Firebase listeners when the app goes to background.
+// These handlers force a fresh pull from Firebase whenever the app becomes
+// visible again — so your phone always shows the latest data from the restaurant.
+
+let _syncInterval = null;
+
+function forceSyncFromFirebase() {
+  if (!fbDb) return;
+  // Re-read all critical paths from Firebase right now
+  const paths = [
+    'trimarkBegin', 'trimarkAdd', 'trimarkBeginMeta', 'trimarkAddMeta',
+    'trimarkTally', 'breakage', 'catalog', 'liveOrder', 'cogSales', 'cogManual'
+  ];
+  paths.forEach(path => {
+    fbDb.ref(path).once('value').then(snap => {
+      const data = snap.val();
+      if (!data) return;
+      switch(path) {
+        case 'trimarkBegin':
+          state.trimarkBegin = data;
+          lsSet('bartletts-trimark-begin-v1', data);
+          break;
+        case 'trimarkAdd':
+          state.trimarkAdd = data;
+          lsSet('bartletts-trimark-add-v1', data);
+          break;
+        case 'trimarkBeginMeta':
+          state.trimarkBeginMeta = data;
+          lsSet('bartletts-trimark-begin-meta-v1', data);
+          break;
+        case 'trimarkAddMeta':
+          state.trimarkAddMeta = data;
+          lsSet('bartletts-trimark-add-meta-v1', data);
+          break;
+        case 'trimarkTally':
+          state.trimarkTally = data;
+          lsSet('bartletts-trimark-tally-v1', data);
+          break;
+        case 'breakage':
+          state.breakage = data;
+          lsSet('bartletts-breakage-v1', data);
+          break;
+        case 'catalog':
+          if (typeof data === 'object') {
+            for (const sn of SUP_NAMES) {
+              if (data[sn]?.items) {
+                const defaultItems = DEFAULT_SUPPLIERS[sn]?.items || [];
+                state.catalog[sn].items = data[sn].items.map(storedItem => {
+                  const def = defaultItems.find(d => d.id === storedItem.id || d.name === storedItem.name) || {};
+                  const merged = { ...def, ...storedItem };
+                  if (def.itemNum && !merged.itemNum) merged.itemNum = def.itemNum;
+                  return merged;
+                });
+              }
+            }
+            lsSet('bartletts-catalog-v1', data);
+          }
+          break;
+        case 'liveOrder':
+          if (data.ts && (Date.now() - data.ts) < 12 * 60 * 60 * 1000) {
+            if (data.onHand)    state.onHand    = data.onHand;
+            if (data.orderQty)  state.orderQty  = data.orderQty;
+            if (data.itemNotes) state.itemNotes = data.itemNotes;
+          }
+          break;
+        case 'cogSales':
+          state.cogSales = data;
+          lsSet('bartletts-cog-sales-v1', data);
+          break;
+        case 'cogManual':
+          state.cogManual = data;
+          lsSet('bartletts-cog-manual-v1', data);
+          break;
+      }
+    }).catch(e => console.warn('Sync error:', path, e));
+  });
+  // Also re-read history
+  fbDb.ref('history').once('value').then(snap => {
+    const data = snap.val();
+    if (data) {
+      const incoming = Object.values(data).sort((a,b) => new Date(b.date) - new Date(a.date));
+      state.history = mergeHistory(state.history, incoming);
+      lsSet('bartletts-orders-v3', state.history);
+    }
+  }).catch(e => console.warn('Sync error: history', e));
+
+  fbSyncStatus = 'syncing';
+  updateSyncBadge();
+  // Mark synced after 2s (Firebase once() is fast)
+  setTimeout(() => {
+    fbSyncStatus = 'synced';
+    updateSyncBadge();
+    render();
+  }, 2000);
+}
+
+function startPeriodicSync() {
+  if (_syncInterval) clearInterval(_syncInterval);
+  // Sync every 3 minutes while app is visible
+  _syncInterval = setInterval(() => {
+    if (document.visibilityState === 'visible' && fbDb) {
+      console.log('[Sync] Periodic sync triggered');
+      forceSyncFromFirebase();
+    }
+  }, 3 * 60 * 1000);
+}
+
+// Sync on visibility change — fires when you switch back to the app
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('[Sync] App became visible — syncing from Firebase');
+    setTimeout(() => {
+      if (fbDb) forceSyncFromFirebase();
+    }, 300); // small delay to let Firebase reconnect first
+  }
+});
+
+// Sync on window focus — catches cases visibilitychange misses
+window.addEventListener('focus', () => {
+  setTimeout(() => {
+    if (fbDb) forceSyncFromFirebase();
+  }, 300);
+});
+
+// Start periodic sync after Firebase initializes
+setTimeout(startPeriodicSync, 3000);
 </script>
 </body>
 </html>
