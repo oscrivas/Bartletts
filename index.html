@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.72                                           │
+  │  CURRENT VERSION: v1.76                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,47 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.76 — 2026-05-01
+  · FIXED: Nutra Clear, Firewood, Waiter Aprons, Chef Hats — removed inventoryOnly flag
+    These now show the ORDER column and are included in the email to James
+    Par levels: Nutra Clear=1, Firewood=1, Aprons=5, Chef Hats=15
+  · ADDED: ADD tally "✎ type total manually" option
+    If you just want to enter a single corrected total without building a delivery log,
+    tap the override link — type the number and it updates immediately
+    Useful for correcting a miscount mid-session
+
+  v1.75 — 2026-05-01
+  · ADDED: ADD tally modal for multiple deliveries per item
+    The ADD column is now a button — tap it to open a green delivery tally sheet
+    Enter each delivery amount and tap + ADD to log it (e.g. 12 in morning, 6 in afternoon)
+    Each delivery shows as a line with quantity and time received, with × to remove
+    TOTAL ADD is the sum of all deliveries — tap ✦ SET ADD to confirm
+    If you reopen the tally for an item your previous deliveries are still there to edit
+    ADD total carries into START = BEGIN + ADD and feeds correct USED calculation
+    delivery log saved locally — clears on month save/reset same as COUNT tally
+
+  v1.74 — 2026-05-01
+  · FIXED: Row background didn't turn red/yellow after entering a count — now updates immediately
+  · FIXED: COUNT button color — 0 shows red (counted zero), N shows purple, uncounted gray
+  · FIXED: End button display didn't update until next full render — now refreshes instantly
+  · FIXED: Tally decimal key removed — replaced with CLR (clear current entry)
+    You can't count 3.5 wine glasses — whole numbers only
+  · ADDED: Progress counter in inventory header — "X/41 counted" so you know how far along
+  · ADDED: PAR cell tappable in inventory count view — tap any PAR number to edit it inline
+    No need to switch to Edit mode just to fix a par level mid-count
+  · FIXED: refreshTriRow now also updates row background color after edits
+
+  v1.73 — 2026-05-01
+  · ADDED: Mail app selector for Trimark emails
+    - Tap ✎ APP on the Email James prompt to pick your preferred mail app
+    - Supported: Apple Mail, Gmail, Outlook, Spark, Airmail, Yahoo Mail
+    - Preference saved locally — used for all future Trimark emails
+    - URL schemes used: googlegmail://, ms-outlook://, sparkmailapp://, airmail5://, ymail://
+  · ADDED: 📧 RESEND EMAIL TO JAMES button in History detail
+    - Works the same as 💬 RESEND SMS TO HAL and 📥 RE-DOWNLOAD BEK CSV
+    - Appears automatically on any saved Trimark order with items ordered
+    - Uses your preferred mail app
 
   v1.72 — 2026-05-01
   · ADDED: Automatic background sync from Firebase
@@ -1200,7 +1241,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.72</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.76</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1410,6 +1451,41 @@
 </div>
 
 <!-- Location Tally Modal -->
+<!-- ADD TALLY MODAL -->
+<div class="sheet-overlay" id="add-tally-modal" style="display:none;" onclick="closeAddTallyModal()">
+  <div class="sheet" onclick="event.stopPropagation()" style="padding-bottom:max(24px,env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+    <div class="sheet-handle"></div>
+    <div id="add-tally-item-name" style="font-size:15px;font-weight:700;color:#e5e5e7;margin-bottom:2px;"></div>
+    <div style="font-family:ui-monospace,monospace;font-size:10px;color:#4ade80;letter-spacing:1px;margin-bottom:14px;">📦 ADD DELIVERIES — tap + ADD for each delivery received</div>
+    <div id="add-tally-log" style="margin-bottom:12px;min-height:28px;"></div>
+    <div style="background:#111;border:2px solid #4ade80;border-radius:12px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-family:ui-monospace,monospace;font-size:11px;color:#636366;letter-spacing:1px;">ENTERING</div>
+      <div id="add-tally-display" style="font-family:ui-monospace,monospace;font-size:28px;font-weight:700;color:#4ade80;">—</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+      <button class="tally-key" onclick="addTallyKey('7')">7</button>
+      <button class="tally-key" onclick="addTallyKey('8')">8</button>
+      <button class="tally-key" onclick="addTallyKey('9')">9</button>
+      <button class="tally-key" onclick="addTallyKey('4')">4</button>
+      <button class="tally-key" onclick="addTallyKey('5')">5</button>
+      <button class="tally-key" onclick="addTallyKey('6')">6</button>
+      <button class="tally-key" onclick="addTallyKey('1')">1</button>
+      <button class="tally-key" onclick="addTallyKey('2')">2</button>
+      <button class="tally-key" onclick="addTallyKey('3')">3</button>
+      <button class="tally-key" style="background:#4ade80;color:#000;font-size:13px;font-weight:800;" onclick="addTallyAdd()">+ ADD</button>
+      <button class="tally-key" onclick="addTallyKey('0')">0</button>
+      <button class="tally-key" style="font-size:12px;color:#636366;" onclick="_addTallyEntry='';addTallyUpdateDisplay();">CLR</button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #2c2c2e;margin-bottom:12px;">
+      <div style="font-family:ui-monospace,monospace;font-size:11px;color:#636366;letter-spacing:1px;">TOTAL ADD</div>
+      <div id="add-tally-total" style="font-family:ui-monospace,monospace;font-size:22px;font-weight:800;color:#4ade80;">0</div>
+    </div>
+    <button onclick="confirmAddTally()" style="width:100%;height:52px;border-radius:14px;border:none;background:#4ade80;color:#000;font-family:ui-monospace,monospace;font-size:15px;font-weight:800;letter-spacing:1px;cursor:pointer;touch-action:manipulation;margin-bottom:8px;">✦ SET ADD</button>
+    <button onclick="_addTallySetManual()" style="width:100%;height:36px;border-radius:10px;border:1.5px solid #2c2c2e;background:transparent;color:#636366;font-family:ui-monospace,monospace;font-size:11px;cursor:pointer;touch-action:manipulation;margin-bottom:6px;">✎ type total manually</button>
+    <button onclick="closeAddTallyModal()" style="width:100%;height:36px;border-radius:10px;border:none;background:transparent;color:#636366;font-family:ui-monospace,monospace;font-size:13px;cursor:pointer;touch-action:manipulation;">Cancel</button>
+  </div>
+</div>
+
 <div class="sheet-overlay" id="tally-modal" style="display:none;" onclick="closeTallyModal()">
   <div class="sheet" onclick="event.stopPropagation()" style="padding-bottom:max(24px,env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
     <div class="sheet-handle"></div>
@@ -1446,7 +1522,7 @@
         <button class="tally-key" onclick="tallyKey('3')">3</button>
         <button class="tally-key tally-key-add" onclick="tallyKey('+')">+  ADD</button>
         <button class="tally-key" onclick="tallyKey('0')">0</button>
-        <button class="tally-key" onclick="tallyKey('.')">.</button>
+        <button class="tally-key" onclick="_tallyEntry='';_tallyUpdateDisplay()" style="font-size:12px;color:#636366;">CLR</button>
         <button class="tally-key tally-key-back" onclick="tallyKey('back')">⌫</button>
       </div>
       <!-- Reset active location -->
@@ -1671,10 +1747,10 @@ const DEFAULT_SUPPLIERS = {
       {id:"tri-36",name:"Iced Teaspoons",         pack:"36/cs",    par:144, unitCost:1.97,  caseQty:36},
       {id:"tri-37",name:"Coffee Spoons",          pack:"1 pk/12",  par:48,  unitCost:1.49,  caseQty:12},
       {id:"tri-38",name:"S & P Mills",            pack:"2/cs",     par:60,  unitCost:46.00, caseQty:2},
-      {id:"tri-42",name:"Nutra Clear",            pack:"each",     par:1,   unitCost:0,     caseQty:1, inventoryOnly:true},
-      {id:"tri-43",name:"Firewood",               pack:"each",     par:1,   unitCost:0,     caseQty:1, inventoryOnly:true},
-      {id:"tri-39",name:"Waiter Aprons",          pack:"each",     par:5,   unitCost:37.00, caseQty:1, inventoryOnly:true},
-      {id:"tri-40",name:"Chef Hats",              pack:"each",     par:15,  unitCost:13.00, caseQty:1, inventoryOnly:true},
+      {id:"tri-42",name:"Nutra Clear",            pack:"each",     par:1,   unitCost:0,     caseQty:1},
+      {id:"tri-43",name:"Firewood",               pack:"each",     par:1,   unitCost:0,     caseQty:1},
+      {id:"tri-39",name:"Waiter Aprons",          pack:"each",     par:5,   unitCost:37.00, caseQty:1},
+      {id:"tri-40",name:"Chef Hats",              pack:"each",     par:15,  unitCost:13.00, caseQty:1},
       {id:"tri-41",name:"Pate Knives",            pack:"1 dz",     par:36,  unitCost:10.22, caseQty:12},
       {id:"tri-44",name:"Bar Mixing Glass",       pack:"4/cs",     par:4,   unitCost:0,     caseQty:4},
     ]
@@ -1703,7 +1779,8 @@ let state = {
   trimarkBeginMeta: {},   // tri item id → {value, source, date} audit trail for BEGIN
   trimarkAddMeta: {},     // tri item id → {value, source, date} audit trail for ADD
   trimarkView: 'order',   // 'order' | 'inventory'
-  trimarkTally: {},        // tri item id → {dock, closet, restaurant}
+  trimarkTally: {},
+  trimarkAddTally: {},        // tri item id → {dock, closet, restaurant}
   learning: {},            // in-memory learning data — mirrors Firebase + localStorage
   cogSales: {},            // 'YYYY-MM' → sales amount
   cogManual: {},           // 'YYYY-MM' → {ABCO: amt, ELECTRICAL: amt, other: amt}
@@ -2008,6 +2085,8 @@ function loadPersistedData() {
   const addMeta = lsGet('bartletts-trimark-add-meta-v1');
   if (addMeta) state.trimarkAddMeta = addMeta;
   const tal = lsGet('bartletts-trimark-tally-v1');
+  const addTally = lsGet('bartletts-trimark-add-tally-v1');
+  if (addTally) state.trimarkAddTally = addTally;
   if (tal) state.trimarkTally = tal;
   // Push any locally-accumulated learning data to Firebase on startup
   const localLearning = lsGet('bartletts-learning-v1');
@@ -2036,6 +2115,12 @@ function saveTrimarkBegin() {
 function saveTrimarkTally() {
   lsSet('bartletts-trimark-tally-v1', state.trimarkTally);
   fbWrite('trimarkTally', state.trimarkTally);
+}
+
+function saveTrimarkAddTally() {
+  lsSet('bartletts-trimark-add-tally-v1', state.trimarkAddTally);
+  // No Firebase path needed — trimarkAdd (the total) is what Firebase stores
+  // addTally is local UI state for showing delivery breakdown
 }
 
 function saveTrimarkAdd() {
@@ -2749,6 +2834,8 @@ function renderTrimarkInventory(listEl, sup) {
   // Show sync warning if BEGIN data hasn't loaded yet
   const _beginEmpty = sup.items.filter(i => state.trimarkBegin[i.id] !== undefined).length === 0;
   const _syncStatus = fbSyncStatus;
+  const _countedItems = sup.items.filter(i => (state.onHand[ikey('TRIMARK', i.id)] ?? '') !== '').length;
+  const _totalItems = sup.items.length;
   const _syncNote = _beginEmpty
     ? (_syncStatus === 'synced'
         ? '<div style="margin-top:4px;font-family:ui-monospace,monospace;font-size:10px;color:#fbbf24;">⚠ BEGIN numbers not loaded — try scrolling up to refresh, or wait for ☁️ sync</div>'
@@ -2763,8 +2850,11 @@ function renderTrimarkInventory(listEl, sup) {
         font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;
         letter-spacing:0.5px;">❓ HOW TO</button>
     </div>
-    <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#636366;line-height:1.5">
-      Tap any COUNT cell to enter by location. Tap ❓ HOW TO if you need help.
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">
+      <div style="font-family:ui-monospace,monospace;font-size:10px;color:#636366;">Tap COUNT to enter. ❓ = help.</div>
+      <div style="font-family:ui-monospace,monospace;font-size:11px;font-weight:700;color:${_countedItems === _totalItems ? '#4ade80' : '#a3a3a3'};">
+        ${_countedItems}/${_totalItems} counted
+      </div>
     </div>${_syncNote}`;
   listEl.appendChild(hdr);
 
@@ -2927,7 +3017,10 @@ function renderTrimarkInventory(listEl, sup) {
     const hasTally = tally && (tally.dock || tally.closet || tally.restaurant);
 
     const endBtn = document.createElement('div');
-    endBtn.style.cssText = `width:50px;min-height:34px;text-align:center;border-radius:8px;border:2px solid ${hasEnd ? '#c084fc' : '#2c2c2e'};background:#1c1c1e;color:${hasEnd ? '#c084fc' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:${hasEnd ? '16px' : '13px'};font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;`;
+    // Color: purple = counted, red = counted zero (critical), gray = not yet counted
+    const _countColor = !hasEnd ? '#636366' : (parseFloat(endRaw) <= 0 ? '#f87171' : '#c084fc');
+    const _countBorder = !hasEnd ? '#2c2c2e' : (parseFloat(endRaw) <= 0 ? '#f87171' : '#c084fc');
+    endBtn.style.cssText = `width:50px;min-height:34px;text-align:center;border-radius:8px;border:2px solid ${_countBorder};background:#1c1c1e;color:${_countColor};font-family:ui-monospace,monospace;font-size:${hasEnd ? '16px' : '13px'};font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;`;
 
     if (hasEnd) {
       endBtn.innerHTML = '';
@@ -2962,11 +3055,34 @@ function renderTrimarkInventory(listEl, sup) {
         }
         // Persist count to Firebase immediately so other devices and re-renders don't overwrite it
         saveLiveOrder();
-        // Update button display
+        // Update button display and row background
         const newTally = state.trimarkTally[item.id] || {};
         const nt = newTally;
-        endBtn.style.borderColor = '#c084fc';
-        endBtn.style.color = '#c084fc';
+        // Update end button display immediately with new count
+        endBtn.innerHTML = '';
+        const _newEs = document.createElement('span');
+        _newEs.style.cssText = 'font-size:16px;font-weight:700';
+        _newEs.textContent = totalVal;
+        endBtn.appendChild(_newEs);
+        const _newTally2 = state.trimarkTally[item.id] || {};
+        if (_newTally2.dock !== undefined || _newTally2.closet !== undefined || _newTally2.restaurant !== undefined) {
+          const _et2 = document.createElement('span');
+          _et2.style.cssText = 'font-size:8px;color:#7c3aed;letter-spacing:0px;';
+          _et2.textContent = (_newTally2.dock||0)+'·'+(_newTally2.closet||0)+'·'+(_newTally2.restaurant||0);
+          endBtn.appendChild(_et2);
+        }
+        const _pv3 = parseFloat(totalVal);
+        endBtn.style.borderColor = (!isNaN(_pv3) && _pv3 <= 0) ? '#f87171' : '#c084fc';
+        endBtn.style.color = (!isNaN(_pv3) && _pv3 <= 0) ? '#f87171' : '#c084fc';
+        // Update row background to reflect critical/low status
+        const _pv2 = parseFloat(totalVal);
+        if (!isNaN(_pv2)) {
+          row.style.background = _pv2 <= 0
+            ? 'rgba(248,113,113,0.09)'
+            : _pv2 < parVal
+              ? 'rgba(251,191,36,0.05)'
+              : 'transparent';
+        }
         endBtn.innerHTML = `<span style="font-size:16px;font-weight:700">${totalVal}</span><span style="font-size:8px;color:#7c3aed;letter-spacing:0px;">${nt.dock||0}·${nt.closet||0}·${nt.restaurant||0}</span>`;
         refreshTriRow(row, item, ik, listEl, sup);
         // Show on-hand anomaly alert in name div
@@ -3000,43 +3116,103 @@ function renderTrimarkInventory(listEl, sup) {
     orderCol.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
     orderCol.textContent = orderQty !== null ? (orderQty > 0 ? (item.caseQty > 1 ? '+'+orderQty+'cs' : '+'+orderQty) : '✓') : '—';
 
-    // PAR cell
+    // PAR cell — tappable to quick-edit par level without leaving inventory
     const parCell = document.createElement('div');
-    parCell.style.cssText = 'text-align:center;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;color:#6b21a8;';
+    parCell.style.cssText = 'text-align:center;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;color:#6b21a8;cursor:pointer;';
     parCell.textContent = item.par || '—';
+    parCell.onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.inputMode = 'decimal';
+      inp.value = item.par;
+      inp.style.cssText = 'width:36px;height:26px;text-align:center;border-radius:6px;border:1.5px solid #7c3aed;background:#1c1c1e;color:#c084fc;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;outline:none;-webkit-appearance:none;appearance:none;';
+      parCell.innerHTML = ''; parCell.appendChild(inp);
+      inp.focus(); inp.select();
+      const commit = () => {
+        const newPar = parseFloat(inp.value);
+        if (!isNaN(newPar) && newPar >= 0) {
+          state.catalog['TRIMARK'].items = state.catalog['TRIMARK'].items.map(ci => ci.id === item.id ? {...ci, par: newPar} : ci);
+          item.par = newPar;
+          saveCatalog();
+          showToast('✓ Par updated: ' + item.name + ' \u2192 ' + newPar);
+        }
+        parCell.textContent = item.par || '—';
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+    };
 
-    // ADD input (editable)
+    // ADD button — opens tally modal for multiple deliveries
     const addCol = document.createElement('div');
     addCol.style.cssText = 'display:flex;align-items:center;justify-content:center;';
-    const addInp = document.createElement('input');
-    addInp.type = 'number'; addInp.inputMode = 'decimal';
-    addInp.value = addVal !== null ? addVal : '';
-    addInp.placeholder = '—';
-    addInp.style.cssText = `width:34px;height:34px;text-align:center;border-radius:8px;border:2px solid ${addVal !== null ? '#4ade80' : '#2c2c2e'};background:#1c1c1e;color:${addVal !== null ? '#4ade80' : '#636366'};font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:14px;font-weight:700;-webkit-appearance:none;appearance:none;outline:none;`;
+    const addBtn = document.createElement('button');
+    const hasAdd = addVal !== null;
+    const addDeliveries = (state.trimarkAddTally[item.id] || []).length;
+    addBtn.style.cssText = 'width:38px;min-height:34px;text-align:center;border-radius:8px;border:2px solid '
+      + (hasAdd ? '#4ade80' : '#2c2c2e')
+      + ';background:#1c1c1e;color:' + (hasAdd ? '#4ade80' : '#636366')
+      + ';font-family:ui-monospace,monospace;font-size:' + (hasAdd ? '14px' : '11px')
+      + ';font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px;touch-action:manipulation;';
+    // Show total and delivery count
+    if (hasAdd) {
+      const _as = document.createElement('span');
+      _as.style.cssText = 'font-size:15px;font-weight:700;';
+      _as.textContent = addVal;
+      addBtn.appendChild(_as);
+      if (addDeliveries > 1) {
+        const _ad = document.createElement('span');
+        _ad.style.cssText = 'font-size:8px;color:#4ade80;letter-spacing:0px;';
+        _ad.textContent = addDeliveries + 'x';
+        addBtn.appendChild(_ad);
+      }
+    } else {
+      addBtn.textContent = '+';
+    }
+    addBtn.className = 'tri-add-btn-' + item.id;
     const updateStart = () => {
       const b = parseFloat(begInp.value);
-      const a = parseFloat(addInp.value);
+      const a = parseFloat(state.trimarkAdd[item.id] ?? '');
       const s = (!isNaN(b) && !isNaN(a)) ? b + a : (!isNaN(b) ? b : null);
       startCell.textContent = s !== null ? s : '—';
     };
-    addInp.addEventListener('input', e => {
-      const val = e.target.value;
-      if (val !== '') {
-        state.trimarkAdd[item.id] = val;
-        state.trimarkAddMeta[item.id] = { value: parseFloat(val), source: 'manual-edit', date: new Date().toISOString() };
-      } else {
-        delete state.trimarkAdd[item.id];
-        delete state.trimarkAddMeta[item.id];
-      }
-      saveTrimarkAdd();
-      saveTrimarkMeta();
-      addInp.style.borderColor = val !== '' ? '#4ade80' : '#2c2c2e';
-      addInp.style.color = val !== '' ? '#4ade80' : '#636366';
-      updateStart();
-      // Refresh USED and ORDER columns when ADD changes
-      refreshTriRow(row, item, ik, listEl, sup);
+    addBtn.addEventListener('click', () => {
+      openAddTallyModal(item, (total) => {
+        // Update state with new total
+        if (total > 0) {
+          state.trimarkAdd[item.id] = String(total);
+          state.trimarkAddMeta[item.id] = { value: total, source: 'delivery-tally', date: new Date().toISOString() };
+        } else {
+          delete state.trimarkAdd[item.id];
+          delete state.trimarkAddMeta[item.id];
+        }
+        saveTrimarkAdd();
+        saveTrimarkMeta();
+        // Update button display
+        const _btn = listEl.querySelector('.tri-add-btn-' + item.id);
+        if (_btn) {
+          _btn.innerHTML = '';
+          _btn.style.borderColor = total > 0 ? '#4ade80' : '#2c2c2e';
+          _btn.style.color = total > 0 ? '#4ade80' : '#636366';
+          if (total > 0) {
+            const _as2 = document.createElement('span');
+            _as2.style.cssText = 'font-size:15px;font-weight:700;';
+            _as2.textContent = total;
+            _btn.appendChild(_as2);
+            const _dels = (state.trimarkAddTally[item.id] || []).length;
+            if (_dels > 1) {
+              const _ad2 = document.createElement('span');
+              _ad2.style.cssText = 'font-size:8px;color:#4ade80;letter-spacing:0px;';
+              _ad2.textContent = _dels + 'x';
+              _btn.appendChild(_ad2);
+            }
+          } else {
+            _btn.textContent = '+';
+          }
+        }
+        updateStart();
+        refreshTriRow(row, item, ik, listEl, sup);
+      });
     });
-    addCol.appendChild(addInp);
+    addCol.appendChild(addBtn);
 
     // START cell (live: begin + add, read-only display)
     const startCell = document.createElement('div');
@@ -3110,6 +3286,16 @@ function refreshTriRow(row, item, ik, listEl, sup) {
     orderEl.textContent = orderQty !== null ? (orderQty > 0 ? '+'+orderQty+(_cqRefresh > 1 ? 'cs' : '') : '✓') : '—';
     orderEl.style.color = orderQty !== null && orderQty > 0 ? '#fbbf24' : '#48484a';
   }
+  // Update row background to reflect new critical/low status
+  if (row) {
+    const _endV2 = parseFloat(endRaw);
+    const _parV2 = parseFloat(item.par) || 0;
+    row.style.background = (hasEnd && !isNaN(_endV2) && _endV2 <= 0)
+      ? 'rgba(248,113,113,0.09)'
+      : (hasEnd && !isNaN(_endV2) && _endV2 < _parV2)
+        ? 'rgba(251,191,36,0.05)'
+        : 'transparent';
+  }
   // Update summary bar
   const summary = getTrimarkSummary(sup);
   const bar = document.getElementById('tri-summary-bar');
@@ -3127,8 +3313,10 @@ function clearTrimarkInventory() {
   clearTrimarkInventory._confirmed = false;
   state.trimarkBegin = {};
   state.trimarkTally = {};
+  state.trimarkAddTally = {};
   saveTrimarkBegin();
   saveTrimarkTally();
+  saveTrimarkAddTally();
   showToast('Month reset — enter new beginning counts', 'warn');
   renderOrderView();
 }
@@ -3955,6 +4143,16 @@ function renderDetail(rec) {
         cursor:pointer;letter-spacing:0.5px;">📥 RE-DOWNLOAD BEK CSV</button>`);
   }
 
+  // TRIMARK resend email button
+  const trimarkOrderedResend = (rec.suppliers?.['TRIMARK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
+  if (trimarkOrderedResend.length > 0) {
+    btns.push(`<button onclick="resendTrimarkEmail('${rec.id}')" style="
+        height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #c084fc;
+        background:transparent;color:#c084fc;
+        font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
+        cursor:pointer;letter-spacing:0.5px;">📧 RESEND EMAIL TO JAMES</button>`);
+  }
+
   // Delete record button — always shown
   btns.push(`<button onclick="event.stopPropagation();deleteHistoryRecord('${rec.id}')" style="
       height:34px;padding:0 14px;border-radius:10px;border:1.5px solid #3a3a3c;
@@ -4423,6 +4621,8 @@ function doSave() {
   saveTrimarkMeta();
   state.trimarkTally = {};
   saveTrimarkTally();
+  state.trimarkAddTally = {};
+  saveTrimarkAddTally();
   state.trimarkAdd = {};
   saveTrimarkAdd();
   state.trimarkAddMeta = {};  // reset add meta on new month
@@ -4705,54 +4905,171 @@ function resendBekCsv(recId) {
   showToast('📥 BEK CSV downloaded');
 }
 
+// ─── MAIL APP PREFERENCE ──────────────────────────────────────────────────
+// Supported mail apps with their iOS URL schemes
+const MAIL_APPS = [
+  { id:'mailto',    name:'Apple Mail',   icon:'✉️',  scheme:'mailto:' },
+  { id:'gmail',     name:'Gmail',        icon:'📩',  scheme:'googlegmail://' },
+  { id:'outlook',   name:'Outlook',      icon:'📘',  scheme:'ms-outlook://' },
+  { id:'spark',     name:'Spark',        icon:'⚡',  scheme:'sparkmailapp://' },
+  { id:'airmail',   name:'Airmail',      icon:'✈️',  scheme:'airmail5://' },
+  { id:'yahoo',     name:'Yahoo Mail',   icon:'💌',  scheme:'ymail://' },
+];
+
+function getPreferredMailApp() {
+  return lsGet('bartletts-mail-app') || 'mailto';
+}
+
+function buildMailtoUrl(scheme, to, subject, body) {
+  const enc = (s) => encodeURIComponent(s);
+  if (scheme === 'mailto:') {
+    return `mailto:${to}?subject=${enc(subject)}&body=${enc(body)}`;
+  }
+  if (scheme === 'googlegmail://') {
+    return `googlegmail://co?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+  }
+  if (scheme === 'ms-outlook://') {
+    return `ms-outlook://compose?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+  }
+  if (scheme === 'sparkmailapp://') {
+    return `sparkmailapp://compose?recipient=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+  }
+  if (scheme === 'airmail5://') {
+    return `airmail5://compose?to=${enc(to)}&subject=${enc(subject)}&plainBody=${enc(body)}`;
+  }
+  if (scheme === 'ymail://') {
+    return `ymail://mail/compose?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+  }
+  return `mailto:${to}?subject=${enc(subject)}&body=${enc(body)}`;
+}
+
+function showMailAppPicker(onSelect) {
+  const existing = document.getElementById('mail-app-picker');
+  if (existing) { existing.remove(); return; }
+
+  const current = getPreferredMailApp();
+  const overlay = document.createElement('div');
+  overlay.id = 'mail-app-picker';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9800;display:flex;align-items:flex-end;';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'background:#111;border-radius:24px 24px 0 0;width:100%;padding:20px 20px calc(20px + env(safe-area-inset-bottom));';
+  sheet.onclick = (e) => e.stopPropagation();
+
+  const handle = document.createElement('div');
+  handle.style.cssText = 'width:36px;height:4px;background:#3a3a3c;border-radius:2px;margin:0 auto 16px;';
+  sheet.appendChild(handle);
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#f2f2f7;letter-spacing:0.5px;margin-bottom:4px;';
+  title.textContent = '📧 Choose Mail App';
+  sheet.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = 'font-family:ui-monospace,monospace;font-size:10px;color:#636366;margin-bottom:16px;';
+  sub.textContent = 'Your choice is saved — used for all Trimark emails';
+  sheet.appendChild(sub);
+
+  MAIL_APPS.forEach(app => {
+    const btn = document.createElement('button');
+    const isSelected = current === app.id;
+    btn.style.cssText = 'width:100%;height:52px;border-radius:14px;border:1.5px solid '
+      + (isSelected ? '#7c3aed' : '#2c2c2e')
+      + ';background:' + (isSelected ? 'rgba(124,58,237,0.15)' : 'transparent')
+      + ';color:' + (isSelected ? '#c084fc' : '#e5e5e7')
+      + ';font-family:ui-monospace,monospace;font-size:14px;font-weight:' + (isSelected ? '700' : '400')
+      + ';cursor:pointer;touch-action:manipulation;display:flex;align-items:center;gap:12px;padding:0 16px;margin-bottom:8px;text-align:left;';
+    btn.innerHTML = '<span style="font-size:20px;flex-shrink:0;">' + app.icon + '</span>'
+      + '<span style="flex:1;">' + app.name + '</span>'
+      + (isSelected ? '<span style="font-size:12px;color:#7c3aed;">✓ CURRENT</span>' : '');
+    btn.onclick = () => {
+      lsSet('bartletts-mail-app', app.id);
+      overlay.remove();
+      showToast('📧 ' + app.name + ' set as default mail app');
+      if (onSelect) onSelect(app);
+    };
+    sheet.appendChild(btn);
+  });
+
+  const cancel = document.createElement('button');
+  cancel.style.cssText = 'width:100%;height:44px;border-radius:14px;border:none;background:transparent;color:#636366;font-family:ui-monospace,monospace;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;touch-action:manipulation;';
+  cancel.textContent = 'Cancel';
+  cancel.onclick = () => overlay.remove();
+  sheet.appendChild(cancel);
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+}
+
+function _sendTrimarkEmail(items, recDate) {
+  const prefId = getPreferredMailApp();
+  const app = MAIL_APPS.find(a => a.id === prefId) || MAIL_APPS[0];
+  const date = (recDate || new Date()).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const lines = items.map(i => '  - x' + i.orderQty + '  ' + i.name).join('\n');
+  const subject = "Bartlett's Trimark Order — " + date;
+  const body = "Hi James,\n\nPlease process the following order for Bartlett's Restaurant:\n\n" + lines + "\n\nThank you,\nOscar Rivas\nBartlett's Restaurant";
+  const url = buildMailtoUrl(app.scheme, 'James.Hawley@trimarkusa.com', subject, body);
+  window.location.href = url;
+}
+
 function showTrimarkEmailPrompt(items) {
   const existing = document.getElementById('trimark-email-prompt');
   if (existing) existing.remove();
 
   const el = document.createElement('div');
   el.id = 'trimark-email-prompt';
-  el.style.cssText = `
-    position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
-    background:#1c1c1e;border:1.5px solid #7c3aed;border-radius:16px;
-    padding:14px 18px;display:flex;align-items:center;gap:12px;
-    box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:9999;
-    font-family:ui-monospace,'SF Mono','Courier New',monospace;
-    max-width:calc(100vw - 32px);
-  `;
-  el.innerHTML = `
-    <div style="font-size:11px;color:#a3a3a3;line-height:1.4;">
-      <div style="color:#e5e5e7;font-weight:700;font-size:12px;margin-bottom:2px;">📧 Email James?</div>
-      ${items.length} item${items.length > 1 ? 's' : ''} to order from Trimark
-    </div>
-    <button onclick="openTrimarkEmail()" style="
-      flex-shrink:0;height:38px;padding:0 16px;border-radius:19px;
-      background:#7c3aed;border:none;color:#fff;
-      font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:11px;font-weight:700;
-      cursor:pointer;letter-spacing:0.5px;">
-      OPEN EMAIL
-    </button>
-    <button onclick="document.getElementById('trimark-email-prompt').remove()" style="
-      flex-shrink:0;width:28px;height:28px;border-radius:14px;
-      background:#2c2c2e;border:none;color:#636366;font-size:16px;
-      cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>
-  `;
+  el.style.cssText = 'position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1c1c1e;border:1.5px solid #7c3aed;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:9999;font-family:ui-monospace,monospace;max-width:calc(100vw - 32px);';
+
+  const prefId = getPreferredMailApp();
+  const appName = (MAIL_APPS.find(a => a.id === prefId) || MAIL_APPS[0]).name;
+
+  const info = document.createElement('div');
+  info.style.cssText = 'flex:1;min-width:0;';
+  info.innerHTML = '<div style="color:#e5e5e7;font-weight:700;font-size:12px;margin-bottom:2px;">📧 Email James?</div>'
+    + '<div style="font-size:10px;color:#a3a3a3;">' + items.length + ' item' + (items.length>1?'s':'') + ' · via ' + appName + '</div>';
+
+  const openBtn = document.createElement('button');
+  openBtn.style.cssText = 'flex-shrink:0;height:38px;padding:0 14px;border-radius:19px;background:#7c3aed;border:none;color:#fff;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+  openBtn.textContent = 'OPEN EMAIL';
+  openBtn.onclick = () => { el.remove(); _sendTrimarkEmail(items); };
+
+  const changeBtn = document.createElement('button');
+  changeBtn.style.cssText = 'flex-shrink:0;height:38px;padding:0 10px;border-radius:19px;border:1.5px solid #3a3a3c;background:transparent;color:#636366;font-family:ui-monospace,monospace;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;';
+  changeBtn.textContent = '✎ APP';
+  changeBtn.onclick = () => {
+    el.remove();
+    showMailAppPicker((app) => {
+      // Re-show prompt with updated app after selection
+      showTrimarkEmailPrompt(items);
+    });
+  };
+
+  const closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'flex-shrink:0;width:28px;height:28px;border-radius:14px;background:#2c2c2e;border:none;color:#636366;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;';
+  closeBtn.textContent = '×';
+  closeBtn.onclick = () => el.remove();
+
+  el.appendChild(info); el.appendChild(openBtn); el.appendChild(changeBtn); el.appendChild(closeBtn);
   document.body.appendChild(el);
   el._items = items;
-  setTimeout(() => { if (el.parentNode) el.remove(); }, 12000);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 15000);
 }
 
 function openTrimarkEmail() {
+  // Legacy call — use new system
   const el = document.getElementById('trimark-email-prompt');
   const items = el?._items || [];
   el?.remove();
+  _sendTrimarkEmail(items);
+}
 
-  const date = new Date().toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
-  const lines = items.map(i => `  - x${i.orderQty}  ${i.name}`).join('\n');
-  const subject = `Bartlett's Trimark Order — ${date}`;
-  const body = `Hi James,\n\nPlease process the following order for Bartlett's Restaurant:\n\n${lines}\n\nThank you,\nOscar Rivas\nBartlett's Restaurant`;
-
-  const mailto = `mailto:James.Hawley@trimarkusa.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = mailto;
+function resendTrimarkEmail(recId) {
+  const rec = state.history.find(r => r.id === recId);
+  if (!rec) return;
+  const items = (rec.suppliers?.['TRIMARK'] || []).filter(i => i.orderQty && i.orderQty !== '' && i.orderQty !== '0' && !i.inventoryOnly);
+  if (!items.length) { showToast('No Trimark items in this order', 'warn'); return; }
+  _sendTrimarkEmail(items, new Date(rec.date));
 }
 
 // ─── DELIVERY CONFIRMATION ─────────────────────────────────────────────────
@@ -7061,7 +7378,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.72</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.76</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
@@ -7268,6 +7585,7 @@ const MUST_KNOW = [
     ],
     notes: [
       '📧 Always email James directly — do not order through portal alone',
+      '📬 To change which mail app opens when emailing James — tap the purple ✎ APP button on the Email James prompt after saving an order',
       '🍷 Wine & champagne glasses break fastest — count weekly during service',
       '🍽️ Ala plates & salad plates are high volume — maintain full par',
       '🥄 Silverware (fork/knife/spoon) counts should happen every inventory',
@@ -7605,10 +7923,6 @@ function tallyKey(k) {
   } else if (k === '+') {
     tallyCommitEntry();
     return;
-  } else if (k === '.') {
-    if (_tallyEntry.includes('.')) return; // only one decimal
-    if (_tallyEntry === '') _tallyEntry = '0';
-    _tallyEntry += '.';
   } else {
     if (_tallyEntry.length >= 6) return;
     _tallyEntry += k;
@@ -7693,6 +8007,138 @@ function _tallyUpdateDisplay() {
   const total = _tallyTotals.dock + _tallyTotals.closet + _tallyTotals.restaurant;
   const totalEl = document.getElementById('tally-total');
   if (totalEl) { totalEl.textContent = total; totalEl.style.color = total > 0 ? '#a78bfa' : '#48484a'; }
+}
+
+// ─── ADD TALLY MODAL ──────────────────────────────────────────────────────
+let _addTallyItemId = null;
+let _addTallyEntry = '';
+let _addTallyDeliveries = []; // [{qty, ts}]
+let _addTallyOnConfirm = null;
+
+function addTallyKey(k) {
+  if (_addTallyEntry.length >= 4) return; // max 4 digits per delivery
+  _addTallyEntry += k;
+  addTallyUpdateDisplay();
+}
+
+function addTallyUpdateDisplay() {
+  const disp = document.getElementById('add-tally-display');
+  if (disp) disp.textContent = _addTallyEntry !== '' ? _addTallyEntry : '—';
+}
+
+function addTallyAdd() {
+  const n = parseInt(_addTallyEntry);
+  if (isNaN(n) || n <= 0) { _addTallyEntry = ''; addTallyUpdateDisplay(); return; }
+  _addTallyDeliveries.push({ qty: n, ts: new Date().toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) });
+  _addTallyEntry = '';
+  addTallyUpdateDisplay();
+  addTallyRenderLog();
+  addTallyUpdateTotal();
+}
+
+function addTallyRenderLog() {
+  const log = document.getElementById('add-tally-log');
+  if (!log) return;
+  log.innerHTML = '';
+  if (_addTallyDeliveries.length === 0) {
+    log.innerHTML = '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#3a3a3c;text-align:center;padding:6px 0;">No deliveries added yet</div>';
+    return;
+  }
+  _addTallyDeliveries.forEach((d, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#1c1c1e;border-radius:8px;margin-bottom:4px;';
+    const left = document.createElement('div');
+    left.style.cssText = 'font-family:ui-monospace,monospace;font-size:11px;color:#636366;';
+    left.textContent = '📦 Delivery ' + (i+1) + (d.ts ? '  ·  ' + d.ts : '');
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex;align-items:center;gap:10px;';
+    const qty = document.createElement('span');
+    qty.style.cssText = 'font-family:ui-monospace,monospace;font-size:16px;font-weight:700;color:#4ade80;';
+    qty.textContent = '+' + d.qty;
+    const del = document.createElement('button');
+    del.style.cssText = 'width:24px;height:24px;border-radius:12px;border:none;background:#2c2c2e;color:#636366;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+    del.textContent = '×';
+    del.onclick = () => {
+      _addTallyDeliveries.splice(i, 1);
+      addTallyRenderLog();
+      addTallyUpdateTotal();
+    };
+    right.appendChild(qty); right.appendChild(del);
+    row.appendChild(left); row.appendChild(right);
+    log.appendChild(row);
+  });
+}
+
+function addTallyUpdateTotal() {
+  const total = _addTallyDeliveries.reduce((s, d) => s + d.qty, 0);
+  const el = document.getElementById('add-tally-total');
+  if (el) el.textContent = total;
+}
+
+function openAddTallyModal(item, onConfirm) {
+  _addTallyItemId = item.id;
+  _addTallyOnConfirm = onConfirm;
+  _addTallyEntry = '';
+  // Seed with existing deliveries if any
+  const saved = state.trimarkAddTally[item.id] || [];
+  _addTallyDeliveries = saved.map(d => ({...d}));
+
+  const nameEl = document.getElementById('add-tally-item-name');
+  if (nameEl) nameEl.textContent = item.name;
+
+  addTallyUpdateDisplay();
+  addTallyRenderLog();
+  addTallyUpdateTotal();
+
+  const modal = document.getElementById('add-tally-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:flex-end;';
+  }
+  window._tallyOpen = true;
+}
+
+function _addTallySetManual() {
+  // Replace delivery log with a single manual entry input
+  const log = document.getElementById('add-tally-log');
+  const total_el = document.getElementById('add-tally-total');
+  const current = _addTallyDeliveries.reduce((s, d) => s + d.qty, 0);
+  if (!log) return;
+  log.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:#1c1c1e;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;';
+  const lbl = document.createElement('div');
+  lbl.style.cssText = 'font-family:ui-monospace,monospace;font-size:11px;color:#636366;flex:1;';
+  lbl.textContent = 'Total ADD override:';
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.inputMode = 'numeric';
+  inp.value = current || '';
+  inp.style.cssText = 'width:72px;height:36px;text-align:center;border-radius:8px;border:1.5px solid #4ade80;background:#111;color:#4ade80;font-family:ui-monospace,monospace;font-size:18px;font-weight:700;outline:none;-webkit-appearance:none;';
+  inp.addEventListener('input', () => {
+    const n = parseInt(inp.value) || 0;
+    if (total_el) total_el.textContent = n;
+    // Replace deliveries with single override entry
+    _addTallyDeliveries = n > 0 ? [{ qty: n, ts: 'manual' }] : [];
+  });
+  wrap.appendChild(lbl); wrap.appendChild(inp);
+  log.appendChild(wrap);
+  setTimeout(() => { inp.focus(); inp.select(); }, 100);
+}
+
+function closeAddTallyModal() {
+  const modal = document.getElementById('add-tally-modal');
+  if (modal) modal.style.display = 'none';
+  _addTallyEntry = '';
+  window._tallyOpen = false;
+}
+
+function confirmAddTally() {
+  const total = _addTallyDeliveries.reduce((s, d) => s + d.qty, 0);
+  // Save delivery log to state
+  state.trimarkAddTally[_addTallyItemId] = _addTallyDeliveries.map(d => ({...d}));
+  saveTrimarkAddTally();
+  closeAddTallyModal();
+  if (_addTallyOnConfirm) _addTallyOnConfirm(total);
 }
 
 function openTallyModal(item, onConfirm) {
