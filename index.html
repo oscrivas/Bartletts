@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.79                                           │
+  │  CURRENT VERSION: v1.80                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,15 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.80 — 2026-05-01
+  · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear still stuck as inventoryOnly
+    Root cause: race condition — Firebase listener fires ~100ms after loadPersistedData
+    and was overwriting the cleaned catalog with old data before fbIgnoreRemote was set
+    Fix 1: stripRemovedInventoryOnly() — runs at every catalog load point (ls, Firebase, forceSyncFromFirebase, migration)
+    Fix 2: saveCatalog(true) — immediate Firebase write during migration, sets fbIgnoreRemote=true
+            for 1.5 seconds so incoming Firebase listener with old data is ignored
+    These 4 items are now permanently unflagged — no further migration needed
 
   v1.79 — 2026-05-01
   · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear not editable in ✎ Edit mode
@@ -1267,7 +1276,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.79</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.80</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1972,7 +1981,8 @@ function startFirebaseListeners() {
             });
           }
         }
-        lsSet('bartletts-catalog-v1', data);
+        stripRemovedInventoryOnly();
+        lsSet('bartletts-catalog-v1', state.catalog);
         render();
       }
     }, err => console.warn('FB catalog error:', err));
@@ -2102,7 +2112,8 @@ function loadPersistedData() {
       }
     }
     // Push cleaned catalog back to localStorage and Firebase so stale inventoryOnly flags are gone
-    saveCatalog();
+    stripRemovedInventoryOnly();
+    saveCatalog(true); // immediate=true — wins the race against Firebase listener
   }
 
   const brk = lsGet('bartletts-breakage-v1');
@@ -2172,11 +2183,19 @@ function saveTrimarkMeta() {
   fbWrite('trimarkAddMeta', state.trimarkAddMeta);
 }
 
-function saveCatalog() {
+function saveCatalog(immediate) {
   const toStore = {};
   for (const sn of SUP_NAMES) toStore[sn] = { items: state.catalog[sn].items };
   lsSet('bartletts-catalog-v1', toStore);
-  fbWrite('catalog', toStore);
+  if (immediate && fbDb) {
+    // Immediate write — used during migration to win the race against Firebase listener
+    fbIgnoreRemote = true;
+    fbDb.ref('catalog').set(toStore).catch(e => console.warn('FB catalog error:', e)).finally(() => {
+      setTimeout(() => { fbIgnoreRemote = false; }, 1500);
+    });
+  } else {
+    fbWrite('catalog', toStore);
+  }
 }
 
 function clearOrder() {
@@ -2242,6 +2261,18 @@ function saveLiveOrder() {
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────
 function ikey(sn, id) { return sn + '|' + id; }
+
+// IDs that had inventoryOnly:true in old versions but should not anymore
+// Called after every catalog load/merge to guarantee the flag stays gone
+const _INV_ONLY_REMOVED = new Set(['tri-39','tri-40','tri-42','tri-43']);
+function stripRemovedInventoryOnly() {
+  const items = state.catalog['TRIMARK']?.items || [];
+  items.forEach(item => {
+    if (_INV_ONLY_REMOVED.has(item.id) && item.inventoryOnly) {
+      delete item.inventoryOnly;
+    }
+  });
+}
 
 function getStatus(oh, par) {
   const h = parseFloat(oh), p = parseFloat(par);
@@ -7431,7 +7462,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.79</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.80</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
@@ -8484,7 +8515,8 @@ function forceSyncFromFirebase() {
                 });
               }
             }
-            lsSet('bartletts-catalog-v1', data);
+            stripRemovedInventoryOnly();
+            lsSet('bartletts-catalog-v1', state.catalog);
           }
           break;
         case 'liveOrder':
