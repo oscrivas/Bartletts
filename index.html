@@ -14,7 +14,7 @@
   ╚══════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────────────────────────────────┐
-  │  CURRENT VERSION: v1.76                                           │
+  │  CURRENT VERSION: v1.78                                           │
   │  FILE: index.html                                                │
   │  LAST UPDATED: 2026-03-01                                        │
   └──────────────────────────────────────────────────────────────────┘
@@ -22,6 +22,25 @@
   ════════════════════════════════════════════════════════════════════
   CHANGELOG
   ════════════════════════════════════════════════════════════════════
+
+  v1.78 — 2026-05-01
+  · FIXED: Firewood, Waiter Aprons, Chef Hats, Nutra Clear still showing as inventory-only
+    Root cause: v1.76 removed inventoryOnly from DEFAULT_SUPPLIERS but the catalog merge
+    does stored-wins, so any device that already had the app kept the old flag from localStorage/Firebase
+    Fix: catalog merge now checks — if the DEFAULT no longer has inventoryOnly, strip it from stored data
+    Applied in all 3 merge paths: localStorage load, Firebase listener, forceSyncFromFirebase
+    Clean catalog is immediately saved back to localStorage + Firebase on first open
+    These 4 items now show ORDER column, appear in email to James, and are fully editable
+
+  v1.77 — 2026-05-01
+  · FIXED: ✎ EDIT COUNTS in History now shows and saves the ADD column
+    Previously only BEGIN and COUNT were editable from history — ADD was invisible
+    Now the edit modal shows a full 2-row grid:
+      Row 1: BEGIN | ADD | START (auto-calculated, read-only)
+      Row 2: COUNT | USED (auto-calculated) | ORDER (auto-calculated)
+    Editing BEGIN or ADD recalculates START, USED, LOSS $, and ORDER instantly
+    ADD is saved back to the history snapshot when you tap SAVE CHANGES
+  · ADDED: History detail view now shows ADD value alongside BEGIN in item stats
 
   v1.76 — 2026-05-01
   · FIXED: Nutra Clear, Firewood, Waiter Aprons, Chef Hats — removed inventoryOnly flag
@@ -1241,7 +1260,7 @@
   <div id="topbar">
     <div>
       <div class="brand-name">BARTLETT'S</div>
-      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.76</span></div>
+      <div class="brand-sub">ORDER MANAGEMENT <span onclick="showWhatsNew()" style="color:#3a3a3c;font-size:8px;cursor:pointer;border-bottom:1px dotted #3a3a3c;">v1.78</span></div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:8px;color:#1c1c1e;letter-spacing:0.5px;margin-top:1px;">© 2025 Oscar Rivas</div>
     </div>
     <div class="topbar-right">
@@ -1940,6 +1959,8 @@ function startFirebaseListeners() {
               const merged = { ...def, ...storedItem };
               // Always preserve itemNum from DEFAULT catalog — never let a stale Firebase value wipe it
               if (def.itemNum && !merged.itemNum) merged.itemNum = def.itemNum;
+              // Migration: strip inventoryOnly if the default no longer has it
+              if (!def.inventoryOnly && merged.inventoryOnly) delete merged.inventoryOnly;
               return merged;
             });
           }
@@ -2062,10 +2083,19 @@ function loadPersistedData() {
         const defaultItems = DEFAULT_SUPPLIERS[sn]?.items || [];
         state.catalog[sn].items = cat[sn].items.map(storedItem => {
           const def = defaultItems.find(d => d.id === storedItem.id || d.name === storedItem.name) || {};
-          return { ...def, ...storedItem }; // default fills gaps, stored values win
+          const merged = { ...def, ...storedItem }; // default fills gaps, stored values win
+          // Migration: if the DEFAULT no longer has inventoryOnly, strip it from stored data too
+          // This fixes items like Firewood, Waiter Aprons, Chef Hats, Nutra Clear that
+          // had inventoryOnly:true in old versions but no longer should
+          if (!def.inventoryOnly && merged.inventoryOnly) {
+            delete merged.inventoryOnly;
+          }
+          return merged;
         });
       }
     }
+    // Push cleaned catalog back to localStorage and Firebase so stale inventoryOnly flags are gone
+    saveCatalog();
   }
 
   const brk = lsGet('bartletts-breakage-v1');
@@ -3819,8 +3849,9 @@ function openHistoryEditCounts(recId) {
   // Working copy of item data
   const edits = triItems.map(it => ({
     name: it.name,
-    begin: it.begin ?? '',
-    onHand: it.onHand ?? '',
+    begin: String(it.begin ?? ''),
+    add: String(it.add ?? ''),
+    onHand: String(it.onHand ?? ''),
     inventoryOnly: !!it.inventoryOnly,
     unitCost: it.unitCost ?? 0,
     par: it.par,
@@ -3863,24 +3894,36 @@ function openHistoryEditCounts(recId) {
     const usageDisplay = e.usage !== '' ? (e.usage > 0 ? '-'+e.usage : '0') : '\u2014';
     const orderColor = e.orderQty > 0 ? '#fbbf24' : '#48484a';
     const orderDisplay = e.orderQty > 0 ? '+'+e.orderQty+'cs' : (e.onHand !== '' ? '\u2713' : '\u2014');
-    const orderCol = e.inventoryOnly ? '' :
-      '<div style="flex:1;text-align:center;">'
-      + '<div style="font-family:ui-monospace,monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;margin-bottom:4px;">ORDER</div>'
-      + '<div style="height:38px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:'+orderColor+';">'+orderDisplay+'</div>'
+    const orderCol = e.inventoryOnly ? '<div></div>' :
+      '<div style="text-align:center;">'
+      + '<div style="font-family:ui-monospace,monospace;font-size:9px;color:#fbbf24;letter-spacing:1px;margin-bottom:3px;">ORDER</div>'
+      + '<div style="height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:'+orderColor+';">'+orderDisplay+'</div>'
       + '</div>';
     const brkgLine = e.brkgCost > 0
       ? '<div style="margin-top:5px;font-size:10px;color:#f87171;">loss: $'+e.brkgCost+'</div>' : '';
     const invOnly = e.inventoryOnly ? '<span style="font-size:9px;color:#6b7280;font-style:italic;margin-left:6px;">count only</span>' : '';
-    return '<div style="padding:12px 16px;border-bottom:1px solid #1c1c1e;'+rowBg+'">'
-      + '<div style="font-size:14px;color:#e5e5e7;font-weight:600;margin-bottom:8px;">'+e.name+invOnly+'</div>'
-      + '<div style="display:flex;gap:10px;align-items:flex-end;">'
-      + '<div style="flex:1;"><div style="font-size:9px;color:#7c3aed;letter-spacing:1px;margin-bottom:4px;">BEGIN</div>'
-      + '<input type="number" inputmode="numeric" value="'+e.begin+'" onchange="histEditChange('+i+',\'begin\',this.value)" style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3b0764;background:#1c1c1e;color:#c084fc;font-size:15px;font-weight:700;text-align:center;padding:0 8px;"></div>'
-      + '<div style="flex:1;"><div style="font-size:9px;color:#e5e5e7;letter-spacing:1px;margin-bottom:4px;">COUNT</div>'
-      + '<input type="number" inputmode="numeric" value="'+e.onHand+'" onchange="histEditChange('+i+',\'onHand\',this.value)" style="width:100%;height:38px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#e5e5e7;font-size:15px;font-weight:700;text-align:center;padding:0 8px;"></div>'
-      + '<div style="flex:1;text-align:center;"><div style="font-size:9px;color:#f87171;letter-spacing:1px;margin-bottom:4px;">USED</div>'
-      + '<div style="height:38px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:'+usageColor+';">'+usageDisplay+'</div></div>'
-      + orderCol + '</div>' + brkgLine + '</div>';
+    const addV2 = e.add !== '' ? parseFloat(e.add) : null;
+    const begV2 = parseFloat(e.begin);
+    const startV2 = !isNaN(begV2) && addV2 !== null ? begV2 + addV2 : (!isNaN(begV2) ? begV2 : null);
+    const startDisplay = startV2 !== null ? String(startV2) : '—';
+    const startColor = startV2 !== null ? '#60a5fa' : '#636366';
+    return '<div style="padding:10px 16px;border-bottom:1px solid #1c1c1e;'+rowBg+'">'
+      + '<div style="font-size:13px;color:#e5e5e7;font-weight:600;margin-bottom:7px;">'+e.name+invOnly+'</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:6px;">'
+      + '<div><div style="font-size:9px;color:#7c3aed;letter-spacing:1px;margin-bottom:3px;">BEGIN</div>'
+      + '<input type="number" inputmode="numeric" value="'+e.begin+'" onchange="histEditChange('+i+',\'begin\',this.value)" style="width:100%;height:36px;border-radius:8px;border:1.5px solid #3b0764;background:#1c1c1e;color:#c084fc;font-size:14px;font-weight:700;text-align:center;padding:0 4px;-webkit-appearance:none;"></div>'
+      + '<div><div style="font-size:9px;color:#4ade80;letter-spacing:1px;margin-bottom:3px;">ADD</div>'
+      + '<input type="number" inputmode="numeric" value="'+e.add+'" onchange="histEditChange('+i+',\'add\',this.value)" style="width:100%;height:36px;border-radius:8px;border:1.5px solid #14532d;background:#1c1c1e;color:#4ade80;font-size:14px;font-weight:700;text-align:center;padding:0 4px;-webkit-appearance:none;"></div>'
+      + '<div><div style="font-size:9px;color:#60a5fa;letter-spacing:1px;margin-bottom:3px;">START</div>'
+      + '<div style="height:36px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:'+startColor+';">'+startDisplay+'</div></div>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;">'
+      + '<div><div style="font-size:9px;color:#e5e5e7;letter-spacing:1px;margin-bottom:3px;">COUNT</div>'
+      + '<input type="number" inputmode="numeric" value="'+e.onHand+'" onchange="histEditChange('+i+',\'onHand\',this.value)" style="width:100%;height:36px;border-radius:8px;border:1.5px solid #3a3a3c;background:#1c1c1e;color:#e5e5e7;font-size:14px;font-weight:700;text-align:center;padding:0 4px;-webkit-appearance:none;"></div>'
+      + '<div style="text-align:center;"><div style="font-size:9px;color:#f87171;letter-spacing:1px;margin-bottom:3px;">USED</div>'
+      + '<div style="height:36px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:'+usageColor+';">'+usageDisplay+'</div></div>'
+      + orderCol
+      + '</div>' + brkgLine + '</div>';
   }).join('');
 
     overlay.innerHTML = `
@@ -3933,6 +3976,7 @@ window.saveHistoryEditCounts = function(recId) {
     name: e.name, pack: e.pack, par: e.par,
     onHand: e.onHand,
     begin: e.begin,
+    ...(e.add !== '' ? {add: e.add} : {}),
     usage: e.usage,
     brkgCost: e.brkgCost,
     orderQty: e.orderQty,
@@ -4273,6 +4317,7 @@ function renderDetail(rec) {
       }
       _vals.appendChild(_makeValCol('ON HAND', item.onHand || '—'));
       if (item.begin) _vals.appendChild(_makeValCol('BEGIN', item.begin, 'color:#a78bfa'));
+      if (item.add && item.add !== '' && item.add !== '0') _vals.appendChild(_makeValCol('ADD', '+'+item.add, 'color:#4ade80'));
       if (item.usage !== undefined && item.usage !== '') {
         const uN = parseFloat(item.usage);
         _vals.appendChild(_makeValCol('USED', uN > 0 ? '-'+item.usage : '+'+Math.abs(uN), 'color:'+(uN>0?'#f87171':'#4ade80')));
@@ -7378,7 +7423,7 @@ function showWhatsNew() {
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
         <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:16px;font-weight:700;color:#f2f2f7;">What&#39;s New</div>
-        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.76</div>
+        <div style="background:#ef4444;color:#fff;font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;">v1.78</div>
       </div>
       <div style="font-family:ui-monospace,'SF Mono','Courier New',monospace;font-size:10px;color:#48484a;margin-bottom:20px;letter-spacing:0.5px;">April 2026 · Bartlett&#39;s Order Management — v1.67</div>
 
@@ -8426,6 +8471,7 @@ function forceSyncFromFirebase() {
                   const def = defaultItems.find(d => d.id === storedItem.id || d.name === storedItem.name) || {};
                   const merged = { ...def, ...storedItem };
                   if (def.itemNum && !merged.itemNum) merged.itemNum = def.itemNum;
+                  if (!def.inventoryOnly && merged.inventoryOnly) delete merged.inventoryOnly;
                   return merged;
                 });
               }
