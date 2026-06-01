@@ -1905,8 +1905,20 @@ function startFirebaseListeners() {
       // Always apply on very first load — restores data after localStorage clear / PWA reinstall
       // After that, respect fbIgnoreRemote to avoid echo loops
       if (!_trimarkBeginFirstLoad && fbIgnoreRemote) return;
-      _trimarkBeginFirstLoad = false;
       const data = snap.val();
+      const incomingCount = (data && typeof data === 'object') ? Object.keys(data).length : 0;
+      const localCount = Object.keys(state.trimarkBegin || {}).length;
+      // GUARD: never let an empty/missing remote wipe a populated local BEGIN.
+      // An empty {} only legitimately occurs on a brand-new install (localCount===0).
+      // A populated local + empty remote means a stray reset/echo — reject it,
+      // and re-push our good data so Firebase self-heals.
+      if (incomingCount === 0 && localCount > 0) {
+        console.warn('[trimarkBegin] rejected empty remote overwrite; re-pushing local', localCount, 'items');
+        _trimarkBeginFirstLoad = false;
+        saveTrimarkBegin();
+        return;
+      }
+      _trimarkBeginFirstLoad = false;
       if (data && typeof data === 'object') {
         state.trimarkBegin = data;
         lsSet('bartletts-trimark-begin-v1', data);
@@ -2170,6 +2182,13 @@ function saveBreakage() {
 
 function saveTrimarkBegin() {
   lsSet('bartletts-trimark-begin-v1', state.trimarkBegin);
+  const count = Object.keys(state.trimarkBegin || {}).length;
+  // GUARD: don't push an empty {} unless it's an explicit, intended clear.
+  // An accidental empty write here is what was wiping next month's BEGIN.
+  if (count === 0 && !state._allowEmptyBeginWrite) {
+    console.warn('[saveTrimarkBegin] skipped empty write (no items). Set state._allowEmptyBeginWrite=true to force.');
+    return;
+  }
   fbWrite('trimarkBegin', state.trimarkBegin);
 }
 
@@ -3022,14 +3041,14 @@ function renderTrimarkInventory(listEl, sup) {
     const endVal = parseFloat(endRaw);
     const hasBeg = begRaw !== undefined && begRaw !== '';
     const hasEnd = endRaw !== '';
-    const usage = (startVal !== null && hasEnd && !isNaN(endVal)) ? startVal - endVal : null;
-    const usagePos = usage; // allow negative (gain) — no clamp
-    const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
     const parVal = parseFloat(item.par) || 0;
     const _caseQtyRow = item.caseQty || 1;
     const addRaw = state.trimarkAdd[item.id] ?? '';
     const addVal = addRaw !== '' ? parseFloat(addRaw) : null;
     const startVal = hasBeg && addVal !== null ? (begVal + addVal) : (hasBeg ? begVal : null);
+    const usage = (startVal !== null && hasEnd && !isNaN(endVal)) ? startVal - endVal : null;
+    const usagePos = usage; // allow negative (gain) — no clamp
+    const brkgCost = usagePos !== null && usagePos > 0 ? usagePos * (item.unitCost || 0) : null;
     const neededPcs = hasEnd && !isNaN(endVal) ? Math.max(0, parVal - endVal) : null;
     const orderQty = neededPcs !== null ? Math.ceil(neededPcs / _caseQtyRow) : null;
     const orderLabel = orderQty !== null && orderQty > 0 ? ('+'+orderQty+(_caseQtyRow > 1 ? 'cs' : '')) : null;
