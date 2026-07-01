@@ -576,12 +576,24 @@ function migrateFromV1(old){
   if(Array.isArray(old.history) && !state.history.length){
     const flat=[];
     for(const rec of old.history){
-      if(rec.items && rec.supplier){ flat.push(rec); continue; }
+      // Reformat whatever date shape the old record has into a readable string.
+      // Old app stored raw ISO strings (new Date().toISOString()); render those
+      // the same way we render every other date so History reads consistently.
+      const tsVal = rec.ts || Date.parse(rec.date);
+      const niceDate = !isNaN(tsVal)
+        ? new Date(tsVal).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        : (rec.date || 'Unknown date');
+
+      if(rec.items && rec.supplier){
+        flat.push({...rec, date:niceDate, ts: rec.ts || tsVal || Date.now()});
+        continue;
+      }
       const supps = rec.suppliers||{};
       for(const sn of Object.keys(supps)){
         const items=(supps[sn]||[]).map(i=>({id:i.id,name:i.name,itemNum:i.itemNum||'',
-          orderQty:+i.orderQty||0, unitCost:i.unitCost, count:i.count, used:i.used}));
-        flat.push({date:rec.date, ts:new Date(rec.date).getTime()||Date.now(),
+          orderQty:+i.orderQty||0, unitCost:i.unitCost, count:i.count, used:i.used,
+          onHand: i.onHand!=null && i.onHand!=='' ? +i.onHand : null}));
+        flat.push({date:niceDate, ts: tsVal || Date.now(),
           supplier:sn, type:rec.type|| (sn==='TRIMARK'?'inventory':'order'), items});
       }
     }
@@ -924,7 +936,7 @@ function topBar(){
     : s.tab==='help' ? 'Help' : "Bartlett's";
   return `<div class="topbar">
     <div><h1>${esc(title)}</h1><div class="sub">Bartlett's — Austin, TX</div></div>
-    <div id="sync" class="sync-badge offline"><span class="sync-dot"></span><span>offline</span></div>
+    <button id="sync" class="sync-badge offline" onclick="showSyncDetail()"><span class="sync-dot"></span><span>offline</span></button>
   </div>`;
 }
 
@@ -1136,8 +1148,10 @@ function historyView(){
   </div>`;
   return state.history.map((h,idx)=>{
     const n = (h.items||[]).filter(i=>(+i.orderQty||0)>0).length;
+    const counted = (h.items||[]).filter(i=>i.onHand!=null||i.count!=null).length;
+    const label = n>0 ? `${n} item${n!==1?'s':''}` : (counted>0 ? `${counted} counted` : '0 items');
     return `<div class="hist-card" onclick="openRecord(${idx})">
-      <span class="cnt">${n} item${n!==1?'s':''}</span>
+      <span class="cnt">${label}</span>
       <div class="date">${esc(h.date)}</div>
       <div class="sup">${esc(h.supplier)} · ${esc(h.type||'order')}</div>
     </div>`;
@@ -1792,12 +1806,16 @@ function helpView(){
      note('Why save orders?','COGS only counts saved orders. Tap "Save order to history" after you send.','low'))}
 
   ${helpSection('trouble','🔧 Troubleshooting',
-     li(['<b>"offline" badge:</b> data is safe on the device, uploads when reconnected.',
+     li(['<b>"offline" badge:</b> data is safe on the device, uploads when reconnected. Tap the badge for details.',
          '<b>Row looks uncounted:</b> make sure you tapped "Save count".',
          '<b>Devices differ:</b> wait a few seconds; both must be online.',
          '<b>Item missing:</b> Edit items → ＋ Add item.',
          '<b>COGS looks low:</b> set prices and save your orders.',
-         '<b>Firewood/uniform asks for info:</b> that\'s the one-time setup.']))}
+         '<b>Firewood/uniform asks for info:</b> that\'s the one-time setup.',
+         '<b>History shows raw dates or looks wrong:</b> tap "Repair History" below.']) +
+     `<button class="btn ghost" style="margin-top:10px;color:var(--crit)" onclick="repairFromBackup()">⚠ Repair History from backup</button>
+      <div class="sched">Only use this if History looks broken (e.g. dates like "2026-02-25T17:08...").
+      It re-imports from the safety backup made during your last sync — it won't lose anything that isn't already broken.</div>`)}
 
   <div class="sched" style="text-align:center;margin-top:16px">Bartlett's Order & Inventory · v2</div>`;
 }
@@ -2079,16 +2097,21 @@ function saveInventory(){
 
 function openRecord(idx){
   const h=state.history[idx]; if(!h) return;
-  const rows=(h.items||[]).filter(i=>(+i.orderQty||0)>0||i.count!=null).map(i=>{
-    const detail = h.type==='inventory'
-      ? `count ${i.count??'—'} · used ${i.used??'—'} · order ${i.orderQty}`
-      : `qty ${i.orderQty}`;
+  const rows=(h.items||[]).filter(i=>(+i.orderQty||0)>0||i.count!=null||i.onHand!=null).map(i=>{
+    const parts=[];
+    if(i.count!=null) parts.push(`count ${i.count}`);
+    if(i.used!=null) parts.push(`used ${i.used}`);
+    if((+i.orderQty||0)>0) parts.push(`order ${i.orderQty}`);
+    if(i.onHand!=null && i.count==null) parts.push(`on hand ${i.onHand}`);
+    const detail = parts.length ? parts.join(' · ') : 'no quantity recorded';
     return `<div class="item"><div class="item-main">
       <div class="item-name">${esc(i.name)}</div>
       <div class="item-meta">${detail}</div></div></div>`;
   }).join('');
+  const nothingOrdered = !rows;
   modal(`<h2>${esc(h.supplier)} — ${esc(h.type)}</h2>
-    <div class="sched">${esc(h.date)}</div>${rows||'<div class="empty">No items.</div>'}
+    <div class="sched">${esc(h.date)}</div>${rows||
+      '<div class="empty">No quantities were recorded on this save — likely a count with nothing entered, or an order sent with 0 items.</div>'}
     ${h.type==='order'?`<button class="btn" onclick="resendRecord(${idx})">↻ Re-send this order</button>`:''}
     <button class="btn ghost" onclick="deleteRecord(${idx})">🗑 Delete record</button>`);
 }
@@ -2212,32 +2235,46 @@ const FB_CONFIG = {
   messagingSenderId:"347944384568",
   appId:"1:347944384568:web:dc4417a68cc15d246d0ecd"
 };
-function setSync(status){
+let _lastSyncError = '';
+function setSync(status, detail){
   const el=$('sync'); if(!el) return;
   el.className='sync-badge '+status;
   el.querySelector('span:last-child').textContent=status;
+  if(detail) _lastSyncError = detail;
+}
+function showSyncDetail(){
+  const status = $('sync')?.className.replace('sync-badge ','').trim();
+  const lines = [`Status: ${status}`];
+  if(_lastSyncError) lines.push(`Detail: ${_lastSyncError}`);
+  lines.push('', status==='synced'
+    ? 'Connected. Changes save instantly and sync across devices.'
+    : status==='syncing'
+      ? 'Connecting…'
+      : 'Not connected. Your work is still saved on this device — it will sync automatically once connected. If this persists, check wifi, or that Firebase rules allow this app to read/write.');
+  modal(`<h2>Sync status</h2><div class="sched" style="white-space:pre-line;font-size:14px">${esc(lines.join('\n'))}</div>
+    <button class="btn ghost" onclick="closeModal()">Close</button>`);
 }
 function initFirebase(){
-  if(typeof firebase==='undefined'){ setTimeout(initFirebase,1500); return; }
+  if(typeof firebase==='undefined'){ setSync('error','Firebase SDK failed to load (check network/ad-blockers)'); setTimeout(initFirebase,1500); return; }
   try{
     if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
     fbDb=firebase.database();
     setSync('syncing');
     firebase.auth().signInAnonymously()
       .then(startListeners)
-      .catch(e=>{ console.warn('auth',e); setSync('error'); });
-  }catch(e){ console.warn('fb init',e); setSync('error'); }
+      .catch(e=>{ console.warn('auth',e); setSync('error', 'Auth failed: '+(e.code||e.message||e)); });
+  }catch(e){ console.warn('fb init',e); setSync('error', 'Init failed: '+(e.message||e)); }
 }
 function startListeners(){
-  setSync('synced');
-  // One-time migration: if v2 has no history yet, try reading old v1 paths.
+  // Don't claim 'synced' yet — wait for the real .info/connected signal below.
+  setSync('syncing', 'Authenticated, waiting for connection…');
   maybeMigrate();
   const bind=(path, apply)=>{
     fbDb.ref(path).on('value', snap=>{
-      if(isEchoing(path)) return;          // ignore our own just-written echo
+      if(isEchoing(path)) return;
       const val=snap.val(); if(val==null) return;
       apply(val); lsSet(path, val); render();
-    });
+    }, err=>{ console.warn('listener error', path, err); setSync('error', `Read denied on "${path}": ${err.message||err}`); });
   };
   bind('deletedIds', v=>{ state.deletedIds=v; });
   bind('locations', v=>{ if(Array.isArray(v)&&v.length) state.locations=v; });
@@ -2249,7 +2286,9 @@ function startListeners(){
   bind('learning', v=>{ state.learning=v; });
   bind('history',  v=>{ if(Array.isArray(v)) state.history=v;
                         else if(v&&typeof v==='object') state.history=Object.values(v); });
-  fbDb.ref('.info/connected').on('value', s=> setSync(s.val()?'synced':'offline'));
+  fbDb.ref('.info/connected').on('value', s=>{
+    setSync(s.val()?'synced':'offline', s.val()?'':'Realtime connection dropped or never established.');
+  });
 }
 
 // Read old v1 paths ONCE and migrate into v2 shapes — only if v2 is empty.
@@ -2277,6 +2316,47 @@ function maybeMigrate(){
       lsSet('migrated-v1-to-v2', true);
       render();
     });
+}
+
+// Manual repair: re-run migration from the pre-migration backup we saved.
+// Use this if the FIRST migration produced bad data (e.g. unformatted raw-ISO
+// dates from an earlier version of this app) — it restores the untouched
+// backup and re-converts it with the current (fixed) migration logic.
+function repairFromBackup(){
+  if(!fbDb){ toast('Not connected — try again once synced','warn'); return; }
+  confirmModal('This checks for broken dates in your History and fixes them.\n\nIf a backup from your last sync exists, it re-imports from that. Otherwise it repairs the records currently loaded.', ()=>{
+    fbDb.ref('backup-pre-v2-migration').once('value').then(snap=>{
+      const old = snap.val();
+      if(old){
+        state.history = []; state.trimark = {}; state.cog = {sales:{},manual:{}}; state.learning = {};
+        const did = migrateFromV1(old);
+        if(did){
+          ['catalog','history','trimark','cog','learning'].forEach(k=>persist(k));
+          toast('Repaired from backup','ok');
+        } else {
+          toast('Backup was empty — nothing to restore','warn');
+        }
+        render();
+        return;
+      }
+      // No backup exists (e.g. it predates this repair tool) — fix in place:
+      // reformat any raw-ISO-string dates on the records already loaded.
+      let fixed = 0;
+      state.history = state.history.map(rec=>{
+        if(/^\d{4}-\d{2}-\d{2}T/.test(rec.date)){
+          const t = rec.ts || Date.parse(rec.date);
+          fixed++;
+          return {...rec, date: !isNaN(t)
+            ? new Date(t).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+            : rec.date};
+        }
+        return rec;
+      });
+      if(fixed){ persist('history'); toast(`Fixed ${fixed} record date${fixed!==1?'s':''}`,'ok'); }
+      else toast('No broken dates found — nothing to fix','ok');
+      render();
+    }).catch(e=>{ toast('Could not reach backup: '+(e.message||e),'warn'); });
+  }, 'Repair now');
 }
 
 /* ═══════════════════════════════════════════════════════════════════
