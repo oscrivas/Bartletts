@@ -472,6 +472,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
+const APP_VERSION = 'v2.1 — build 2026-07-01c';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -1817,7 +1818,7 @@ function helpView(){
       <div class="sched">Only use this if History looks broken (e.g. dates like "2026-02-25T17:08...").
       It re-imports from the safety backup made during your last sync — it won't lose anything that isn't already broken.</div>`)}
 
-  <div class="sched" style="text-align:center;margin-top:16px">Bartlett's Order & Inventory · v2</div>`;
+  <div class="sched" style="text-align:center;margin-top:16px">Bartlett's Order & Inventory · ${APP_VERSION}</div>`;
 }
 /* ═══════════════════════════════════════════════════════════════════
    5. ACTIONS  (all UI event handlers)
@@ -2244,7 +2245,7 @@ function setSync(status, detail){
 }
 function showSyncDetail(){
   const status = $('sync')?.className.replace('sync-badge ','').trim();
-  const lines = [`Status: ${status}`];
+  const lines = [`Build: ${APP_VERSION}`, `Status: ${status}`];
   if(_lastSyncError) lines.push(`Detail: ${_lastSyncError}`);
   lines.push('', status==='synced'
     ? 'Connected. Changes save instantly and sync across devices.'
@@ -2252,7 +2253,20 @@ function showSyncDetail(){
       ? 'Connecting…'
       : 'Not connected. Your work is still saved on this device — it will sync automatically once connected. If this persists, check wifi, or that Firebase rules allow this app to read/write.');
   modal(`<h2>Sync status</h2><div class="sched" style="white-space:pre-line;font-size:14px">${esc(lines.join('\n'))}</div>
+    ${status!=='synced' ? `<button class="btn" onclick="retryConnection()">↻ Retry connection</button>` : ''}
     <button class="btn ghost" onclick="closeModal()">Close</button>`);
+}
+// Force a fresh connection attempt: tear the socket down and bring it back up.
+// Useful on flaky wifi or after a captive-portal/network change without reloading.
+function retryConnection(){
+  closeModal();
+  if(!fbDb){ initFirebase(); toast('Reinitializing…','ok'); return; }
+  try{
+    setSync('syncing','Retrying connection…');
+    firebase.database().goOffline();
+    setTimeout(()=>{ firebase.database().goOnline(); }, 400);
+    toast('Retrying connection…','ok');
+  }catch(e){ setSync('error','Retry failed: '+(e.message||e)); }
 }
 function initFirebase(){
   if(typeof firebase==='undefined'){ setSync('error','Firebase SDK failed to load (check network/ad-blockers)'); setTimeout(initFirebase,1500); return; }
