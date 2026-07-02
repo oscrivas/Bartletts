@@ -165,8 +165,10 @@ h1,h2,h3{font-family:'Fjalla One','Arial Narrow',-apple-system,sans-serif;
   overflow-y:auto;border-radius:20px 20px 0 0;padding:22px 18px 30px;
   border:1px solid var(--line);box-shadow:var(--shadow-pop);position:relative}
 .sheet h2{margin:0 0 4px;font-size:21px;color:var(--paper)}
-.sheet .close{position:absolute;top:14px;right:16px;font-size:26px;color:var(--dim);
-  width:32px;height:32px;display:flex;align-items:center;justify-content:center}
+.sheet .close{position:sticky;top:0;float:right;font-size:22px;color:var(--txt);
+  width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:50%;
+  z-index:6;margin:-4px -4px 0 10px}
 
 /* ── Inventory count grid ── */
 .inv-head{display:grid;grid-template-columns:1fr 46px 46px 52px 52px;gap:6px;
@@ -472,7 +474,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-07-01c';
+const APP_VERSION = 'v2.1 — build 2026-07-02b';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -543,9 +545,14 @@ function persist(key){
 
 /* Firebase handle set later; no-op until connected. */
 let fbDb = null;
+let _lastSyncEvidence = 0;   // last server ack or snapshot — proof sync works
 function pushRemote(path, val){
   if(!fbDb) return;
-  try{ fbDb.ref(path).set(val); }catch(e){ console.warn('push fail', path, e); }
+  try{
+    fbDb.ref(path).set(val)
+      .then(()=>{ _lastSyncEvidence=Date.now(); setSync('synced'); })
+      .catch(e=>{ console.warn('push fail', path, e); setSync('error','Write denied on "'+path+'": '+(e.message||e)); });
+  }catch(e){ console.warn('push fail', path, e); }
 }
 
 /* ── Load everything from localStorage on boot ── */
@@ -937,7 +944,7 @@ function topBar(){
     : s.tab==='help' ? 'Help' : "Bartlett's";
   return `<div class="topbar">
     <div><h1>${esc(title)}</h1><div class="sub">Bartlett's — Austin, TX</div></div>
-    <button id="sync" class="sync-badge offline" onclick="showSyncDetail()"><span class="sync-dot"></span><span>offline</span></button>
+    <button id="sync" class="sync-badge ${_syncStatus}" onclick="showSyncDetail()"><span class="sync-dot"></span><span>${_syncStatus}</span></button>
   </div>`;
 }
 
@@ -1454,6 +1461,7 @@ function exportReportPdf(){
     <h1>Bartlett's — Order &amp; Inventory Report</h1>
     <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} items · ${data.recordCount} records</div>
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
+    <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
     ${breakageSummaryHtml}
     <table><thead><tr><th>Item</th><th>Supplier</th><th>Type</th><th>Qty</th><th>Cost</th><th>Breakage</th>
       ${_repMode==='yoy'?'<th>Last yr</th><th>Change</th>':''}</tr></thead>
@@ -1806,6 +1814,18 @@ function helpView(){
          'Enter monthly Sales on the COGS tab.']) +
      note('Why save orders?','COGS only counts saved orders. Tap "Save order to history" after you send.','low'))}
 
+  ${helpSection('security','🔒 Security',
+     `The Firebase config in this app (including the API key) is <b>meant to be public</b> — every
+      Firebase web app ships it to the browser. It identifies the project; it doesn't grant access.
+      What actually protects your data is <b>database rules + sign-in</b>.` +
+     `<br><br>${b('Recommended one-time hardening:')}` +
+     li(['In Firebase console → Authentication → Sign-in method: enable Email/Password. Then Users → Add user (your email + a strong password).',
+         'In Firebase console → Realtime Database → Rules, paste:<br><code style="font-size:11px;display:block;background:var(--panel2);padding:8px;border-radius:6px;margin-top:4px">{ "rules": { ".read": "auth.token.email === \'YOUR-EMAIL-HERE\'", ".write": "auth.token.email === \'YOUR-EMAIL-HERE\'" } }</code>',
+         'Then tap the button below and sign in once per device. The session is remembered.',
+         'In Google Cloud console → Credentials → your API key → Application restrictions: HTTP referrers → add <b>oscrivas.github.io/*</b>.']) +
+     `<button class="btn ghost" onclick="enableAccountAuth()">🔒 Switch this device to account sign-in</button>
+      <div class="sched">Until you do this, the app uses anonymous sign-in (current behavior). Do the console steps FIRST or the app will lose access when rules tighten.</div>`)}
+
   ${helpSection('trouble','🔧 Troubleshooting',
      li(['<b>"offline" badge:</b> data is safe on the device, uploads when reconnected. Tap the badge for details.',
          '<b>Row looks uncounted:</b> make sure you tapped "Save count".',
@@ -2113,8 +2133,10 @@ function openRecord(idx){
   modal(`<h2>${esc(h.supplier)} — ${esc(h.type)}</h2>
     <div class="sched">${esc(h.date)}</div>${rows||
       '<div class="empty">No quantities were recorded on this save — likely a count with nothing entered, or an order sent with 0 items.</div>'}
-    ${h.type==='order'?`<button class="btn" onclick="resendRecord(${idx})">↻ Re-send this order</button>`:''}
-    <button class="btn ghost" onclick="deleteRecord(${idx})">🗑 Delete record</button>`);
+    <div class="save-bar"><div class="btn-row">
+      ${h.type==='order'?`<button class="btn" onclick="resendRecord(${idx})">↻ Re-send</button>`:''}
+      <button class="btn ghost" style="color:var(--crit)" onclick="deleteRecord(${idx})">🗑 Delete</button>
+    </div></div>`);
 }
 function deleteRecord(idx){
   confirmModal('Delete this record permanently?', ()=>{
@@ -2237,15 +2259,21 @@ const FB_CONFIG = {
   appId:"1:347944384568:web:dc4417a68cc15d246d0ecd"
 };
 let _lastSyncError = '';
+let _syncStatus = 'offline';   // survives render() — the badge is drawn from this
 function setSync(status, detail){
+  _syncStatus = status;
+  if(detail) _lastSyncError = detail;
   const el=$('sync'); if(!el) return;
   el.className='sync-badge '+status;
   el.querySelector('span:last-child').textContent=status;
-  if(detail) _lastSyncError = detail;
 }
 function showSyncDetail(){
-  const status = $('sync')?.className.replace('sync-badge ','').trim();
+  const status = _syncStatus;
   const lines = [`Build: ${APP_VERSION}`, `Status: ${status}`];
+  if(_lastSyncEvidence){
+    const ago = Math.round((Date.now()-_lastSyncEvidence)/1000);
+    lines.push(`Last confirmed sync: ${ago<60?ago+'s':Math.round(ago/60)+'m'} ago`);
+  }
   if(_lastSyncError) lines.push(`Detail: ${_lastSyncError}`);
   lines.push('', status==='synced'
     ? 'Connected. Changes save instantly and sync across devices.'
@@ -2253,7 +2281,8 @@ function showSyncDetail(){
       ? 'Connecting…'
       : 'Not connected. Your work is still saved on this device — it will sync automatically once connected. If this persists, check wifi, or that Firebase rules allow this app to read/write.');
   modal(`<h2>Sync status</h2><div class="sched" style="white-space:pre-line;font-size:14px">${esc(lines.join('\n'))}</div>
-    ${status!=='synced' ? `<button class="btn" onclick="retryConnection()">↻ Retry connection</button>` : ''}
+    ${status!=='synced' && lsGet('accountAuth') ? `<button class="btn" onclick="openLoginSheet()">Sign in</button>` : ''}
+    ${status!=='synced' ? `<button class="btn${lsGet('accountAuth')?' ghost':''}" onclick="retryConnection()">↻ Retry connection</button>` : ''}
     <button class="btn ghost" onclick="closeModal()">Close</button>`);
 }
 // Force a fresh connection attempt: tear the socket down and bring it back up.
@@ -2268,16 +2297,64 @@ function retryConnection(){
     toast('Retrying connection…','ok');
   }catch(e){ setSync('error','Retry failed: '+(e.message||e)); }
 }
+let _listenersStarted = false;
 function initFirebase(){
   if(typeof firebase==='undefined'){ setSync('error','Firebase SDK failed to load (check network/ad-blockers)'); setTimeout(initFirebase,1500); return; }
   try{
     if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
     fbDb=firebase.database();
     setSync('syncing');
-    firebase.auth().signInAnonymously()
-      .then(startListeners)
-      .catch(e=>{ console.warn('auth',e); setSync('error', 'Auth failed: '+(e.code||e.message||e)); });
-  }catch(e){ console.warn('fb init',e); setSync('error', 'Init failed: '+(e.message||e)); }
+    // Session-first: Firebase persists sign-ins across loads. If a user session
+    // exists (account OR anonymous), use it. Otherwise: account-mode devices
+    // wait for sign-in; default devices sign in anonymously (original behavior).
+    firebase.auth().onAuthStateChanged(user=>{
+      if(user){
+        if(!_listenersStarted){ _listenersStarted=true; startListeners(); }
+        return;
+      }
+      _listenersStarted=false;
+      if(lsGet('accountAuth')){
+        setSync('error','Signed out — tap this badge to sign in');
+      } else {
+        firebase.auth().signInAnonymously()
+          .catch(e=>{ console.warn('auth',e); setSync('error','Auth failed: '+(e.code||e.message||e)); });
+      }
+    });
+  }catch(e){ console.warn('fb init',e); setSync('error','Init failed: '+(e.message||e)); }
+}
+
+/* ── Account sign-in (optional security upgrade over anonymous auth) ── */
+function openLoginSheet(){
+  modal(`<h2>Sign in</h2>
+    <div class="sched">One-time sign-in for this device. The session is remembered — no password is stored by the app.</div>
+    <label class="fl">Email</label>
+    <input class="field" type="email" id="login-email" autocomplete="username">
+    <label class="fl">Password</label>
+    <input class="field" type="password" id="login-pass" autocomplete="current-password">
+    <button class="btn" onclick="doLogin()">Sign in</button>
+    ${lsGet('accountAuth')?`<button class="btn ghost" onclick="disableAccountAuth()">Switch back to anonymous mode</button>`:''}`);
+}
+function doLogin(){
+  const email=($('login-email')?.value||'').trim(), pass=$('login-pass')?.value||'';
+  if(!email || !pass){ toast('Enter email and password','warn'); return; }
+  if(typeof firebase==='undefined'){ toast('Still loading — try again in a moment','warn'); return; }
+  setSync('syncing','Signing in…');
+  firebase.auth().signInWithEmailAndPassword(email, pass)
+    .then(()=>{ lsSet('accountAuth', true); closeModal(); toast('Signed in','ok'); })
+    .catch(e=>{ setSync('error','Sign-in failed: '+(e.code||e.message||e)); toast('Sign-in failed — check email/password','warn'); });
+}
+function enableAccountAuth(){
+  confirmModal('Switch this device to account sign-in?\n\nFirst create the account in Firebase console (Authentication → Add user) and update database rules — see the steps in Help → Security.', ()=>{
+    try{ if(typeof firebase!=='undefined') firebase.auth().signOut().catch(()=>{}); }catch(e){}
+    lsSet('accountAuth', true);
+    openLoginSheet();
+  }, 'Continue');
+}
+function disableAccountAuth(){
+  lsSet('accountAuth', false);
+  try{ if(typeof firebase!=='undefined') firebase.auth().signOut().catch(()=>{}); }catch(e){}
+  closeModal();
+  toast('Back to anonymous mode','ok');
 }
 function startListeners(){
   // Don't claim 'synced' yet — wait for the real .info/connected signal below.
@@ -2285,6 +2362,7 @@ function startListeners(){
   maybeMigrate();
   const bind=(path, apply)=>{
     fbDb.ref(path).on('value', snap=>{
+      _lastSyncEvidence=Date.now();          // receiving data = sync works
       if(isEchoing(path)) return;
       const val=snap.val(); if(val==null) return;
       apply(val); lsSet(path, val); render();
@@ -2301,7 +2379,11 @@ function startListeners(){
   bind('history',  v=>{ if(Array.isArray(v)) state.history=v;
                         else if(v&&typeof v==='object') state.history=Object.values(v); });
   fbDb.ref('.info/connected').on('value', s=>{
-    setSync(s.val()?'synced':'offline', s.val()?'':'Realtime connection dropped or never established.');
+    if(s.val()){ _lastSyncEvidence=Date.now(); setSync('synced'); return; }
+    // Socket reports down — but if writes/reads succeeded very recently, the
+    // socket is just flapping while data still flows. Don't cry wolf.
+    if(Date.now()-_lastSyncEvidence > 15000)
+      setSync('offline','Realtime connection dropped or never established.');
   });
 }
 
