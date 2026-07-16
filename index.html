@@ -112,6 +112,13 @@ h1,h2,h3{font-family:'Fjalla One','Arial Narrow',-apple-system,sans-serif;
 .item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent}
 .item.crit{border-color:#e14b4b55}.item.crit::before{background:var(--crit)}
 .item.low{border-color:#e8a33d55}.item.low::before{background:var(--low)}
+.item.skipped{opacity:.68}
+.item.skipped::before{background:var(--purple)}
+.skip-toggle{width:34px;height:40px;flex:0 0 auto;border-radius:9px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);font-size:16px;font-weight:700}
+.skip-toggle:active{background:var(--line);color:var(--txt)}
+.skip-pill{flex:1;min-width:0;background:#a78bd61f;color:var(--purple);border:1px solid #a78bd63d;
+  border-radius:9px;padding:10px 8px;font-weight:700;font-size:12.5px;text-align:center}
 .item-main{flex:1;min-width:0;padding-left:4px}
 .item-name{font-size:15px;font-weight:600;line-height:1.3;color:var(--paper)}
 .item-meta{font-family:'Roboto Mono',monospace;font-size:11px;color:var(--dim);
@@ -474,7 +481,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-07-02b';
+const APP_VERSION = 'v2.1 — build 2026-07-03a';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -485,6 +492,7 @@ const SYNC_KEYS = {
   history:   'history',    // array of saved order/inventory records
   cog:       'cog',        // COGS: {sales:{}, manual:{}}
   learning:  'learning',   // recorded order patterns (data only; prediction optional)
+  skipped:   'skipped',    // {itemId:true} "checked, no order needed" — clears on send
 };
 
 function defaultState(){
@@ -497,7 +505,7 @@ function defaultState(){
     tab:'order', activeSupp:'ABCO', editMode:false,
     catalog, deletedIds:{}, locations:['dock','closet','restaurant'],
     orderQty:{}, onHand:{}, trimark:{}, history:[],
-    cog:{sales:{}, manual:{}}, learning:{},
+    cog:{sales:{}, manual:{}}, learning:{}, skipped:{},
   };
 }
 
@@ -566,6 +574,7 @@ function loadLocal(){
   const h   = lsGet(SYNC_KEYS.history);   if(Array.isArray(h)) state.history = h;
   const cog = lsGet(SYNC_KEYS.cog);       if(cog) state.cog = {sales:{},manual:{},...cog};
   const lrn = lsGet(SYNC_KEYS.learning);  if(lrn) state.learning = lrn;
+  const sk  = lsGet(SYNC_KEYS.skipped);   if(sk)  state.skipped  = sk;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -993,7 +1002,8 @@ function orderView(){
     const qty = +state.orderQty[it.id]||0;
     const oh  = state.onHand[it.id];
     const st  = stockStatus(oh, it.par);
-    const cls = st==='crit'?' crit':st==='low'?' low':'';
+    const skipped = !edit && !!state.skipped[it.id];
+    const cls = (skipped?' skipped':'') + (st==='crit'?' crit':st==='low'?' low':'');
     const stamp = st==='crit' ? '<span class="stamp crit">Out</span>'
       : st==='low' ? '<span class="stamp low">Low</span>' : '';
     const meta = [
@@ -1005,7 +1015,10 @@ function orderView(){
 
     const right = edit
       ? `<button class="par-tag" style="padding:8px 12px" onclick="editItem('${sn}','${it.id}')">✎ Edit</button>`
-      : `<div class="stepper">
+      : skipped
+        ? `<button class="skip-pill" onclick="toggleSkip('${it.id}')">✓ Skipped — tap to recheck</button>`
+        : `<button class="skip-toggle" onclick="toggleSkip('${it.id}')" title="Checked, no order needed">✓</button>
+          <div class="stepper">
           <button onclick="bumpQty('${it.id}',-1)">−</button>
           <input class="qty${qty>0?' has':''}" inputmode="numeric" value="${qty||''}"
             placeholder="0" onchange="setQty('${it.id}',this.value)">
@@ -1764,9 +1777,13 @@ function helpView(){
      li(['Tap a supplier at the top (ABCO, BEK, Amazon, Electrical, Trimark).',
          'Set quantities with − / + or type in the box.',
          'Low items are amber, out-of-stock red.',
+         'Already checked an item and don\'t need to order it? Tap the ✓ next to it — it dims and shows "Skipped" so you don\'t have to re-decide next time you pass through.',
+         'Typing a quantity on a skipped item un-skips it automatically. Tap "✓ Skipped" again to undo by hand.',
          'Tap the send button at the bottom — the number shows how many items are on the order.',
          'Tap "Save order to history" to keep a record (this feeds COGS).']) +
-     `${b('How each sends:')} ABCO texts Hal · BEK downloads a CSV · Trimark/Amazon/Electrical open an email.`)}
+     `${b('How each sends:')} ABCO texts Hal · BEK downloads a CSV · Trimark/Amazon/Electrical open an email.` +
+     `<br><br>${b('When "Skipped" clears:')} the moment you actually send that supplier's order. Going back
+      and forth beforehand — closing the app, checking other suppliers, coming back — never resets it early.`)}
 
   ${helpSection('count','📦 Counting inventory',
      `Each item shows ${b('Begin')}, ${b('Add')}, ${b('Count')}, ${b('Order')}.` +
@@ -1850,12 +1867,14 @@ function setSupp(sn){ state.activeSupp=sn; render(); }
 /* ── Order quantity ── */
 function setQty(id,v){
   const n = Math.max(0, Math.floor(+v||0));
-  if(n>0) state.orderQty[id]=n; else delete state.orderQty[id];
+  if(n>0){ state.orderQty[id]=n; if(state.skipped[id]){ delete state.skipped[id]; persist('skipped'); } }
+  else delete state.orderQty[id];
   persist('orderQty'); render();
 }
 function bumpQty(id,d){
   const n = Math.max(0,(+state.orderQty[id]||0)+d);
-  if(n>0) state.orderQty[id]=n; else delete state.orderQty[id];
+  if(n>0){ state.orderQty[id]=n; if(state.skipped[id]){ delete state.skipped[id]; persist('skipped'); } }
+  else delete state.orderQty[id];
   persist('orderQty'); render();
 }
 function clearOrder(sn){
@@ -1863,6 +1882,29 @@ function clearOrder(sn){
     for(const it of state.catalog[sn].items) delete state.orderQty[it.id];
     persist('orderQty'); render(); toast('Order cleared');
   }, 'Clear order');
+}
+
+/* ── "Checked, no order needed" ─────────────────────────────────────
+   Marks an item reviewed-with-no-order so going back and forth on an
+   order doesn't mean re-deciding on the same item every pass. Shared
+   across devices. Auto-clears the moment ANY quantity is typed for that
+   item (setQty/bumpQty above), and clears for a whole supplier the
+   moment that supplier's order is actually sent (see sendOrder). ── */
+function toggleSkip(id){
+  if(state.skipped[id]) delete state.skipped[id];
+  else {
+    state.skipped[id]=true;
+    if(state.orderQty[id]!=null){ delete state.orderQty[id]; persist('orderQty'); }
+  }
+  persist('skipped'); render();
+}
+function clearSkipsForSupplier(sn){
+  let changed=false;
+  for(const it of state.catalog[sn].items){
+    if(state.skipped[it.id]){ delete state.skipped[it.id]; changed=true; }
+  }
+  if(changed) persist('skipped');
+  return changed;
 }
 
 /* ── COGS ── */
@@ -2153,7 +2195,8 @@ function resendRecord(idx){
    ═══════════════════════════════════════════════════════════════════ */
 function sendOrder(sn){
   let items;
-  if(sn==='TRIMARK' && state.tab==='inventory'){
+  const isTrimarkInventory = (sn==='TRIMARK' && state.tab==='inventory');
+  if(isTrimarkInventory){
     items = state.catalog['TRIMARK'].items.map(it=>{
       const t=state.trimark[it.id]||{}; const r=trimarkRow(t.begin,t.add,t.count,it.par,it.unitCost);
       return {name:it.name,itemNum:it.itemNum||'',orderQty:r.order||0};
@@ -2165,6 +2208,9 @@ function sendOrder(sn){
   }
   if(!items.length){ toast('No items with quantity to send','warn'); return; }
   _sendFromItems(sn, items);
+  // The order is genuinely going out now — items reviewed-and-skipped during
+  // this ordering pass are done their job; clear them so next time is fresh.
+  if(!isTrimarkInventory && clearSkipsForSupplier(sn)) render();
 }
 
 function _sendFromItems(sn, items){
@@ -2376,6 +2422,7 @@ function startListeners(){
   bind('trimark',  v=>{ state.trimark=v; });
   bind('cog',      v=>{ state.cog={sales:{},manual:{},...v}; });
   bind('learning', v=>{ state.learning=v; });
+  bind('skipped',  v=>{ state.skipped=v; });
   bind('history',  v=>{ if(Array.isArray(v)) state.history=v;
                         else if(v&&typeof v==='object') state.history=Object.values(v); });
   fbDb.ref('.info/connected').on('value', s=>{
