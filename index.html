@@ -64,8 +64,7 @@ html,body{margin:0;padding:0;background:var(--ink);color:var(--txt);
 body{padding-bottom:92px;
   background-image:
     radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,107,53,.05), transparent),
-    radial-gradient(ellipse 700px 400px at 100% 0%, rgba(167,139,214,.04), transparent);
-  background-attachment:fixed;}
+    radial-gradient(ellipse 700px 400px at 100% 0%, rgba(167,139,214,.04), transparent);}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,textarea{font-family:inherit}
 h1,h2,h3{font-family:'Fjalla One','Arial Narrow',-apple-system,sans-serif;
@@ -481,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-07-03a';
+const APP_VERSION = 'v2.1 — build 2026-07-04b';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -493,6 +492,7 @@ const SYNC_KEYS = {
   cog:       'cog',        // COGS: {sales:{}, manual:{}}
   learning:  'learning',   // recorded order patterns (data only; prediction optional)
   skipped:   'skipped',    // {itemId:true} "checked, no order needed" — clears on send
+  priceHistory: 'priceHistory', // {itemId:[{ts,date,price,prevPrice,delta,deltaPct}]}
 };
 
 function defaultState(){
@@ -505,7 +505,7 @@ function defaultState(){
     tab:'order', activeSupp:'ABCO', editMode:false,
     catalog, deletedIds:{}, locations:['dock','closet','restaurant'],
     orderQty:{}, onHand:{}, trimark:{}, history:[],
-    cog:{sales:{}, manual:{}}, learning:{}, skipped:{},
+    cog:{sales:{}, manual:{}}, learning:{}, skipped:{}, priceHistory:{},
   };
 }
 
@@ -575,6 +575,7 @@ function loadLocal(){
   const cog = lsGet(SYNC_KEYS.cog);       if(cog) state.cog = {sales:{},manual:{},...cog};
   const lrn = lsGet(SYNC_KEYS.learning);  if(lrn) state.learning = lrn;
   const sk  = lsGet(SYNC_KEYS.skipped);   if(sk)  state.skipped  = sk;
+  const ph  = lsGet(SYNC_KEYS.priceHistory); if(ph) state.priceHistory = ph;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -929,8 +930,42 @@ function buildYoyComparison(history, filter){
     priorRange:{start:isoDate(s1),end:isoDate(e1)}, filter };
 }
 
+// Flatten every logged price change (across all items, unaggregated — each
+// entry IS a discrete event worth showing on its own) into report rows,
+// filtered by date range / supplier / item-name search.
+function buildPriceReport(priceHistory, catalog, filter){
+  const f = {...defaultReportFilter(), ...filter};
+  const supSet = f.suppliers==='all' ? null : new Set(f.suppliers);
+  const search = (f.search||'').trim().toLowerCase();
+
+  const itemInfo = {};
+  for(const sn of Object.keys(catalog||{})){
+    for(const it of catalog[sn].items) itemInfo[it.id] = {name:it.name, supplier:sn, itemNum:it.itemNum||''};
+  }
+
+  const rows = [];
+  for(const itemId of Object.keys(priceHistory||{})){
+    const info = itemInfo[itemId];
+    if(!info) continue;                                  // item since deleted; skip gracefully
+    if(supSet && !supSet.has(info.supplier)) continue;
+    if(search && !info.name.toLowerCase().includes(search)) continue;
+    for(const entry of (priceHistory[itemId]||[])){
+      if(!inRange(entry, f.start, f.end)) continue;
+      rows.push({
+        itemId, name:info.name, supplier:info.supplier, itemNum:info.itemNum,
+        date:entry.date, ts:entry.ts, price:entry.price, prevPrice:entry.prevPrice,
+        delta:entry.delta, deltaPct:entry.deltaPct,
+      });
+    }
+  }
+  rows.sort((a,b)=> b.ts-a.ts);   // most recent change first
+  const increasesCount = rows.filter(r=>r.delta>0).length;
+  const decreasesCount = rows.filter(r=>r.delta<0).length;
+  return { rows, recordCount: rows.length, filter: f, increasesCount, decreasesCount };
+}
+
 if(typeof module!=='undefined'){
-  module.exports={defaultReportFilter,reportPreset,inRange,buildReport,buildYoyComparison,isoDate};
+  module.exports={defaultReportFilter,reportPreset,inRange,buildReport,buildYoyComparison,buildPriceReport,isoDate};
 }
 /* ═══════════════════════════════════════════════════════════════════
    4. RENDER  — one pipeline. render() rebuilds #app from state.
@@ -950,6 +985,7 @@ function topBar(){
     : s.tab==='history' ? 'History'
     : s.tab==='report' ? 'Reports'
     : s.tab==='cog' ? 'Cost of Goods'
+    : s.tab==='price' ? `Prices — ${s.activeSupp}`
     : s.tab==='help' ? 'Help' : "Bartlett's";
   return `<div class="topbar">
     <div><h1>${esc(title)}</h1><div class="sub">Bartlett's — Austin, TX</div></div>
@@ -958,7 +994,7 @@ function topBar(){
 }
 
 function supBar(){
-  if(state.tab!=='order') return '';
+  if(state.tab!=='order' && state.tab!=='price') return '';
   return `<div class="supbar">${SUP_NAMES.map(sn=>{
     const c = DEFAULT_SUPPLIERS[sn];
     const on = sn===state.activeSupp;
@@ -971,7 +1007,7 @@ function tabBar(){
   const tabs = [
     ['order','📋','Order'],['inventory','📦','Inventory'],
     ['history','🕐','History'],['report','📊','Reports'],
-    ['cog','💰','COGS'],['help','❔','Help']
+    ['cog','💰','COGS'],['price','🏷️','Prices'],['help','❔','Help']
   ];
   return `<div class="tabbar">${tabs.map(([id,ico,lbl])=>
     `<button class="tab${state.tab===id?' active':''}" onclick="setTab('${id}')">
@@ -985,6 +1021,7 @@ function tabBody(){
     case 'history':   return historyView();
     case 'report':    return reportView();
     case 'cog':       return cogView();
+    case 'price':     return priceView();
     case 'help':      return helpView();
     default:          return '';
   }
@@ -1179,6 +1216,267 @@ function historyView(){
   }).join('');
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   PRICE TRACKER — log price changes over time per item, see year-over-
+   year trend, and spot items worth reconsidering. state.priceHistory
+   keyed by item id: [{ts,date,price,prevPrice,delta,deltaPct}, ...],
+   always appended chronologically. it.unitCost always mirrors the
+   latest recorded price, so every other feature (breakage $, COGS,
+   Order edit view) stays correct without special-casing this data.
+   ═══════════════════════════════════════════════════════════════════ */
+
+// A price counts as "real" for tracking/summary purposes once it's a
+// positive number — $0/null both mean "not priced yet" (same convention
+// already used for breakage $ elsewhere in the app).
+function hasRealPrice(it){ return !!(it && it.unitCost!=null && +it.unitCost>0); }
+
+// Pure: record a price change against an item. Returns true if a new
+// history entry was actually logged (false if the price didn't change,
+// so callers don't create noise entries or false "updated" toasts).
+// Does NOT persist — callers persist 'priceHistory' and 'catalog'.
+function logPriceChange(sn, id, newPrice){
+  const it = state.catalog[sn] && state.catalog[sn].items.find(i=>i.id===id);
+  if(!it) return false;
+  const prevPrice = (it.unitCost!=null && it.unitCost!=='') ? +it.unitCost : null;
+  if(prevPrice===newPrice) return false;
+  const delta = prevPrice!=null ? +(newPrice-prevPrice).toFixed(4) : null;
+  const deltaPct = (prevPrice!=null && prevPrice!==0) ? +((delta/prevPrice)*100).toFixed(2) : null;
+  if(!state.priceHistory[id]) state.priceHistory[id]=[];
+  const arr = state.priceHistory[id];
+  // Guarantee a strictly-increasing, always-unique ts per item — two updates
+  // logged within the same millisecond would otherwise collide, and since
+  // deletePriceEntry identifies an entry BY ts, a collision could delete the
+  // wrong one (or both at once).
+  let ts = Date.now();
+  if(arr.length && ts<=arr[arr.length-1].ts) ts = arr[arr.length-1].ts+1;
+  const entry = {
+    ts, date: new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+    price: newPrice, prevPrice, delta, deltaPct,
+  };
+  arr.push(entry);
+  it.unitCost = newPrice;
+  return true;
+}
+
+// Pure: how has this item's price moved over roughly the last year?
+// Each history entry marks "the price became X on this date"; the entry's
+// own prevPrice tells us what it was immediately before that — the only
+// way to know anything about the price before tracking started. So the
+// real known timeline is: [prevPrice of the oldest entry (if known), then
+// each entry's own price] — NOT just the raw list of logged prices, or a
+// single logged change would incorrectly compare the new price to itself.
+// Baseline = the most recent point at least 365 days old; if everything
+// on record is younger than that, falls back to the earliest known point.
+const YEAR_MS = 365*24*60*60*1000;
+function priceTrend(hist, currentPrice, now){
+  if(!hist || !hist.length || currentPrice==null) return {pct:null, amt:null, baselineDate:null};
+  const sorted = hist.slice().sort((a,b)=>a.ts-b.ts);
+  const points = [];
+  if(sorted[0].prevPrice!=null){
+    points.push({ts: sorted[0].ts-1, price: sorted[0].prevPrice, date:'before tracking began'});
+  }
+  for(const e of sorted) points.push({ts: e.ts, price: e.price, date: e.date});
+
+  const cutoff = (now||Date.now()) - YEAR_MS;
+  let baseline = null;
+  for(const p of points){ if(p.ts<=cutoff) baseline=p; else break; }
+  if(!baseline) baseline = points[0];
+  const amt = +(currentPrice - baseline.price).toFixed(4);
+  const pct = baseline.price ? +((amt/baseline.price)*100).toFixed(2) : null;
+  return {pct, amt, baselineDate: baseline.date};
+}
+
+// Small dependency-free SVG sparkline for the last up-to-12 price points.
+function buildSparkline(histAsc){
+  const pts = histAsc.slice(-12);
+  if(pts.length<2) return '';
+  const prices = pts.map(e=>e.price);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const range = (max-min) || 1;
+  const w=300, h=56, pad=6;
+  const stepX = pts.length>1 ? (w-2*pad)/(pts.length-1) : 0;
+  const coords = prices.map((p,i)=>{
+    const x = pad + i*stepX;
+    const y = h-pad - ((p-min)/range)*(h-2*pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const upOverall = prices[prices.length-1] > prices[0];
+  const downOverall = prices[prices.length-1] < prices[0];
+  const color = upOverall ? 'var(--crit)' : downOverall ? 'var(--ok)' : 'var(--dim)';
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:56px;margin:10px 0;display:block">
+    <polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2.5"
+      stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+function priceView(){
+  const sn = state.activeSupp;
+  const items = state.catalog[sn].items;
+
+  const rows = items.map(it=>{
+    const hist = state.priceHistory[it.id]||[];
+    const trend = priceTrend(hist, it.unitCost);
+    return {it, hist, trend};
+  }).sort((a,b)=> Math.abs(b.trend.pct||0) - Math.abs(a.trend.pct||0));
+
+  const pricedCount = items.filter(hasRealPrice).length;
+  const trackedCount = rows.filter(r=>r.hist.length>0).length;
+  const movers = rows.filter(r=>r.trend.pct!=null && r.trend.pct!==0);
+  const biggest = movers[0]; // already sorted by |pct| desc
+
+  const summary = `<div style="display:flex;gap:8px;margin:8px 0 4px">
+    <div class="hist-card" style="flex:1;text-align:center;padding:12px 6px">
+      <div style="font-size:20px;font-weight:800">${pricedCount}/${items.length}</div>
+      <div style="font-size:10px;color:var(--dim)">PRICED</div>
+    </div>
+    <div class="hist-card" style="flex:1;text-align:center;padding:12px 6px">
+      <div style="font-size:20px;font-weight:800">${trackedCount}</div>
+      <div style="font-size:10px;color:var(--dim)">TRACKED</div>
+    </div>
+    ${biggest ? `<div class="hist-card" style="flex:1.4;text-align:center;padding:12px 6px;
+        border-color:${biggest.trend.pct>0?'#e14b4b55':'#4fa65b55'}">
+      <div style="font-size:20px;font-weight:800;color:${biggest.trend.pct>0?'var(--crit)':'var(--ok)'}">
+        ${biggest.trend.pct>0?'▲':'▼'}${Math.abs(biggest.trend.pct).toFixed(0)}%</div>
+      <div style="font-size:10px;color:var(--dim)">BIGGEST MOVER</div>
+    </div>` : ''}
+  </div>`;
+
+  const rowsHtml = rows.map(({it,hist,trend})=>{
+    const priceStr = it.unitCost!=null ? '$'+(+it.unitCost).toFixed(2) : '—';
+    const trendTag = trend.pct==null
+      ? `<span style="font-size:11px;color:var(--dim)">not tracked yet</span>`
+      : trend.pct===0
+        ? `<span style="font-size:11px;color:var(--dim)">no change</span>`
+        : `<span style="font-size:11px;font-weight:700;color:${trend.pct>0?'var(--crit)':'var(--ok)'}">
+            ${trend.pct>0?'▲':'▼'} ${Math.abs(trend.pct).toFixed(1)}% since ${esc(trend.baselineDate)}</span>`;
+    const reconsider = (trend.pct!=null && trend.pct>=15)
+      ? `<div style="font-size:11px;color:var(--crit);margin-top:2px">⚠ Up sharply — worth a second look</div>` : '';
+    return `<div class="item" onclick="openPriceDetail('${sn}','${it.id}')" style="cursor:pointer">
+      <div class="item-main">
+        <div class="item-name">${esc(it.name)}</div>
+        <div class="item-meta">${trendTag}</div>
+        ${reconsider}
+      </div>
+      <div style="font-size:19px;font-weight:800;font-family:'Roboto Mono',monospace;color:var(--accent)">${priceStr}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="sched">Tap any item to log a new price or see its history.</div>
+    ${summary}
+    ${items.length ? rowsHtml : '<div class="empty">No items for this supplier yet.</div>'}`;
+}
+
+function openPriceDetail(sn, id){
+  const it = state.catalog[sn].items.find(i=>i.id===id);
+  if(!it) return;
+  const histAsc = (state.priceHistory[id]||[]).slice().sort((a,b)=>a.ts-b.ts);
+  const trend = priceTrend(histAsc, it.unitCost);
+  const sparkline = buildSparkline(histAsc);
+
+  const histRowsHtml = histAsc.slice().reverse().map(e=>{
+    const deltaHtml = e.delta==null
+      ? `<span style="color:var(--dim)">first recorded price</span>`
+      : `<span style="color:${e.delta>0?'var(--crit)':e.delta<0?'var(--ok)':'var(--dim)'}">
+          ${e.delta>0?'▲':e.delta<0?'▼':'—'} $${Math.abs(e.delta).toFixed(2)}
+          ${e.deltaPct!=null ? ` (${e.deltaPct>0?'+':''}${e.deltaPct.toFixed(1)}%)` : ''}</span>`;
+    return `<div class="entry">
+      <span class="n" style="font-weight:400;font-size:13px">
+        ${esc(e.date)} · $${e.price.toFixed(2)} · ${deltaHtml}</span>
+      <button class="x" onclick="deletePriceEntry('${sn}','${id}',${e.ts})">×</button>
+    </div>`;
+  }).join('');
+
+  modal(`<h2>${esc(it.name)}</h2>
+    <div class="sched">${esc(sn)}${it.itemNum?' · #'+esc(it.itemNum):''}${it.pack?' · '+esc(it.pack):''}</div>
+    <div style="font-size:34px;font-weight:800;color:var(--accent);font-family:'Roboto Mono',monospace">
+      ${it.unitCost!=null?'$'+(+it.unitCost).toFixed(2):'—'}</div>
+    ${trend.pct!=null && trend.pct!==0 ? `<div class="sched" style="color:${trend.amt>0?'var(--crit)':'var(--ok)'}">
+      ${trend.amt>0?'▲':'▼'} ${Math.abs(trend.pct).toFixed(1)}% (${trend.amt>0?'+':''}$${trend.amt.toFixed(2)}) since ${esc(trend.baselineDate)}</div>` : ''}
+    ${sparkline}
+    <label class="fl">Log a new price — price per unit</label>
+    <input class="field" id="price-new" inputmode="decimal" placeholder="0.00">
+    <div class="sched" style="text-align:center;margin:2px 0">— or, if you have a case price —</div>
+    <div style="display:flex;gap:8px">
+      <input class="field" id="price-case-total" inputmode="decimal" placeholder="Price per case"
+        style="flex:1" oninput="updateCasePreview()">
+      <input class="field" id="price-case-size" inputmode="decimal" placeholder="Units/case"
+        value="${it.caseQty!=null?esc(it.caseQty):''}" style="flex:1" oninput="updateCasePreview()">
+    </div>
+    <div class="sched" id="case-preview" style="min-height:18px"></div>
+    <button class="btn" onclick="savePriceUpdate('${sn}','${id}')">Save price</button>
+    <label class="fl" style="margin-top:16px">History</label>
+    ${histRowsHtml || '<div class="sched">No price history yet — log the first one above.</div>'}`);
+}
+
+// Live "= $X.XX/unit" feedback as the case fields are filled in, computed
+// directly against the DOM so it doesn't need a full app re-render (which
+// would lose focus/keystrokes mid-type).
+function updateCasePreview(){
+  const totalEl=$('price-case-total'), sizeEl=$('price-case-size'), out=$('case-preview');
+  if(!totalEl || !sizeEl || !out) return;
+  const total=+totalEl.value, size=+sizeEl.value;
+  if(totalEl.value!=='' && sizeEl.value!=='' && size>0 && !isNaN(total) && total>=0){
+    out.textContent = `= $${(total/size).toFixed(4)} per unit`;
+    out.style.color = 'var(--ok)';
+  } else {
+    out.textContent = (totalEl.value!=='' || sizeEl.value!=='') ? 'Enter both a case price and units per case' : '';
+    out.style.color = 'var(--dim)';
+  }
+}
+
+function savePriceUpdate(sn, id){
+  const it = state.catalog[sn].items.find(i=>i.id===id);
+  if(!it) return;
+
+  // Case price takes precedence when BOTH case fields are actually filled in;
+  // otherwise fall back to the direct per-unit field. This avoids any
+  // ambiguous "which one wins" state — whichever the person actually used.
+  const caseTotalEl = $('price-case-total'), caseSizeEl = $('price-case-size');
+  const caseFilledIn = caseTotalEl && caseSizeEl && caseTotalEl.value!=='' && caseSizeEl.value!=='';
+
+  let newPrice;
+  if(caseFilledIn){
+    const caseTotal = +caseTotalEl.value, caseSize = +caseSizeEl.value;
+    if(isNaN(caseTotal) || caseTotal<0){ toast('Enter a valid case price','warn'); return; }
+    if(!(caseSize>0)){ toast('Units per case must be greater than 0','warn'); return; }
+    newPrice = +(caseTotal/caseSize).toFixed(4);
+    it.caseQty = caseSize;   // remember it for next time
+  } else {
+    const el = $('price-new');
+    const val = el ? el.value : '';
+    if(val===''){ toast('Enter a price','warn'); return; }
+    newPrice = +val;
+    if(isNaN(newPrice) || newPrice<0){ toast('Enter a valid price','warn'); return; }
+  }
+
+  const prevPrice = it.unitCost;
+  const changed = logPriceChange(sn, id, newPrice);
+  if(!changed){ toast('That\'s already the current price','warn'); return; }
+  persist('priceHistory'); persist('catalog');
+  closeModal(); render();
+  const perUnitNote = caseFilledIn ? ` ($${newPrice.toFixed(2)}/unit)` : '';
+  toast(prevPrice!=null ? `Updated: $${(+prevPrice).toFixed(2)} → $${newPrice.toFixed(2)}${perUnitNote}` : `First price recorded: $${newPrice.toFixed(2)}${perUnitNote}`, 'ok');
+}
+
+function deletePriceEntry(sn, itemId, ts){
+  confirmModal('Delete this price record?\nThis can\'t be undone.', ()=>{
+    const arr = state.priceHistory[itemId]||[];
+    const latestTs = arr.length ? Math.max(...arr.map(e=>e.ts)) : null;
+    const wasLatest = latestTs===ts;
+    state.priceHistory[itemId] = arr.filter(e=>e.ts!==ts);
+    if(wasLatest){
+      const remaining = state.priceHistory[itemId];
+      const it = state.catalog[sn].items.find(i=>i.id===itemId);
+      if(it) it.unitCost = remaining.length ? remaining[remaining.length-1].price : null;
+      persist('catalog');
+    }
+    persist('priceHistory');
+    closeModal();
+    openPriceDetail(sn, itemId);
+    render();
+  }, 'Delete');
+}
+
 /* ── COGS VIEW — spend derived from actual saved orders ── */
 function cogView(){
   const now = new Date();
@@ -1232,15 +1530,10 @@ let _repMode = 'list';   // 'list' | 'yoy'
 let _repBreakageExpanded = false;
 function toggleReportBreakageExpanded(){ _repBreakageExpanded = !_repBreakageExpanded; render(); }
 
-function reportView(){
-  if(!_repFilter){
-    _repFilter = lsGet('reportFilter-local') || defaultReportFilter();
-  }
-  const f = _repFilter;
-  const data = _repMode==='yoy'
-    ? buildYoyComparison(state.history, f)
-    : buildReport(state.history, f);
-
+// Shared by both the order/inventory report and the price-change report —
+// date range, supplier filter, type filter, and item-name search all work
+// identically regardless of which type of report is showing.
+function reportFilterHeader(f){
   const presetBtns = [
     ['7d','Last 7 days'],['30d','Last 30 days'],['month','This month'],
     ['lastyear-week','Same week, last yr'],['lastyear-month','Same month, last yr']
@@ -1252,9 +1545,35 @@ function reportView(){
       onclick="toggleReportSupplier('${sn}')">${sn==='all'?'All':sn}</button>`;
   }).join('');
 
-  const typeChips = [['all','All'],['order','Orders'],['inventory','Inventory']].map(([k,lbl])=>
+  const typeChips = [['all','All'],['order','Orders'],['inventory','Inventory'],['price','Price changes']].map(([k,lbl])=>
     `<button class="sup-pill${f.types===k?' active':''}" style="${f.types===k?'background:var(--accent);color:#04121f':''}"
       onclick="setReportType('${k}')">${lbl}</button>`).join('');
+
+  return `
+    <label class="fl">Quick ranges</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${presetBtns}</div>
+    <label class="fl">From</label>
+    <input class="field" type="date" value="${f.start}" onchange="setReportDate('start',this.value)">
+    <label class="fl">To</label>
+    <input class="field" type="date" value="${f.end}" onchange="setReportDate('end',this.value)">
+    <label class="fl">Supplier</label>
+    <div class="supbar" style="padding:6px 0">${supChips}</div>
+    <label class="fl">Type</label>
+    <div class="supbar" style="padding:6px 0">${typeChips}</div>
+    <label class="fl">Search item name</label>
+    <input class="field" value="${esc(f.search)}" placeholder="e.g. turkey, foil…" oninput="setReportSearch(this.value)">`;
+}
+
+function reportView(){
+  if(!_repFilter){
+    _repFilter = lsGet('reportFilter-local') || defaultReportFilter();
+  }
+  const f = _repFilter;
+  if(f.types==='price') return priceReportView(f);
+
+  const data = _repMode==='yoy'
+    ? buildYoyComparison(state.history, f)
+    : buildReport(state.history, f);
 
   const rows = data.rows;
   const grandQty = rows.reduce((s,r)=>s+r.totalQty,0);
@@ -1327,23 +1646,7 @@ function reportView(){
 
   return `
     <div class="sched"><b>Look back at what you ordered or counted.</b> Pick a range, narrow with filters, and export if needed.</div>
-
-    <label class="fl">Quick ranges</label>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${presetBtns}</div>
-
-    <label class="fl">From</label>
-    <input class="field" type="date" value="${f.start}" onchange="setReportDate('start',this.value)">
-    <label class="fl">To</label>
-    <input class="field" type="date" value="${f.end}" onchange="setReportDate('end',this.value)">
-
-    <label class="fl">Supplier</label>
-    <div class="supbar" style="padding:6px 0">${supChips}</div>
-
-    <label class="fl">Type</label>
-    <div class="supbar" style="padding:6px 0">${typeChips}</div>
-
-    <label class="fl">Search item name</label>
-    <input class="field" value="${esc(f.search)}" placeholder="e.g. turkey, foil…" oninput="setReportSearch(this.value)">
+    ${reportFilterHeader(f)}
 
     <div style="display:flex;align-items:center;gap:10px;margin:10px 0">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px">
@@ -1478,6 +1781,117 @@ function exportReportPdf(){
     ${breakageSummaryHtml}
     <table><thead><tr><th>Item</th><th>Supplier</th><th>Type</th><th>Qty</th><th>Cost</th><th>Breakage</th>
       ${_repMode==='yoy'?'<th>Last yr</th><th>Change</th>':''}</tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+}
+
+/* ── Price-change report: every logged price change, flat list, exportable ── */
+function priceReportView(f){
+  const data = buildPriceReport(state.priceHistory, state.catalog, f);
+  const rows = data.rows;
+
+  const rowsHtml = rows.length ? rows.map(r=>{
+    const deltaColor = r.delta==null ? 'var(--dim)' : r.delta>0?'var(--crit)':r.delta<0?'var(--ok)':'var(--dim)';
+    const deltaSymbol = r.delta==null ? '' : r.delta>0?'▲ ':r.delta<0?'▼ ':'— ';
+    return `<div class="item">
+      <div class="item-main">
+        <div class="item-name">${esc(r.name)}</div>
+        <div class="item-meta">${esc(r.supplier)} · ${esc(r.date)} ·
+          ${r.prevPrice!=null?'$'+r.prevPrice.toFixed(2)+' → ':''}$${r.price.toFixed(2)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:17px;font-weight:800;color:${deltaColor}">
+          ${r.delta==null?'first price':(deltaSymbol+'$'+Math.abs(r.delta).toFixed(2))}</div>
+        ${r.deltaPct!=null?`<div style="font-size:11px;color:${deltaColor}">${r.deltaPct>0?'+':''}${r.deltaPct.toFixed(1)}%</div>`:''}
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">
+    <div style="font-size:34px;margin-bottom:10px;opacity:.5">🏷️</div>
+    <div style="color:var(--paper);font-weight:600;font-size:15px;margin-bottom:6px">No price changes in this range</div>
+    <div>Log a price update in the Prices tab, or widen the date range above.</div>
+  </div>`;
+
+  return `
+    <div class="sched"><b>Every price change you've logged, in one place.</b> Pick a range, narrow with filters, and export if needed.</div>
+    ${reportFilterHeader(f)}
+
+    <div class="sched" style="display:flex;justify-content:space-between;margin-top:12px">
+      <span><b>${rows.length}</b> price change${rows.length!==1?'s':''}</span>
+      <span><span style="color:var(--crit)">▲ ${data.increasesCount}</span> · <span style="color:var(--ok)">▼ ${data.decreasesCount}</span></span>
+    </div>
+
+    <label class="fl" style="margin-top:16px">Price changes in this range</label>
+    ${rowsHtml}
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn ghost" onclick="exportPriceReportCsv()">📄 Export CSV</button>
+      <button class="btn ghost" onclick="exportPriceReportPdf()">🖨 Print / Save PDF</button>
+    </div>`;
+}
+
+function exportPriceReportCsv(){
+  const data = buildPriceReport(state.priceHistory, state.catalog, _repFilter);
+  if(!data.rows.length){ toast('Nothing to export','warn'); return; }
+  const header = ['Item','Supplier','Item #','Date','Previous price','New price','Change $','Change %'];
+  const rows = data.rows.map(r=>[r.name,r.supplier,r.itemNum||'',r.date,
+    r.prevPrice??'',r.price,r.delta??'',r.deltaPct??'']);
+  const csv = [header, ...rows].map(row=>row.map(v=>{
+    const s=String(v); return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url;
+  a.download = `Bartletts-price-changes-${_repFilter.start}_to_${_repFilter.end}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('CSV downloaded','ok');
+}
+
+function exportPriceReportPdf(){
+  // Same rule as the main report: window.open() must be the literal first
+  // statement so Safari/iOS treats it as a trusted response to the tap.
+  const win = window.open('', '_blank');
+  if(!win){
+    toast('Pop-up blocked — check Settings > Safari > Block Pop-ups is off for this site, then try again','warn');
+    return;
+  }
+  win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price Report</title></head>'+
+    '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Preparing report…</body></html>');
+
+  const data = buildPriceReport(state.priceHistory, state.catalog, _repFilter);
+  if(!data.rows.length){
+    win.document.open();
+    win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price Report</title></head>'+
+      '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Nothing to print for this range/filters.</body></html>');
+    win.document.close();
+    toast('Nothing to print','warn');
+    return;
+  }
+  const rowsHtml = data.rows.map(r=>`<tr>
+    <td>${esc(r.name)}</td><td>${esc(r.supplier)}</td><td>${esc(r.date)}</td>
+    <td style="text-align:right">${r.prevPrice!=null?'$'+r.prevPrice.toFixed(2):'—'}</td>
+    <td style="text-align:right">$${r.price.toFixed(2)}</td>
+    <td style="text-align:right;color:${r.delta>0?'#c0392b':r.delta<0?'#2e7d32':'#999'}">
+      ${r.delta==null?'—':(r.delta>0?'+':'')+'$'+r.delta.toFixed(2)}</td>
+    <td style="text-align:right;color:${r.delta>0?'#c0392b':r.delta<0?'#2e7d32':'#999'}">
+      ${r.deltaPct==null?'—':(r.deltaPct>0?'+':'')+r.deltaPct.toFixed(1)+'%'}</td>
+  </tr>`).join('');
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><title>Bartlett's Price Report</title>
+    <style>body{font-family:-apple-system,sans-serif;padding:24px;color:#111}
+    h1{font-size:20px;margin-bottom:2px} .sub{color:#666;font-size:13px;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:7px 8px;border-bottom:1px solid #ddd;text-align:left}
+    th{background:#f3f3f3}
+    @media print{ .no-print{display:none} }</style></head><body>
+    <h1>Bartlett's — Price Change Report</h1>
+    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} changes ·
+      ${data.increasesCount} up · ${data.decreasesCount} down</div>
+    <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
+    <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
+    <table><thead><tr><th>Item</th><th>Supplier</th><th>Date</th><th>Previous</th><th>New</th><th>Change $</th><th>Change %</th></tr></thead>
       <tbody>${rowsHtml}</tbody></table>
     </body></html>`);
   win.document.close();
@@ -1634,6 +2048,8 @@ function editItem(sn, id){
     <input class="field" id="e-par" inputmode="decimal" value="${it.par!=null?esc(it.par):''}" placeholder="0">
     <label class="fl">Price per unit ($)</label>
     <input class="field" id="e-cost" inputmode="decimal" value="${it.unitCost!=null?esc(it.unitCost):''}" placeholder="0.00">
+    <label class="fl">Units per case <span style="color:var(--dim);font-weight:400">(so you can log a case price in Prices and get the per-unit cost)</span></label>
+    <input class="field" id="e-caseqty" inputmode="decimal" value="${it.caseQty!=null?esc(it.caseQty):''}" placeholder="e.g. 12">
     ${(isBek||it.itemNum!=null)?`<label class="fl">${isBek?'BEK ':''}Item #</label>
       <input class="field" id="e-num" value="${esc(it.itemNum||'')}" placeholder="optional">`:''}
     <button class="btn" onclick="saveItem('${sn}','${id}')">Save changes</button>
@@ -1648,7 +2064,11 @@ function saveItem(sn, id){
   it.name = name;
   it.pack = ($('e-pack').value||'').trim();
   const par=$('e-par').value;   it.par = par===''?null:(+par||0);
-  const cost=$('e-cost').value; it.unitCost = cost===''?null:(+cost||0);
+  const costStr=$('e-cost').value;
+  if(costStr===''){ it.unitCost = null; }
+  else if(logPriceChange(sn, id, +costStr||0)){ persist('priceHistory'); }
+  const caseQtyStr=$('e-caseqty').value;
+  it.caseQty = caseQtyStr==='' ? null : (+caseQtyStr||null);
   const numEl=$('e-num'); if(numEl) it.itemNum = (numEl.value||'').trim();
   persist('catalog'); closeModal(); render(); toast('Item updated','ok');
 }
@@ -1830,6 +2250,17 @@ function helpView(){
          'Save your orders to history.',
          'Enter monthly Sales on the COGS tab.']) +
      note('Why save orders?','COGS only counts saved orders. Tap "Save order to history" after you send.','low'))}
+
+  ${helpSection('prices','🏷️ Price tracker',
+     `The ${b('Prices')} tab shows every item by supplier so you can log price changes as they
+      happen and see how each one's cost has moved.` +
+     li(['Tap an item to see its full price history and a small trend chart.',
+         'Type a new price and tap "Save price" — the date, old price, and change are recorded automatically.',
+         'Items are sorted with the biggest movers (up or down) at the top, so you spot problems fast.',
+         'An item up 15% or more gets a "worth a second look" flag — a nudge to check if it\'s still worth ordering, not an automatic decision.',
+         'Made a typo logging a price? Open the item and tap × next to that entry to remove it — the current price reverts automatically if you deleted the latest one.',
+         'Updating a price in ✎ Edit items logs it here too — one history, no matter where you change it.']) +
+     note('Reading the trend %','It compares today\'s price to the price from about a year ago (or the earliest one on record if you haven\'t tracked it that long).','accent'))}
 
   ${helpSection('security','🔒 Security',
      `The Firebase config in this app (including the API key) is <b>meant to be public</b> — every
@@ -2207,10 +2638,13 @@ function sendOrder(sn){
       .filter(i=>i.orderQty>0);
   }
   if(!items.length){ toast('No items with quantity to send','warn'); return; }
-  _sendFromItems(sn, items);
-  // The order is genuinely going out now — items reviewed-and-skipped during
-  // this ordering pass are done their job; clear them so next time is fresh.
+  // The order is genuinely going out now — clear skip marks for this supplier
+  // BEFORE triggering the send. sendAbcoSms/sendEmail below navigate via
+  // window.location.href (sms:/mailto:), which on iOS can pause or tear down
+  // JS execution the instant that line runs — anything meant to happen AFTER
+  // it is not guaranteed to fire. Doing the bookkeeping first guarantees it.
   if(!isTrimarkInventory && clearSkipsForSupplier(sn)) render();
+  _sendFromItems(sn, items);
 }
 
 function _sendFromItems(sn, items){
@@ -2423,6 +2857,7 @@ function startListeners(){
   bind('cog',      v=>{ state.cog={sales:{},manual:{},...v}; });
   bind('learning', v=>{ state.learning=v; });
   bind('skipped',  v=>{ state.skipped=v; });
+  bind('priceHistory', v=>{ state.priceHistory=v; });
   bind('history',  v=>{ if(Array.isArray(v)) state.history=v;
                         else if(v&&typeof v==='object') state.history=Object.values(v); });
   fbDb.ref('.info/connected').on('value', s=>{
