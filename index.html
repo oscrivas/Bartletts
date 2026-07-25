@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-07-04b';
+const APP_VERSION = 'v2.1 — build 2026-07-04c';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -2309,9 +2309,11 @@ function bumpQty(id,d){
   persist('orderQty'); render();
 }
 function clearOrder(sn){
-  confirmModal(`Clear all ${sn} order quantities?`, ()=>{
+  confirmModal(`Clear all ${sn} order quantities?\nThis also un-skips any items you'd marked "checked, no order needed" for this supplier.`, ()=>{
     for(const it of state.catalog[sn].items) delete state.orderQty[it.id];
-    persist('orderQty'); render(); toast('Order cleared');
+    persist('orderQty');
+    clearSkipsForSupplier(sn);
+    render(); toast('Order cleared');
   }, 'Clear order');
 }
 
