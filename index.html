@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-08-01a';
+const APP_VERSION = 'v2.1 — build 2026-08-01b';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -858,6 +858,27 @@ function inRange(rec, start, end){
   return day >= s && day <= e;
 }
 
+// Map of item -> where it sits in the catalog, i.e. the physical walking
+// order used by the Inventory count sheet. Reports sort by this so the two
+// line up. Built fresh per report (O(n), negligible) rather than cached —
+// a cache keyed on item counts would go stale on a rename and silently
+// sort that item to the bottom.
+function buildCatalogOrderIndex(){
+  const idx = {};
+  SUP_NAMES.forEach((sn, supIdx)=>{
+    (state.catalog[sn]?.items||[]).forEach((it, itemIdx)=>{
+      idx[sn+'|'+it.name] = {sup:supIdx, item:itemIdx};
+    });
+  });
+  return idx;
+}
+function catalogOrderOf(idx, supplier, name){
+  // Unknown (renamed/deleted since the record was saved) → sorts to the end,
+  // but still grouped under its supplier rather than scattered.
+  return idx[supplier+'|'+name]
+      || {sup: SUP_NAMES.indexOf(supplier)>=0 ? SUP_NAMES.indexOf(supplier) : 999, item: 99999};
+}
+
 // Build the per-item report for a filter spec.
 // Returns { rows:[{name,supplier,type,totalQty,occurrences,unitCost,totalCost}], recordCount }
 function buildReport(history, filter){
@@ -909,11 +930,26 @@ function buildReport(history, filter){
       }
     }
   }
+  // Sort in CATALOG order — the same sequence as the Inventory count sheet,
+  // which follows the physical walking order of the restaurant. Sorting by
+  // quantity instead (the old behavior) scrambled the list relative to how
+  // the count was actually taken, making the two impossible to read side by
+  // side. Suppliers keep their catalog order too; anything no longer in the
+  // catalog (deleted/renamed item still present in history) sorts to the end
+  // rather than silently vanishing.
+  const _catIdx = buildCatalogOrderIndex();
   const rows = Object.values(byKey).map(r=>({
     ...r,
     totalCost: (r.unitCost!=null) ? +(r.totalQty*r.unitCost).toFixed(2) : null,
     breakageValue: r.breakageValueKnown ? +r.breakageValue.toFixed(2) : null,
-  })).sort((a,b)=> b.totalQty - a.totalQty);
+  })).sort((a,b)=>{
+    const sa = catalogOrderOf(_catIdx, a.supplier, a.name), sb = catalogOrderOf(_catIdx, b.supplier, b.name);
+    if(sa.sup !== sb.sup) return sa.sup - sb.sup;
+    if(sa.item !== sb.item) return sa.item - sb.item;
+    // Same item appearing as both an order and an inventory count: keep a
+    // stable, predictable pairing rather than leaving it to sort chance.
+    return String(a.type).localeCompare(String(b.type));
+  });
 
   const breakageTotal = +rows.reduce((s,r)=> s+(r.breakageValue||0), 0).toFixed(2);
   const breakageKnownCount = rows.filter(r=>r.breakageQty>0 && r.breakageValue!=null).length;
