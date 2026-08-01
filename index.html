@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-07-25b';
+const APP_VERSION = 'v2.1 — build 2026-08-01a';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -1811,7 +1811,7 @@ function exportReportPdf(){
     th{background:#f3f3f3}
     @media print{ .no-print{display:none} }</style></head><body>
     <h1>Bartlett's — Order &amp; Inventory Report</h1>
-    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} items · ${data.recordCount} records</div>
+    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} items · ${data.recordCount} records · ${esc(APP_VERSION)}</div>
     <div class="sub" style="font-style:italic">For "order" rows, Qty/Cost is what was ordered. For "inventory" rows, Qty/Cost shows the final count and its value — Broke and Breakage $ show what was lost.</div>
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
     <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
@@ -1925,7 +1925,7 @@ function exportPriceReportPdf(){
     @media print{ .no-print{display:none} }</style></head><body>
     <h1>Bartlett's — Price Change Report</h1>
     <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} changes ·
-      ${data.increasesCount} up · ${data.decreasesCount} down</div>
+      ${data.increasesCount} up · ${data.decreasesCount} down · ${esc(APP_VERSION)}</div>
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
     <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
     <table><thead><tr><th>Item</th><th>Supplier</th><th>Date</th><th>Previous</th><th>New</th><th>Change $</th><th>Change %</th></tr></thead>
