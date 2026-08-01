@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-08-01b';
+const APP_VERSION = 'v2.1 — build 2026-08-01d';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -1148,9 +1148,49 @@ function orderView(){
 }
 
 /* ── INVENTORY VIEW (TRIMARK monthly count) ── */
+/* ── Which inventory period is on screen. null = current (live) period;
+   otherwise the ts of a saved TRIMARK inventory record. View-state only —
+   deliberately NOT synced, so one person browsing last month doesn't yank
+   another device off the count they're taking right now. ── */
+let _invPeriodTs = null;
+
+function inventoryPeriods(){
+  const saved = state.history
+    .map((h,idx)=>({h,idx}))
+    .filter(({h})=> h.supplier==='TRIMARK' && h.type==='inventory')
+    .map(({h,idx})=>({ ts:h.ts, label:h.date, idx }))
+    .sort((a,b)=> b.ts-a.ts);
+  return [{ts:null, label:'Current', idx:null}, ...saved];
+}
+
+function setInvPeriod(ts){
+  _invPeriodTs = (ts==='null'||ts===null||ts==='') ? null : +ts;
+  state.editMode = false;   // never carry catalog-edit mode into a past period
+  render();
+}
+
+function inventoryPeriodBar(){
+  const periods = inventoryPeriods();
+  if(periods.length<=1) return '';   // nothing saved yet — no picker needed
+  return `<div class="supbar" style="padding:6px 0">${periods.map(p=>{
+    const on = (p.ts===null && _invPeriodTs===null) || (p.ts!==null && p.ts===_invPeriodTs);
+    return `<button class="sup-pill${on?' active':''}"
+      style="${on?'background:var(--accent);color:#04121f':''}"
+      onclick="setInvPeriod(${p.ts===null?'null':p.ts})">${esc(p.label)}</button>`;
+  }).join('')}</div>`;
+}
+
 function inventoryView(){
   const items = state.catalog['TRIMARK'].items;
   const edit = state.editMode;
+
+  // Viewing a saved month rather than the live count.
+  if(_invPeriodTs!=null){
+    const rec = state.history.find(h=>h.ts===_invPeriodTs && h.type==='inventory');
+    if(!rec){ _invPeriodTs = null; }          // record deleted while open
+    else return historicalInventoryView(rec);
+  }
+
   const counted = items.filter(i=>{
     const t=state.trimark[i.id]||{}; return t.count!=null && t.count!=='';
   }).length;
@@ -1227,7 +1267,8 @@ function inventoryView(){
       }).join('')
     : '<div class="sched">No items above par — nothing to order yet.</div>';
 
-  return `<div class="sched"><b>${counted}/${items.length} counted</b> ·
+  return `${inventoryPeriodBar()}
+    <div class="sched"><b>${counted}/${items.length} counted</b> ·
       START = Begin + Add · USED = Start − Count · ORDER = Par − Count</div>
     ${breakTotals.value>0 || breakTotals.unpriced>0 ? `<div class="hist-card" style="border-color:var(--crit)">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1244,6 +1285,120 @@ function inventoryView(){
     ${chanBtns}
     <button class="btn ghost" onclick="saveInventory()" style="margin-top:12px">💾 Save month &amp; reset</button>
     ${editBar}`;
+}
+
+/* ── Viewing (and correcting) a saved month ──
+   Reads from the frozen history record rather than the live period. Counts
+   stay editable because errors surface after a month is closed — but every
+   edit recalculates used/order/breakage from begin+add+count so the record
+   can never drift into an inconsistent state. ── */
+function historicalInventoryView(rec){
+  const recIdx = state.history.indexOf(rec);
+  const items = rec.items||[];
+  const counted = items.filter(i=>i.count!=null).length;
+
+  const head = `<div class="inv-head">
+    <div>Item</div><div>Begin</div><div>Add</div><div>Count</div><div>Broke</div></div>`;
+
+  const rows = items.map(it=>{
+    const done = it.count!=null;
+    const cbtn = done
+      ? `<button class="${it.count===0?'zero':'done'}" onclick="openHistoricalCount(${rec.ts},'${esc(it.id)}')">${it.count}</button>`
+      : `<button onclick="openHistoricalCount(${rec.ts},'${esc(it.id)}')">—</button>`;
+    const breakCell = it.breakageQty>0
+      ? `<span style="color:var(--crit);font-weight:700">${it.breakageQty}</span>`
+      : '—';
+    const breakTag = (it.breakageValue!=null && it.breakageValue>0)
+      ? `<span style="font-size:10px;color:var(--crit);font-weight:700">⚠ $${it.breakageValue.toFixed(2)}</span>`
+      : '';
+    return `<div class="inv-row${done?' counted':''}">
+      <div class="nm">${esc(it.name)}${breakTag?'<br>'+breakTag:''}</div>
+      <div class="inv-cell begin">${it.begin!=null&&it.begin!==''?it.begin:'—'}</div>
+      <div class="inv-cell add">${it.add?('+'+it.add):'—'}</div>
+      <div class="inv-cell">${cbtn}</div>
+      <div class="inv-cell">${breakCell}</div>
+    </div>`;
+  }).join('');
+
+  const breakTotal = items.reduce((s,i)=> s+(i.breakageValue||0), 0);
+  const isLatest = state.history
+    .filter(h=>h.type==='inventory' && h.supplier==='TRIMARK')
+    .every(h=> h.ts<=rec.ts);
+
+  return `${inventoryPeriodBar()}
+    <div class="hist-card" style="border-color:var(--purple)">
+      <div style="font-weight:700;color:var(--purple)">📅 ${esc(rec.date)} — saved month</div>
+      <div class="sched" style="padding:4px 0 0">${counted} of ${items.length} items counted.
+      Tap any count to correct it — used, order and breakage recalculate automatically.
+      ${isLatest?'':'<br><b>Note:</b> a newer month exists, so corrections here won\'t change the current Begin.'}</div>
+    </div>
+    ${breakTotal>0 ? `<div class="hist-card" style="border-color:var(--crit)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;color:var(--crit)">⚠ Breakage this month</span>
+        <span style="font-size:22px;font-weight:800;color:var(--crit)">$${breakTotal.toFixed(2)}</span>
+      </div></div>` : ''}
+    ${head}${rows}
+    <div class="sched" style="margin-top:14px">This is a closed month — the current period handles
+      new ordering. You can still re-send this month's order if it never went out or got lost.</div>
+    <button class="btn" onclick="resendInventoryOrder(${recIdx})">↻ Re-send this month's order</button>
+    <button class="btn ghost" onclick="setInvPeriod(null)" style="margin-top:8px">← Back to current month</button>
+    <button class="btn ghost" onclick="deleteRecord(${recIdx})" style="color:var(--crit)">🗑 Delete this month's record</button>`;
+}
+
+function openHistoricalCount(ts, itemId){
+  const rec = state.history.find(h=>h.ts===ts && h.type==='inventory');
+  if(!rec) return;
+  const it = (rec.items||[]).find(i=>i.id===itemId);
+  if(!it) return;
+  modal(`<h2>${esc(it.name)}</h2>
+    <div class="sched">${esc(rec.date)} · correcting a saved month</div>
+    <label class="fl">Begin (carried in from the prior month)</label>
+    <input class="field" id="hc-begin" inputmode="decimal" value="${it.begin!=null?esc(it.begin):''}" placeholder="0">
+    <label class="fl">Deliveries received (Add)</label>
+    <input class="field" id="hc-add" inputmode="decimal" value="${it.add!=null&&it.add!==''?esc(it.add):''}" placeholder="0">
+    <label class="fl">Final count</label>
+    <input class="field" id="hc-count" inputmode="decimal" value="${it.count!=null?esc(it.count):''}" placeholder="0">
+    <div class="sched">Used and breakage are recalculated from these three numbers.</div>
+    <button class="btn" onclick="saveHistoricalCount(${ts},'${esc(itemId)}')">Save correction</button>`);
+}
+
+function saveHistoricalCount(ts, itemId){
+  const rec = state.history.find(h=>h.ts===ts && h.type==='inventory');
+  if(!rec) return;
+  const it = (rec.items||[]).find(i=>i.id===itemId);
+  if(!it) return;
+  const bRaw=$('hc-begin').value, aRaw=$('hc-add').value, cRaw=$('hc-count').value;
+  const begin = bRaw===''?0:+bRaw, add = aRaw===''?0:+aRaw;
+  const count = cRaw===''?null:+cRaw;
+  if(isNaN(begin)||isNaN(add)||(count!=null&&isNaN(count))){ toast('Enter valid numbers','warn'); return; }
+
+  // Recompute every derived field from the corrected inputs — the whole
+  // point is that a corrected record stays internally consistent.
+  const cat = state.catalog['TRIMARK'].items.find(i=>i.id===itemId);
+  const r = trimarkRow(begin, add, count, cat?cat.par:it.par, it.unitCost);
+  it.begin = begin; it.add = add; it.count = r.counted;
+  it.used = r.used; it.orderQty = r.order||0;
+  it.breakageQty = r.breakageQty; it.breakageValue = r.breakageValue;
+
+  persist('history');
+
+  // If this is the newest saved month, its count is what rolled into the
+  // current period's Begin — offer to bring that forward too, rather than
+  // silently leaving the two disagreeing.
+  const isLatest = state.history
+    .filter(h=>h.type==='inventory' && h.supplier==='TRIMARK')
+    .every(h=> h.ts<=rec.ts);
+  const cur = state.trimark[itemId];
+  const curBegin = cur ? +cur.begin||0 : null;
+  if(isLatest && r.counted!=null && curBegin!==r.counted){
+    closeModal();
+    confirmModal(`Corrected to ${r.counted}.\n\nThis month's Begin for ${it.name} is currently ${curBegin==null?'unset':curBegin}. Update it to ${r.counted} to match?`, ()=>{
+      state.trimark[itemId] = {...(state.trimark[itemId]||{}), begin:r.counted};
+      persist('trimark'); render(); toast('Correction saved · current Begin updated','ok');
+    }, 'Update Begin');
+    return;
+  }
+  closeModal(); render(); toast('Correction saved','ok');
 }
 
 /* ── HISTORY VIEW ── */
@@ -2307,7 +2462,13 @@ function helpView(){
          'The save button stays on screen above the keyboard, and shows the running total.']) +
      note('Add areas','Tap "⚙ Edit areas" in any count screen to add spots like "bar" or "walk-in". Applies to every item.','accent') +
      `<br>${b('Finish the month:')} count everything, send the order buttons, then "Save month & reset" —
-      this files it to History and rolls Count into next month's Begin.`)}
+      this files it to History and rolls Count into next month's Begin.` +
+     `<br><br>${b('Going back to a previous month:')} the row of buttons at the top of Inventory
+      switches between ${b('Current')} and every saved month.` +
+     li(['Tap a month to see exactly what was counted, item by item, with that month\'s breakage.',
+         'Tap any count in a saved month to correct it — used, order and breakage all recalculate.',
+         'If you correct the most recent month, the app offers to update this month\'s Begin to match, so the two never disagree.',
+         'You can also reach a month from History → tap the record → "Open & edit counts".']))}
 
   ${helpSection('special','⭐ The four special items',
      `You count these in inventory but don't order them from James — the app routes each automatically:` +
@@ -2700,8 +2861,17 @@ function openRecord(idx){
       '<div class="empty">No quantities were recorded on this save — likely a count with nothing entered, or an order sent with 0 items.</div>'}
     <div class="save-bar"><div class="btn-row">
       ${h.type==='order'?`<button class="btn" onclick="resendRecord(${idx})">↻ Re-send</button>`:''}
+      ${(h.type==='inventory'&&h.supplier==='TRIMARK')?`<button class="btn" onclick="resendInventoryOrder(${idx})">↻ Re-send order</button>
+        <button class="btn ghost" onclick="openMonthInInventory(${h.ts})">📅 Open &amp; edit counts</button>`:''}
       <button class="btn ghost" style="color:var(--crit)" onclick="deleteRecord(${idx})">🗑 Delete</button>
     </div></div>`);
+}
+
+// Jump straight from a saved record into the editable month view.
+function openMonthInInventory(ts){
+  closeModal();
+  _invPeriodTs = ts;
+  setTab('inventory');
 }
 function deleteRecord(idx){
   confirmModal('Delete this record permanently?', ()=>{
@@ -2711,6 +2881,93 @@ function deleteRecord(idx){
 function resendRecord(idx){
   const h=state.history[idx]; if(!h) return;
   closeModal(); _sendFromItems(h.supplier, h.items);
+}
+
+/* ── Re-sending a saved Trimark month ──
+   A saved inventory record stores orderQty in UNITS and carries no caseQty,
+   so it can't just be handed to _sendFromItems — that would email raw units
+   and undo the case-rounding fix. Instead we re-route through the same
+   channel rules as a live send, looking each item's channel and case size
+   up from the catalog by id. ── */
+function inventoryRecordGroups(rec){
+  const groups = { james:[], bek:[], email:{} };
+  for(const rit of (rec.items||[])){
+    const units = +rit.orderQty||0;
+    if(units<=0) continue;
+    const cat = state.catalog['TRIMARK'].items.find(c=>c.id===rit.id) || {};
+    const ch = cat.orderChannel;
+    if(ch==='text') continue;      // firewood: manual fixed reorder, not month-driven
+    if(ch==='bek'){
+      groups.bek.push({name:rit.name, itemNum:cat.itemNum||rit.itemNum||'', orderQty:units});
+    } else if(ch==='email'){
+      const key = cat.altEmail||'';
+      (groups.email[key] = groups.email[key]||[]).push({
+        name:rit.name, vendor:cat.altVendor||'',
+        orderQty: unitsToCases(units, cat.caseQty), unitsNeeded: units, caseQty: cat.caseQty||null,
+      });
+    } else {
+      groups.james.push({
+        name:rit.name, itemNum:cat.itemNum||rit.itemNum||'',
+        orderQty: unitsToCases(units, cat.caseQty), unitsNeeded: units, caseQty: cat.caseQty||null,
+      });
+    }
+  }
+  return groups;
+}
+
+function resendInventoryOrder(idx){
+  const rec = state.history[idx];
+  if(!rec) return;
+  const g = inventoryRecordGroups(rec);
+  const btns = [];
+  if(g.james.length) btns.push(`<button class="btn" onclick="resendInventoryChannel(${idx},'james')">
+    ✉️ Email James <span class="pill-count">${g.james.length}</span></button>`);
+  if(g.bek.length) btns.push(`<button class="btn ghost" onclick="resendInventoryChannel(${idx},'bek')">
+    📄 BEK CSV <span class="pill-count">${g.bek.length}</span></button>`);
+  Object.entries(g.email).forEach(([email,items])=>{
+    const vendor = items[0]?.vendor || 'other vendor';
+    btns.push(`<button class="btn ghost" onclick="resendInventoryChannel(${idx},'email:${esc(email)}')">
+      ✉️ Email ${esc(vendor)} <span class="pill-count">${items.length}</span></button>`);
+  });
+
+  if(!btns.length){
+    modal(`<h2>Re-send ${esc(rec.date)}</h2>
+      <div class="empty">Nothing was due to order in this saved month.</div>`);
+    return;
+  }
+  modal(`<h2>Re-send ${esc(rec.date)}</h2>
+    <div class="sched">Sends the same quantities this month recorded, in cases where the item is
+      sold by the case. Firewood is left out — it's a manual reorder, not month-driven.</div>
+    ${btns.join('')}`);
+}
+
+function resendInventoryChannel(idx, key){
+  const rec = state.history[idx];
+  if(!rec) return;
+  const g = inventoryRecordGroups(rec);
+  closeModal();
+  if(key==='james'){
+    if(!g.james.length){ toast('Nothing to send','warn'); return; }
+    return sendEmail('TRIMARK', g.james);
+  }
+  if(key==='bek'){
+    if(!g.bek.length){ toast('Nothing to send','warn'); return; }
+    return downloadBekCsv(g.bek);
+  }
+  if(key.startsWith('email:')){
+    const email = key.slice(6);
+    const items = g.email[email]||[];
+    if(!items.length){ toast('Nothing to send','warn'); return; }
+    if(!email){ editChannelTarget('email'); return; }
+    const vendor = items[0]?.vendor||'';
+    const subject = `Bartlett's order — ${new Date().toLocaleDateString()}`;
+    const body = `Hello${vendor?' '+vendor:''},\n\nPlease process the following order for Bartlett's:\n\n`+
+      items.map(i=> (i.caseQty && i.caseQty>1)
+        ? `${i.orderQty} case${i.orderQty!==1?'s':''} × ${i.name} (${i.caseQty}/cs, ${i.unitsNeeded} ct needed)`
+        : `${i.orderQty} × ${i.name}`
+      ).join('\n')+`\n\nThank you,\nBartlett's Restaurant`;
+    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
