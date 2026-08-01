@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-07-04c';
+const APP_VERSION = 'v2.1 — build 2026-07-25b';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -876,6 +876,7 @@ function buildReport(history, filter){
   // for the same item don't get merged into one confusing row.
   const byKey = {};
   for(const rec of matched){
+    const recTs = rec.ts || Date.parse(rec.date) || 0;
     for(const it of (rec.items||[])){
       const qty = +it.orderQty||0;
       if(f.activeOnly && qty<=0 && it.count==null) continue;   // skip true zero-activity lines
@@ -884,13 +885,23 @@ function buildReport(history, filter){
       if(!byKey[key]) byKey[key] = {
         name: it.name, supplier: rec.supplier, type: rec.type,
         totalQty: 0, occurrences: 0, unitCost: it.unitCost,
-        firstDate: rec.date, lastDate: rec.date,
+        firstDate: rec.date, firstTs: recTs, lastDate: rec.date, lastTs: recTs,
+        lastCount: it.count!=null ? it.count : null,
         breakageQty: 0, breakageValue: 0, breakageValueKnown: false,
       };
       const row = byKey[key];
       row.totalQty += qty;
       row.occurrences += 1;
-      row.lastDate = rec.date;
+      // "Latest" must mean chronologically latest, not whichever record we
+      // happen to visit last while looping — history isn't guaranteed to be
+      // in date order, so compare real timestamps rather than overwriting
+      // unconditionally (that bug wouldn't show with only 1 matching record,
+      // but silently picks the wrong one once a report spans 2+ saved months).
+      if(recTs < row.firstTs){ row.firstTs=recTs; row.firstDate=rec.date; }
+      if(recTs >= row.lastTs){
+        row.lastTs=recTs; row.lastDate=rec.date;
+        if(it.count!=null) row.lastCount = it.count;
+      }
       if(row.unitCost==null && it.unitCost!=null) row.unitCost = it.unitCost;
       if(it.breakageQty){
         row.breakageQty += it.breakageQty;
@@ -1144,12 +1155,15 @@ function inventoryView(){
       : (r.breakageQty!=null && r.breakageQty>0 && it.unitCost==null)
         ? `<span style="font-size:10px;color:var(--dim)">${r.breakageQty} short · set price to value it</span>`
         : '';
+    const orderDisplay = r.order!=null
+      ? (it.caseQty && it.caseQty>1 ? unitsToCases(r.order, it.caseQty) : r.order)
+      : '—';
     return `<div class="inv-row${done?' counted':''}">
       <div class="nm">${esc(it.name)} ${chTag}${breakTag?'<br>'+breakTag:''}</div>
       <div class="inv-cell begin">${t.begin!=null&&t.begin!==''?t.begin:'—'}</div>
       <div class="inv-cell add">${t.add?('+'+t.add):'—'}</div>
       <div class="inv-cell">${cbtn}</div>
-      <div class="inv-cell">${r.order!=null?r.order:'—'}</div>
+      <div class="inv-cell">${orderDisplay}</div>
     </div>`;
   }).join('');
 
@@ -1630,13 +1644,26 @@ function reportView(){
           : `<span style="color:${r.delta>0?'var(--ok)':r.delta<0?'var(--crit)':'var(--dim)'};font-size:13px;font-weight:700">
               ${r.delta>0?'▲':r.delta<0?'▼':'—'} ${Math.abs(r.delta)} vs last yr (${r.priorQty})</span>`)
       : '';
+    // Inventory rows: "Qty" would be the REORDER amount (par − count), which
+    // is misleadingly 0 for anything already stocked above par even when it
+    // had real breakage. Show what people actually look at an inventory
+    // report for instead — the final count and units broken.
+    const isInventory = r.type==='inventory';
+    const headline = isInventory ? (r.lastCount!=null ? r.lastCount : '—') : r.totalQty;
+    const headlineLabel = isInventory ? 'COUNT' : 'QTY';
+    const metaExtra = isInventory
+      ? (r.breakageQty>0 ? ` · broke ${r.breakageQty}${r.breakageValue!=null?' ($'+r.breakageValue.toFixed(2)+')':' (no price set)'}` : ' · no breakage')
+      : (r.totalCost!=null?` · $${r.totalCost.toFixed(2)}`:'');
     return `<div class="item">
       <div class="item-main">
         <div class="item-name">${esc(r.name)}</div>
-        <div class="item-meta">${esc(r.supplier)} · ${r.type} · ${r.occurrences}× ${r.totalCost!=null?`· $${r.totalCost.toFixed(2)}`:''}</div>
+        <div class="item-meta">${esc(r.supplier)} · ${r.type} · ${r.occurrences}×${metaExtra}</div>
         ${deltaHtml}
       </div>
-      <div style="font-size:20px;font-weight:800;color:var(--accent)">${r.totalQty}</div>
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:800;color:var(--accent)">${headline}</div>
+        <div style="font-size:9px;color:var(--dim);letter-spacing:.05em">${headlineLabel}</div>
+      </div>
     </div>`;
   }).join('') : `<div class="empty">
     <div style="font-size:34px;margin-bottom:10px;opacity:.5">📊</div>
@@ -1700,11 +1727,11 @@ function exportReportCsv(){
   const data = _repMode==='yoy' ? buildYoyComparison(state.history,_repFilter) : buildReport(state.history,_repFilter);
   if(!data.rows.length){ toast('Nothing to export','warn'); return; }
   const header = _repMode==='yoy'
-    ? ['Item','Supplier','Type','Qty this range','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','Qty same range last year','Change']
-    : ['Item','Supplier','Type','Total qty','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','First date','Last date'];
+    ? ['Item','Supplier','Type','Qty this range','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','Qty same range last year','Change']
+    : ['Item','Supplier','Type','Total qty','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','First date','Last date'];
   const rows = data.rows.map(r=> _repMode==='yoy'
-    ? [r.name,r.supplier,r.type,r.totalQty,r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.priorQty??'',r.delta??'']
-    : [r.name,r.supplier,r.type,r.totalQty,r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.firstDate,r.lastDate]);
+    ? [r.name,r.supplier,r.type,r.totalQty,r.lastCount??'',r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.priorQty??'',r.delta??'']
+    : [r.name,r.supplier,r.type,r.totalQty,r.lastCount??'',r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.firstDate,r.lastDate]);
   const csv = [header, ...rows].map(row=>row.map(v=>{
     const s=String(v); return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
   }).join(',')).join('\n');
@@ -1742,15 +1769,24 @@ function exportReportPdf(){
     toast('Nothing to print','warn');
     return;
   }
-  const rowsHtml = data.rows.map(r=>`<tr>
+  const rowsHtml = data.rows.map(r=>{
+    const isInventory = r.type==='inventory';
+    const qtyCell = isInventory ? (r.lastCount!=null?r.lastCount:'—') : r.totalQty;
+    const costCell = isInventory
+      ? (r.lastCount!=null && r.unitCost!=null ? '$'+(r.lastCount*r.unitCost).toFixed(2) : '')
+      : (r.totalCost!=null?'$'+r.totalCost.toFixed(2):'');
+    const brokeQtyCell = r.breakageQty>0 ? r.breakageQty : '';
+    return `<tr>
     <td>${esc(r.name)}</td><td>${esc(r.supplier)}</td><td>${esc(r.type)}</td>
-    <td style="text-align:right">${r.totalQty}</td>
-    <td style="text-align:right">${r.totalCost!=null?'$'+r.totalCost.toFixed(2):''}</td>
+    <td style="text-align:right">${qtyCell}</td>
+    <td style="text-align:right">${costCell}</td>
+    <td style="text-align:right">${brokeQtyCell}</td>
     <td style="text-align:right;color:${r.breakageValue?'#c0392b':'#999'}">${r.breakageQty?
-      (r.breakageValue!=null?'$'+r.breakageValue.toFixed(2):r.breakageQty+' (no price)') : ''}</td>
+      (r.breakageValue!=null?'$'+r.breakageValue.toFixed(2):'no price') : ''}</td>
     ${_repMode==='yoy'?`<td style="text-align:right">${r.priorQty==null?'—':r.priorQty}</td>
       <td style="text-align:right">${r.delta==null?'—':(r.delta>0?'+':'')+r.delta}</td>`:''}
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
   const breakageSummaryHtml = (data.breakageTotal>0 || data.breakageUnpricedCount>0) ? `
     <div style="display:flex;gap:12px;margin:14px 0">
       <div style="flex:1;border:1px solid #e5b5b0;background:#fdf1f0;border-radius:8px;padding:10px;text-align:center">
@@ -1776,10 +1812,11 @@ function exportReportPdf(){
     @media print{ .no-print{display:none} }</style></head><body>
     <h1>Bartlett's — Order &amp; Inventory Report</h1>
     <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} items · ${data.recordCount} records</div>
+    <div class="sub" style="font-style:italic">For "order" rows, Qty/Cost is what was ordered. For "inventory" rows, Qty/Cost shows the final count and its value — Broke and Breakage $ show what was lost.</div>
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
     <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
     ${breakageSummaryHtml}
-    <table><thead><tr><th>Item</th><th>Supplier</th><th>Type</th><th>Qty</th><th>Cost</th><th>Breakage</th>
+    <table><thead><tr><th>Item</th><th>Supplier</th><th>Type</th><th>Qty / Count</th><th>Cost / Value</th><th>Broke</th><th>Breakage $</th>
       ${_repMode==='yoy'?'<th>Last yr</th><th>Change</th>':''}</tr></thead>
       <tbody>${rowsHtml}</tbody></table>
     </body></html>`);
@@ -1904,6 +1941,14 @@ function exportPriceReportPdf(){
    ═══════════════════════════════════════════════════════════════════ */
 
 // Build the list of Trimark items that need ordering, grouped by channel.
+// Units needed -> whole cases, rounded UP (you can't order 3.4 cases).
+// caseQty missing or <=1 means "not sold by the case" — leave as raw units.
+function unitsToCases(units, caseQty){
+  const cq = +caseQty || 0;
+  if(cq<=1) return units;
+  return Math.ceil(units/cq);
+}
+
 function trimarkOrderGroups(){
   const groups = { james:[], text:{}, bek:[], email:{} };
   for(const it of state.catalog['TRIMARK'].items){
@@ -1919,17 +1964,23 @@ function trimarkOrderGroups(){
         name:it.name, orderQty: it.fixedQty||0, label:it.textLabel||it.name, manual:true
       });
     } else if(ch==='bek'){
+      // BEK's CSV column is literally "Each" — stays unit-based, unchanged.
       if(r.order>0) groups.bek.push({name:it.name, itemNum:it.itemNum||'', orderQty:r.order});
     } else if(ch==='email'){
       if(r.order>0){
         const key = it.altEmail||'';
         (groups.email[key] = groups.email[key]||[]).push({
-          name:it.name, orderQty:r.order, vendor:it.altVendor||''
+          name:it.name, vendor:it.altVendor||'',
+          orderQty: unitsToCases(r.order, it.caseQty), unitsNeeded: r.order, caseQty: it.caseQty||null,
         });
       }
     } else {
-      // Default Trimark → James
-      if(r.order>0) groups.james.push({name:it.name, itemNum:it.itemNum||'', orderQty:r.order});
+      // Default Trimark → James. This is what you actually ask James for,
+      // so round up to whole cases (you can't order a partial case).
+      if(r.order>0) groups.james.push({
+        name:it.name, itemNum:it.itemNum||'',
+        orderQty: unitsToCases(r.order, it.caseQty), unitsNeeded: r.order, caseQty: it.caseQty||null,
+      });
     }
   }
   return groups;
@@ -1984,7 +2035,10 @@ function sendTrimarkChannel(key){
     const vendor = items[0]?.vendor||'';
     const subject = `Bartlett's order — ${new Date().toLocaleDateString()}`;
     const body = `Hello${vendor?' '+vendor:''},\n\nPlease process the following order for Bartlett's:\n\n`+
-      items.map(i=>`${i.orderQty} × ${i.name}`).join('\n')+`\n\nThank you,\nBartlett's Restaurant`;
+      items.map(i=> (i.caseQty && i.caseQty>1)
+        ? `${i.orderQty} case${i.orderQty!==1?'s':''} × ${i.name} (${i.caseQty}/cs, ${i.unitsNeeded} ct needed)`
+        : `${i.orderQty} × ${i.name}`
+      ).join('\n')+`\n\nThank you,\nBartlett's Restaurant`;
     window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     return;
   }
@@ -2692,7 +2746,14 @@ function sendEmail(sn, items){
   const to = (c.contact.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)||[''])[0] || (c.email||'');
   const subject=`Bartlett's ${sn} order — ${new Date().toLocaleDateString()}`;
   const body=`Hello,\n\nPlease process the following order for Bartlett's:\n\n`+
-    items.map(i=>`${i.orderQty} × ${i.name}${i.itemNum?` (#${i.itemNum})`:''}`).join('\n')+
+    items.map(i=>{
+      // Case-based items (Trimark → James / uniform vendor) carry caseQty:
+      // say cases, not raw units, since that's what you actually order.
+      if(i.caseQty && i.caseQty>1){
+        return `${i.orderQty} case${i.orderQty!==1?'s':''} × ${i.name} (${i.caseQty}/cs, ${i.unitsNeeded} ct needed)${i.itemNum?` (#${i.itemNum})`:''}`;
+      }
+      return `${i.orderQty} × ${i.name}${i.itemNum?` (#${i.itemNum})`:''}`;
+    }).join('\n')+
     `\n\nThank you,\nBartlett's Restaurant`;
   window.location.href=`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
