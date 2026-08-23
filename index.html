@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-08-01d';
+const APP_VERSION = 'v2.1 — build 2026-08-03b';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -493,6 +493,7 @@ const SYNC_KEYS = {
   learning:  'learning',   // recorded order patterns (data only; prediction optional)
   skipped:   'skipped',    // {itemId:true} "checked, no order needed" — clears on send
   priceHistory: 'priceHistory', // {itemId:[{ts,date,price,prevPrice,delta,deltaPct}]}
+  expenses: 'expenses',    // [{id,date,ts,concept,amount}] — other spend, itemized
 };
 
 function defaultState(){
@@ -505,7 +506,7 @@ function defaultState(){
     tab:'order', activeSupp:'ABCO', editMode:false,
     catalog, deletedIds:{}, locations:['dock','closet','restaurant'],
     orderQty:{}, onHand:{}, trimark:{}, history:[],
-    cog:{sales:{}, manual:{}}, learning:{}, skipped:{}, priceHistory:{},
+    cog:{sales:{}, manual:{}}, learning:{}, skipped:{}, priceHistory:{}, expenses:[],
   };
 }
 
@@ -576,6 +577,7 @@ function loadLocal(){
   const lrn = lsGet(SYNC_KEYS.learning);  if(lrn) state.learning = lrn;
   const sk  = lsGet(SYNC_KEYS.skipped);   if(sk)  state.skipped  = sk;
   const ph  = lsGet(SYNC_KEYS.priceHistory); if(ph) state.priceHistory = ph;
+  const ex  = lsGet(SYNC_KEYS.expenses);   if(ex)  state.expenses = ex;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1054,7 +1056,8 @@ function tabBar(){
   const tabs = [
     ['order','📋','Order'],['inventory','📦','Inventory'],
     ['history','🕐','History'],['report','📊','Reports'],
-    ['cog','💰','COGS'],['price','🏷️','Prices'],['help','❔','Help']
+    ['cog','💰','COGS'],
+    ['price','🏷️','Prices'],['help','❔','Help']
   ];
   return `<div class="tabbar">${tabs.map(([id,ico,lbl])=>
     `<button class="tab${state.tab===id?' active':''}" onclick="setTab('${id}')">
@@ -1080,6 +1083,7 @@ function orderView(){
   const supp = state.catalog[sn];
   const items = supp.items;
   const orderCount = items.reduce((n,i)=> n + ((+state.orderQty[i.id]||0)>0?1:0), 0);
+  const skippedCount = items.reduce((n,i)=> n + (state.skipped[i.id]?1:0), 0);
   const edit = state.editMode;
 
   const rows = items.map(it=>{
@@ -1142,7 +1146,9 @@ function orderView(){
     <div class="btn-row">
       <button class="btn" onclick="sendOrder('${sn}')">${sendLabel} <span class="pill-count">${orderCount}</span></button>
     </div>
-    <button class="btn ghost" onclick="saveOrder('${sn}')">💾 Save order to history</button>
+    <button class="btn ghost" onclick="saveOrder('${sn}')">💾 Log order without sending</button>
+    ${skippedCount>0 ? `<button class="btn ghost" onclick="finishReview('${sn}')">
+      ✓ Done reviewing — clear ${skippedCount} skipped</button>` : ''}
     <button class="btn ghost" onclick="clearOrder('${sn}')">Clear order</button>
     ${editBar}`;
 }
@@ -1568,7 +1574,196 @@ function priceView(){
 
   return `<div class="sched">Tap any item to log a new price or see its history.</div>
     ${summary}
-    ${items.length ? rowsHtml : '<div class="empty">No items for this supplier yet.</div>'}`;
+    ${items.length ? rowsHtml : '<div class="empty">No items for this supplier yet.</div>'}
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn ghost" onclick="exportPriceListCsv()">📄 Export price list CSV</button>
+      <button class="btn ghost" onclick="exportPriceListPdf()">🖨 Print price list</button>
+    </div>
+    <div class="sched">Prints every item across all suppliers — one document to hand off, sized for
+      walking the stock like an inventory sheet.</div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn ghost" onclick="exportPriceTemplateCsv()">📄 ${esc(sn)} price-update CSV</button>
+      <button class="btn ghost" onclick="exportPriceTemplatePdf()">📝 ${esc(sn)} price-update template</button>
+    </div>
+    <div class="sched">Item, item #, and current price for ${esc(sn)} only — with a blank column to write
+      the new price while cross-checking a new price sheet.</div>`;
+}
+
+/* ── Current price list — a snapshot to print and hand off, distinct from
+   the price CHANGE report (which is a date-range log of edits). This
+   covers every item, every supplier, in catalog/walking order, grouped
+   into supplier sections like a physical inventory sheet. ── */
+function buildPriceListReport(){
+  const rows = [];
+  for(const sn of SUP_NAMES){
+    for(const it of state.catalog[sn].items){
+      const hist = state.priceHistory[it.id]||[];
+      const lastUpdated = hist.length ? hist[hist.length-1].date : null;
+      const casePrice = (it.unitCost!=null && it.caseQty>1) ? +(it.unitCost*it.caseQty).toFixed(2) : null;
+      rows.push({
+        supplier: sn, name: it.name, itemNum: it.itemNum||'', pack: it.pack||'',
+        unitCost: it.unitCost!=null ? it.unitCost : null,
+        caseQty: it.caseQty||null, casePrice, lastUpdated,
+      });
+    }
+  }
+  const pricedCount = rows.filter(r=>r.unitCost!=null && r.unitCost>0).length;
+  return { rows, pricedCount, unpricedCount: rows.length-pricedCount };
+}
+
+function exportPriceListCsv(){
+  const data = buildPriceListReport();
+  if(!data.rows.length){ toast('Nothing to export','warn'); return; }
+  const header = ['Item','Supplier','Item #','Pack','Price/unit','Units/case','Price/case','Last updated'];
+  const rows = data.rows.map(r=>[r.name,r.supplier,r.itemNum,r.pack,
+    r.unitCost??'', r.caseQty??'', r.casePrice??'', r.lastUpdated||'']);
+  const csv = [header, ...rows].map(row=>row.map(v=>{
+    const s=String(v); return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url;
+  a.download = `Bartletts-price-list-${isoDate(new Date())}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('CSV downloaded','ok');
+}
+
+function exportPriceListPdf(){
+  // window.open() must be the literal first statement so Safari/iOS treats
+  // this as a trusted response to the tap, not a blocked pop-up.
+  const win = window.open('', '_blank');
+  if(!win){
+    toast('Pop-up blocked — check Settings > Safari > Block Pop-ups is off for this site, then try again','warn');
+    return;
+  }
+  win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price List</title></head>'+
+    '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Preparing report…</body></html>');
+
+  const data = buildPriceListReport();
+  if(!data.rows.length){
+    win.document.open();
+    win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price List</title></head>'+
+      '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">No items to print.</body></html>');
+    win.document.close();
+    toast('Nothing to print','warn');
+    return;
+  }
+  let lastSup = null;
+  const rowsHtml = data.rows.map(r=>{
+    let sectionHtml = '';
+    if(r.supplier!==lastSup){
+      sectionHtml = `<tr><td colspan="5" class="sup-hdr">${esc(r.supplier)}</td></tr>`;
+      lastSup = r.supplier;
+    }
+    return sectionHtml + `<tr>
+      <td>${esc(r.name)}${r.itemNum?' <span style="color:#999">#'+esc(r.itemNum)+'</span>':''}</td>
+      <td>${esc(r.pack)}</td>
+      <td style="text-align:right">${r.unitCost!=null?'$'+r.unitCost.toFixed(2):'—'}</td>
+      <td style="text-align:right">${r.casePrice!=null?'$'+r.casePrice.toFixed(2)+' ('+r.caseQty+'/cs)':''}</td>
+      <td>${r.lastUpdated?esc(r.lastUpdated):'—'}</td>
+    </tr>`;
+  }).join('');
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><title>Bartlett's Price List</title>
+    <style>body{font-family:-apple-system,sans-serif;padding:24px;color:#111}
+    h1{font-size:20px;margin-bottom:2px} .sub{color:#666;font-size:13px;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:7px 8px;border-bottom:1px solid #ddd;text-align:left}
+    th{background:#f3f3f3}
+    .sup-hdr{background:#e8e8e8;font-weight:700;padding-top:14px}
+    @media print{ .no-print{display:none} tr{break-inside:avoid} }</style></head><body>
+    <h1>Bartlett's — Current Price List</h1>
+    <div class="sub">${esc(new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}))} ·
+      ${data.pricedCount} priced · ${data.unpricedCount} unpriced · ${esc(APP_VERSION)}</div>
+    <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
+    <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
+    <table><thead><tr><th>Item</th><th>Pack</th><th>$/unit</th><th>$/case</th><th>Last updated</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+}
+
+/* ── Price-update TEMPLATE — a fillable worksheet for reconciling against a
+   new supplier price sheet: item, item #, and current price, with an empty
+   "New price" column to write into. Different purpose from the price list
+   above (that's a reference snapshot; this is meant to be marked up), and
+   scoped to ONE supplier — a price update naturally comes from one vendor's
+   new sheet at a time, not all five suppliers at once. ── */
+function buildPriceUpdateTemplate(sn){
+  return state.catalog[sn].items.map(it=>({
+    name: it.name, itemNum: it.itemNum||'', pack: it.pack||'',
+    unitCost: it.unitCost!=null ? it.unitCost : null,
+  }));
+}
+
+function exportPriceTemplateCsv(){
+  const sn = state.activeSupp;
+  const rows = buildPriceUpdateTemplate(sn);
+  if(!rows.length){ toast('Nothing to export','warn'); return; }
+  const header = ['Item','Item #','Pack','Current price','New price'];
+  const body = rows.map(r=>[r.name, r.itemNum, r.pack, r.unitCost??'', '']);
+  const csv = [header, ...body].map(row=>row.map(v=>{
+    const s=String(v); return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url;
+  a.download = `Bartletts-${sn}-price-update-${isoDate(new Date())}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('CSV downloaded','ok');
+}
+
+function exportPriceTemplatePdf(){
+  const sn = state.activeSupp;
+  // window.open() must be the literal first statement so Safari/iOS treats
+  // this as a trusted response to the tap, not a blocked pop-up.
+  const win = window.open('', '_blank');
+  if(!win){
+    toast('Pop-up blocked — check Settings > Safari > Block Pop-ups is off for this site, then try again','warn');
+    return;
+  }
+  win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price Update Template</title></head>'+
+    '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Preparing template…</body></html>');
+
+  const rows = buildPriceUpdateTemplate(sn);
+  if(!rows.length){
+    win.document.open();
+    win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price Update Template</title></head>'+
+      '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">No items to print.</body></html>');
+    win.document.close();
+    toast('Nothing to print','warn');
+    return;
+  }
+  const rowsHtml = rows.map(r=>`<tr>
+    <td>${esc(r.name)}</td>
+    <td>${esc(r.itemNum)}</td>
+    <td>${esc(r.pack)}</td>
+    <td style="text-align:right">${r.unitCost!=null?'$'+r.unitCost.toFixed(2):'—'}</td>
+    <td class="fill">&nbsp;</td>
+  </tr>`).join('');
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><title>Bartlett's Price Update Template — ${esc(sn)}</title>
+    <style>body{font-family:-apple-system,sans-serif;padding:24px;color:#111}
+    h1{font-size:20px;margin-bottom:2px} .sub{color:#666;font-size:13px;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}
+    th{background:#f3f3f3}
+    td.fill{border-bottom:1.5px solid #333;min-width:90px}
+    @media print{ .no-print{display:none} tr{break-inside:avoid} }</style></head><body>
+    <h1>Bartlett's — Price Update Template · ${esc(sn)}</h1>
+    <div class="sub">${esc(new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}))} ·
+      ${rows.length} items · ${esc(APP_VERSION)}</div>
+    <div class="sub">Cross-check against the new price sheet and write the updated price in the last column.</div>
+    <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
+    <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
+    <table><thead><tr><th>Item</th><th>Item #</th><th>Pack</th><th>Current $/unit</th><th>New $/unit</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    </body></html>`);
+  win.document.close();
+  win.focus();
 }
 
 function openPriceDetail(sn, id){
@@ -1683,15 +1878,148 @@ function deletePriceEntry(sn, itemId, ts){
 }
 
 /* ── COGS VIEW — spend derived from actual saved orders ── */
+/* ═══════════════════════════════════════════════════════════════════
+   OTHER EXPENSES — a real ledger (concept, amount, date) instead of the
+   old single lump "other spend" number per month, which had no breakdown
+   and no history — you could only ever see the total, never what made it
+   up. Feeds into COGS the same way order spend does: summed by month.
+   ═══════════════════════════════════════════════════════════════════ */
+function monthKeyOf(ts){
+  const d = new Date(ts);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+
+// One-time: fold any legacy cog.manual monthly lump sums into the new
+// ledger as a single synthetic entry per month, so old data isn't silently
+// dropped when the calc switches over to reading state.expenses instead.
+function migrateManualCogToExpenses(){
+  if(state.cog.manualMigrated) return false;
+  let changed = false;
+  for(const mk of Object.keys(state.cog.manual||{})){
+    const amt = +state.cog.manual[mk]||0;
+    if(amt>0 && !state.expenses.some(e=>e.migratedFromMonth===mk)){
+      state.expenses.push({
+        id: 'exp-migrated-'+mk,
+        date: new Date(mk+'-01T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+        ts: Date.parse(mk+'-01T12:00:00') || Date.now(),
+        concept: 'Other spend (carried over from before itemized tracking)',
+        amount: amt, migratedFromMonth: mk,
+      });
+      changed = true;
+    }
+  }
+  state.cog.manualMigrated = true;
+  return changed;
+}
+
+function expensesForMonth(mk){
+  return state.expenses.filter(e => monthKeyOf(e.ts)===mk).sort((a,b)=> b.ts-a.ts);
+}
+function expenseTotalForMonth(mk){
+  return +expensesForMonth(mk).reduce((s,e)=> s+(+e.amount||0), 0).toFixed(2);
+}
+
+function addExpense(concept, amount, dateStr){
+  concept = (concept||'').trim();
+  const amt = +amount;
+  if(!concept){ toast('Enter what this expense was for','warn'); return false; }
+  if(isNaN(amt) || amt<=0){ toast('Enter a valid amount','warn'); return false; }
+  let ts = dateStr ? Date.parse(dateStr+'T12:00:00') : Date.now();
+  if(isNaN(ts)) ts = Date.now();
+  // Entries are looked up by id (not ts) for edit/delete, so ts only needs
+  // to be unique enough to keep ids from colliding — nudge only on a real
+  // exact match against an existing entry. Do NOT bump forward just because
+  // an earlier-dated entry was added after a later-dated one; expenses can
+  // be legitimately backdated, and that's normal, not a collision.
+  while(state.expenses.some(e=>e.ts===ts)) ts += 1;
+  state.expenses.push({
+    id: 'exp-'+ts, ts, date: new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+    concept, amount: amt,
+  });
+  persist('expenses');
+  return true;
+}
+
+function updateExpense(id, concept, amount, dateStr){
+  const e = state.expenses.find(x=>x.id===id);
+  if(!e) return false;
+  concept = (concept||'').trim();
+  const amt = +amount;
+  if(!concept){ toast('Enter what this expense was for','warn'); return false; }
+  if(isNaN(amt) || amt<=0){ toast('Enter a valid amount','warn'); return false; }
+  let ts = dateStr ? Date.parse(dateStr+'T12:00:00') : e.ts;
+  if(isNaN(ts)) ts = e.ts;
+  e.concept = concept; e.amount = amt; e.ts = ts;
+  e.date = new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  persist('expenses');
+  return true;
+}
+
+function deleteExpense(id){
+  confirmModal('Delete this expense?\nThis can\'t be undone.', ()=>{
+    state.expenses = state.expenses.filter(e=>e.id!==id);
+    persist('expenses'); closeModal(); render(); toast('Expense deleted','ok');
+  }, 'Delete');
+}
+
+// Fragment: "+ Add expense" plus the full list, newest first. Embedded
+// directly in COGS rather than living on its own tab — the whole feature
+// is small enough that a dedicated tab wasn't earning its keep.
+function expenseListSection(){
+  const allSorted = state.expenses.slice().sort((a,b)=> b.ts-a.ts);
+  const rowsHtml = allSorted.length ? allSorted.map(e=>`
+    <div class="item" onclick="openExpenseDetail('${e.id}')" style="cursor:pointer">
+      <div class="item-main">
+        <div class="item-name">${esc(e.concept)}</div>
+        <div class="item-meta">${esc(e.date)}</div>
+      </div>
+      <div style="font-size:18px;font-weight:800;font-family:'Roboto Mono',monospace">$${(+e.amount).toFixed(2)}</div>
+    </div>`).join('') : `<div class="empty">
+      <div style="font-size:34px;margin-bottom:10px;opacity:.5">🧾</div>
+      <div style="color:var(--paper);font-weight:600;font-size:15px;margin-bottom:6px">No expenses logged yet</div>
+      <div>Rent, repairs, supplies bought outside your regular orders — anything that isn't
+      captured by an order. Tap "+ Add expense" to log the first one.</div>
+    </div>`;
+  return `<button class="btn ghost" onclick="openExpenseDetail(null)">+ Add expense</button>
+    <label class="fl" style="margin-top:12px">All expenses</label>
+    ${rowsHtml}`;
+}
+
+function openExpenseDetail(id){
+  const e = id ? state.expenses.find(x=>x.id===id) : null;
+  const todayIso = isoDate(new Date());
+  modal(`<h2>${e?'Edit expense':'Add expense'}</h2>
+    <label class="fl">What was it for</label>
+    <input class="field" id="exp-concept" value="${e?esc(e.concept):''}" placeholder="e.g. plumber, cleaning supplies">
+    <label class="fl">Amount ($)</label>
+    <input class="field" id="exp-amount" inputmode="decimal" value="${e?esc(e.amount):''}" placeholder="0.00">
+    <label class="fl">Date</label>
+    <input class="field" type="date" id="exp-date" value="${e?isoDate(new Date(e.ts)):todayIso}">
+    <button class="btn" onclick="saveExpenseDetail(${e?`'${e.id}'`:'null'})">${e?'Save changes':'Add expense'}</button>
+    ${e?`<button class="btn ghost" onclick="deleteExpense('${e.id}')" style="color:var(--crit)">🗑 Delete</button>`:''}`);
+}
+
+function saveExpenseDetail(id){
+  const concept = $('exp-concept').value;
+  const amount = $('exp-amount').value;
+  const dateStr = $('exp-date').value;
+  const ok = id ? updateExpense(id, concept, amount, dateStr) : addExpense(concept, amount, dateStr);
+  if(!ok) return;
+  closeModal(); render(); toast(id?'Expense updated':'Expense added','ok');
+}
+
 function cogView(){
   const now = new Date();
   const mk = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
   const sales = state.cog.sales[mk]||'';
-  const manual = state.cog.manual[mk]||'';
+
+  if(migrateManualCogToExpenses()){ persist('expenses'); persist('cog'); }
+  const otherSpend = expenseTotalForMonth(mk);
+  const otherCount = expensesForMonth(mk).length;
 
   const derived = cogSpendFromOrders(state.history, state.catalog, mk);
   const orderSpend = derived.total;
-  const totalSpend = orderSpend + (+manual||0);
+  const totalSpend = orderSpend + otherSpend;
   const pct = (sales>0) ? ((totalSpend/+sales)*100).toFixed(1)+'%' : '—';
 
   const bySupp = SUP_NAMES.map(sn=>{
@@ -1711,11 +2039,11 @@ function cogView(){
       ${bySupp?`<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px">${bySupp}</div>`
         :'<div class="sched" style="padding:8px 0">No priced orders saved yet this month.</div>'}
 
-      <label class="fl">Other spend (manual, optional)</label>
-      <input class="field" inputmode="decimal" value="${esc(manual)}" placeholder="0"
-        onchange="setCog('manual','${mk}',this.value)">
+      <label class="fl">Other expenses this month</label>
+      <div style="font-size:24px;font-weight:800">$${otherSpend.toFixed(2)}
+        <span style="font-size:13px;font-weight:400;color:var(--dim)">${otherCount} logged</span></div>
 
-      <label class="fl">Sales this month ($)</label>
+      <label class="fl" style="margin-top:14px">Sales this month ($)</label>
       <input class="field" inputmode="decimal" value="${esc(sales)}" placeholder="0"
         onchange="setCog('sales','${mk}',this.value)">
 
@@ -1725,7 +2053,9 @@ function cogView(){
         ? `<div style="font-size:32px;font-weight:800;color:var(--ember);font-family:'Roboto Mono',monospace">${pct}</div>`
         : `<div style="font-size:14px;color:var(--dim);padding:8px 0">Enter sales above to calculate</div>`}
     </div>
-    <button class="btn ghost" onclick="uploadPriceList()">📄 Upload price list (CSV)</button>`;
+    <button class="btn ghost" onclick="uploadPriceList()">📄 Upload price list (CSV)</button>
+    <label class="fl" style="margin-top:18px">🧾 Other expenses</label>
+    ${expenseListSection()}`;
 }
 /* ═══════════════════════════════════════════════════════════════════
    REPORTS UI
@@ -2230,7 +2560,7 @@ function sendTrimarkChannel(key){
         ? `${i.orderQty} case${i.orderQty!==1?'s':''} × ${i.name} (${i.caseQty}/cs, ${i.unitsNeeded} ct needed)`
         : `${i.orderQty} × ${i.name}`
       ).join('\n')+`\n\nThank you,\nBartlett's Restaurant`;
-    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    openEmailChoice(email, subject, body);
     return;
   }
 }
@@ -2445,10 +2775,14 @@ function helpView(){
          'Already checked an item and don\'t need to order it? Tap the ✓ next to it — it dims and shows "Skipped" so you don\'t have to re-decide next time you pass through.',
          'Typing a quantity on a skipped item un-skips it automatically. Tap "✓ Skipped" again to undo by hand.',
          'Tap the send button at the bottom — the number shows how many items are on the order.',
-         'Tap "Save order to history" to keep a record (this feeds COGS).']) +
+         'That\'s it — sending files it to History automatically (this feeds COGS). You don\'t need a separate save step.']) +
      `${b('How each sends:')} ABCO texts Hal · BEK downloads a CSV · Trimark/Amazon/Electrical open an email.` +
-     `<br><br>${b('When "Skipped" clears:')} the moment you actually send that supplier's order. Going back
-      and forth beforehand — closing the app, checking other suppliers, coming back — never resets it early.`)}
+     `<br><br>${b('Placed an order outside the app')} — called it in, ordered in person — and want it in History
+      anyway? Enter the quantities and tap "💾 Log order without sending" instead of the send button.` +
+     `<br><br>${b('When "Skipped" clears:')} the moment you send or log that supplier's order — Going back
+      and forth beforehand — closing the app, checking other suppliers, coming back — never resets it early.
+      If you review everything and decide nothing's needed at all (nothing to send or log), a
+      "✓ Done reviewing" button appears so you can still clear those marks instead of them sitting there.`)}
 
   ${helpSection('count','📦 Counting inventory',
      `Each item shows ${b('Begin')}, ${b('Add')}, ${b('Count')}, ${b('Order')}.` +
@@ -2496,11 +2830,15 @@ function helpView(){
        'with this year\'s current range — or just read off last year\'s totals as your starting point.','accent'))}
 
   ${helpSection('cogs','💰 Cost of goods',
-     `COGS is ${b('calculated from orders you actually saved')} (qty × price), per supplier.` +
+     `COGS is ${b('calculated from orders you actually saved')} (qty × price), per supplier, plus
+      whatever you've logged in the ${b('Other expenses')} list at the bottom of this tab.` +
      li(['Give items prices (Edit items or price upload).',
-         'Save your orders to history.',
-         'Enter monthly Sales on the COGS tab.']) +
-     note('Why save orders?','COGS only counts saved orders. Tap "Save order to history" after you send.','low'))}
+         'Save your orders to history — sending now does this automatically.',
+         'Log anything else you spend — repairs, one-off supplies, anything you\'d otherwise just eyeball — with "+ Add expense": what it was for, the amount, and the date.',
+         'Tap any logged expense to edit or delete it.',
+         'Enter monthly Sales, and the total (orders + expenses ÷ sales) updates automatically.']) +
+     note('Had old "Other spend" numbers?','Any prior month where you\'d entered a manual total gets folded in automatically as a single carried-over entry, so nothing from before is lost.','accent') +
+     note('Why some orders don\'t show up','COGS counts everything in History. Sending an order files it there automatically now. This only matters for orders placed outside the app without using "Log order without sending".','low'))}
 
   ${helpSection('prices','🏷️ Price tracker',
      `The ${b('Prices')} tab shows every item by supplier so you can log price changes as they
@@ -2511,7 +2849,16 @@ function helpView(){
          'An item up 15% or more gets a "worth a second look" flag — a nudge to check if it\'s still worth ordering, not an automatic decision.',
          'Made a typo logging a price? Open the item and tap × next to that entry to remove it — the current price reverts automatically if you deleted the latest one.',
          'Updating a price in ✎ Edit items logs it here too — one history, no matter where you change it.']) +
-     note('Reading the trend %','It compares today\'s price to the price from about a year ago (or the earliest one on record if you haven\'t tracked it that long).','accent'))}
+     note('Reading the trend %','It compares today\'s price to the price from about a year ago (or the earliest one on record if you haven\'t tracked it that long).','accent') +
+     `<br><br>${b('Print or hand off the price list:')} at the bottom of the Prices tab, "🖨 Print price list"
+      gives every item across all suppliers on one document — grouped by supplier like the inventory sheet,
+      with per-unit and per-case price and when each was last updated. "📄 Export price list CSV" gives the
+      same as a spreadsheet. This is different from the price-change report in Reports, which is a log of
+      edits over a date range — this is a snapshot of what things cost right now.` +
+     `<br><br>${b('Reconciling a new price sheet:')} "📝 [Supplier] price-update template" makes a worksheet
+      for just the supplier you're currently viewing — item, item #, and current price, with a blank column
+      to write the new price as you check it against what the supplier actually sent. It only covers one
+      supplier at a time, since a new price sheet only ever comes from one vendor at once.`)}
 
   ${helpSection('security','🔒 Security',
      `The Firebase config in this app (including the API key) is <b>meant to be public</b> — every
@@ -2798,19 +3145,42 @@ function saveLocations(){
 }
 
 /* ── Save order to history ── */
-function saveOrder(sn){
+// Pure: build the history record for whatever's currently drafted on the
+// Order tab for this supplier. Returns null if there's nothing to record —
+// callers use that to distinguish "nothing to do" from "did it."
+function buildOrderRecord(sn){
   const items = state.catalog[sn].items
     .map(it=>({id:it.id,name:it.name,itemNum:it.itemNum||'',orderQty:+state.orderQty[it.id]||0}))
     .filter(i=>i.orderQty>0);
-  if(!items.length){ toast('Nothing to save — no quantities entered','warn'); return; }
-  const rec = {
+  if(!items.length) return null;
+  return {
     date:new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}),
     supplier:sn, type:'order', items, ts:Date.now()
   };
+}
+// File a built record and clear the draft it came from.
+function commitOrderRecord(sn, rec){
   state.history.unshift(rec);
   state.learning = recordLearning(state.learning, rec);   // data only, no prediction
   for(const it of state.catalog[sn].items) delete state.orderQty[it.id];
-  persist('history'); persist('learning'); persist('orderQty'); render(); toast('Saved to history','ok');
+  persist('history'); persist('learning'); persist('orderQty');
+}
+
+function saveOrder(sn){
+  const rec = buildOrderRecord(sn);
+  if(!rec){ toast('Nothing to save — no quantities entered','warn'); return; }
+  commitOrderRecord(sn, rec);
+  clearSkipsForSupplier(sn);
+  render(); toast('Saved to history','ok');
+}
+
+// Closes out a review pass where the outcome was "nothing needed this
+// time" — every item checked and skipped, no real quantity anywhere. Send
+// and Save both require a real quantity to do anything, so without this,
+// an all-skipped supplier had no way to clear its marks at all: the exact
+// gap that was leaving stale "Skipped" tags sitting around indefinitely.
+function finishReview(sn){
+  if(clearSkipsForSupplier(sn)){ render(); toast('Review cleared — nothing needed this time','ok'); }
 }
 
 function saveInventory(){
@@ -2966,7 +3336,7 @@ function resendInventoryChannel(idx, key){
         ? `${i.orderQty} case${i.orderQty!==1?'s':''} × ${i.name} (${i.caseQty}/cs, ${i.unitsNeeded} ct needed)`
         : `${i.orderQty} × ${i.name}`
       ).join('\n')+`\n\nThank you,\nBartlett's Restaurant`;
-    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    openEmailChoice(email, subject, body);
   }
 }
 
@@ -2974,25 +3344,30 @@ function resendInventoryChannel(idx, key){
    6. ORDER CHANNELS  (SMS / CSV / email — your exact formats)
    ═══════════════════════════════════════════════════════════════════ */
 function sendOrder(sn){
-  let items;
   const isTrimarkInventory = (sn==='TRIMARK' && state.tab==='inventory');
+  let items, rec = null;
   if(isTrimarkInventory){
+    // Trimark's inventory count IS its durable record (saved separately via
+    // "Save month & reset"), so a channel send here has nothing extra to
+    // commit — it's just dispatching what the count already determined.
     items = state.catalog['TRIMARK'].items.map(it=>{
       const t=state.trimark[it.id]||{}; const r=trimarkRow(t.begin,t.add,t.count,it.par,it.unitCost);
       return {name:it.name,itemNum:it.itemNum||'',orderQty:r.order||0};
     }).filter(i=>i.orderQty>0);
   } else {
-    items = state.catalog[sn].items
-      .map(it=>({name:it.name,itemNum:it.itemNum||'',orderQty:+state.orderQty[it.id]||0}))
-      .filter(i=>i.orderQty>0);
+    rec = buildOrderRecord(sn);
+    items = rec ? rec.items : [];
   }
   if(!items.length){ toast('No items with quantity to send','warn'); return; }
-  // The order is genuinely going out now — clear skip marks for this supplier
-  // BEFORE triggering the send. sendAbcoSms/sendEmail below navigate via
-  // window.location.href (sms:/mailto:), which on iOS can pause or tear down
-  // JS execution the instant that line runs — anything meant to happen AFTER
-  // it is not guaranteed to fire. Doing the bookkeeping first guarantees it.
+  // Tapping Send IS the commitment to place this order — record it now,
+  // before triggering the actual dispatch, rather than relying on a
+  // separate manual "Save" tap that's easy to forget. That gap was leaving
+  // real holes in History/COGS: an order goes out, nothing gets recorded.
+  // Doing this first (not after) also matches the skip-clear reasoning
+  // below — anything that must reliably happen shouldn't be scheduled
+  // after a call that might navigate the page.
   if(!isTrimarkInventory && clearSkipsForSupplier(sn)) render();
+  if(rec){ commitOrderRecord(sn, rec); render(); }
   _sendFromItems(sn, items);
 }
 
@@ -3034,6 +3409,52 @@ function getBekItemNum(item){
   return '';
 }
 
+/* ── Sending an email: let the person choose HOW ──
+   mailto: links always open whatever's set as the device's default mail
+   app — a webpage can't force a specific third-party app like Outlook to
+   open instead; that's an iOS restriction, not something in our control.
+   The practical way around it: offer a plain-text copy, so someone can
+   open Outlook themselves and paste in. This also sidesteps a real Apple
+   Mail quirk — copying text OUT of Mail's compose window can carry hidden
+   formatting (often an inherited white text color) that Outlook renders
+   literally, making pasted text invisible. Copying straight from here,
+   as plain text, never passes through Mail's rich-text layer at all. ── */
+let _pendingEmail = null;
+function openEmailChoice(to, subject, body){
+  _pendingEmail = {to, subject, body};
+  modal(`<h2>Send order</h2>
+    <div class="sched">"Open in Mail" uses whatever your phone has set as the default mail app.
+      Using Outlook or something else? Copy the text and paste it into a new email there instead —
+      copied as plain text, so it won't have the invisible-formatting issue from copying out of Mail.</div>
+    <div class="sched" style="margin-top:6px"><b>To:</b> ${esc(to)}<br><b>Subject:</b> ${esc(subject)}</div>
+    <button class="btn" onclick="_sendPendingEmailViaMailto()">📧 Open in Mail app</button>
+    <button class="btn ghost" onclick="_copyPendingEmailText()">📋 Copy order text</button>`);
+}
+function _sendPendingEmailViaMailto(){
+  if(!_pendingEmail) return;
+  const {to, subject, body} = _pendingEmail;
+  closeModal();
+  window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+function _copyPendingEmailText(){
+  if(!_pendingEmail) return;
+  const {body} = _pendingEmail;
+  const done = ()=>{ toast('Copied — paste into Outlook or any mail app','ok'); closeModal(); };
+  const fail = ()=>{ toast('Could not copy — try "Open in Mail app" instead','warn'); };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(body).then(done).catch(fail);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = body; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand && document.execCommand('copy');
+      ta.remove();
+      ok ? done() : fail();
+    }
+  }catch(e){ fail(); }
+}
+
 function sendEmail(sn, items){
   const c=DEFAULT_SUPPLIERS[sn];
   const to = (c.contact.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)||[''])[0] || (c.email||'');
@@ -3048,7 +3469,7 @@ function sendEmail(sn, items){
       return `${i.orderQty} × ${i.name}${i.itemNum?` (#${i.itemNum})`:''}`;
     }).join('\n')+
     `\n\nThank you,\nBartlett's Restaurant`;
-  window.location.href=`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  openEmailChoice(to, subject, body);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -3214,6 +3635,7 @@ function startListeners(){
   bind('learning', v=>{ state.learning=v; });
   bind('skipped',  v=>{ state.skipped=v; });
   bind('priceHistory', v=>{ state.priceHistory=v; });
+  bind('expenses', v=>{ state.expenses = Array.isArray(v) ? v : []; });
   bind('history',  v=>{ if(Array.isArray(v)) state.history=v;
                         else if(v&&typeof v==='object') state.history=Object.values(v); });
   fbDb.ref('.info/connected').on('value', s=>{
