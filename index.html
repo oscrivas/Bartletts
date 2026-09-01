@@ -480,7 +480,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-08-03b';
+const APP_VERSION = 'v2.1 — build 2026-08-03c';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -808,7 +808,13 @@ function areasToLocs(areas){
 // Default filter spec.
 function defaultReportFilter(){
   const now = new Date();
-  const start = new Date(now); start.setDate(start.getDate()-7);
+  // "This month + all of last month" rather than a narrow trailing window —
+  // Trimark inventory saves monthly, so a 7-day default made a
+  // freshly-saved-or-corrected month invisible by default: not because
+  // anything was broken, but because it simply wasn't in view. This is
+  // wide enough to always include the most recently closed month,
+  // regardless of what day of the current month it is.
+  const start = new Date(now.getFullYear(), now.getMonth()-1, 1);
   return {
     start: isoDate(start), end: isoDate(now),
     suppliers: 'all',        // 'all' or array of supplier names
@@ -832,6 +838,11 @@ function reportPreset(key, now){
     case 'month': {
       const s=new Date(now.getFullYear(), now.getMonth(), 1);
       return { start: isoDate(s), end: isoDate(now) };
+    }
+    case 'lastmonth': {
+      const s=new Date(now.getFullYear(), now.getMonth()-1, 1);
+      const e=new Date(now.getFullYear(), now.getMonth(), 0);   // last day of last month
+      return { start: isoDate(s), end: isoDate(e) };
     }
     case 'lastyear-week': {
       // Same week, one year ago: 3 days before/after today's date last year.
@@ -2070,7 +2081,7 @@ function toggleReportBreakageExpanded(){ _repBreakageExpanded = !_repBreakageExp
 // identically regardless of which type of report is showing.
 function reportFilterHeader(f){
   const presetBtns = [
-    ['7d','Last 7 days'],['30d','Last 30 days'],['month','This month'],
+    ['7d','Last 7 days'],['30d','Last 30 days'],['month','This month'],['lastmonth','Last month'],
     ['lastyear-week','Same week, last yr'],['lastyear-month','Same month, last yr']
   ].map(([k,lbl])=>`<button class="par-tag" style="padding:8px 10px" onclick="applyReportPreset('${k}')">${lbl}</button>`).join(' ');
 
