@@ -89,9 +89,8 @@ h1,h2,h3{font-family:'Fjalla One','Arial Narrow',-apple-system,sans-serif;
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.75)}}
 
 /* ── Supplier pills: ticket tabs ── */
-.supbar{display:flex;gap:8px;padding:14px 18px 12px;overflow-x:auto;
-  scrollbar-width:none;background:var(--ink)}
-.supbar::-webkit-scrollbar{display:none}
+.supbar{display:flex;gap:8px;padding:14px 18px 12px;flex-wrap:wrap;
+  background:var(--ink)}
 .sup-pill{flex:0 0 auto;padding:9px 16px;border-radius:8px;font-size:12px;
   font-weight:700;font-family:'Roboto Mono',monospace;letter-spacing:.05em;text-transform:uppercase;
   background:var(--panel);color:var(--dim);white-space:nowrap;
@@ -480,7 +479,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v2.1 — build 2026-08-03c';
+const APP_VERSION = 'v3.0 — build 2026-08-11a';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -503,7 +502,7 @@ function defaultState(){
       items: DEFAULT_SUPPLIERS[sn].items.map(i => ({...i})) };
   }
   return {
-    tab:'order', activeSupp:'ABCO', editMode:false,
+    tab:'dashboard', activeSupp:'ABCO', editMode:false,
     catalog, deletedIds:{}, locations:['dock','closet','restaurant'],
     orderQty:{}, onHand:{}, trimark:{}, history:[],
     cog:{sales:{}, manual:{}}, learning:{}, skipped:{}, priceHistory:{}, expenses:[],
@@ -756,6 +755,25 @@ function getLocations(){
 // Subtotal per area = sum of its entries. Total = sum of all entries.
 // An area with zero entries is "not counted yet"; an area with entries
 // (including a single 0) is counted.
+
+// Push one more count onto an item's area — the actual mechanism behind
+// the "+" button. Field stays empty and ready for the next number rather
+// than ever pre-filling with what's already saved, so tapping + can never
+// accidentally re-submit (and double-count) an old value.
+function pushAreaEntry(itemId, area, rawValue){
+  const v = String(rawValue).trim();
+  if(v==='' || isNaN(+v)) return false;
+  const t = state.trimark[itemId] || {};
+  if(!t.areas || typeof t.areas!=='object') t.areas = {};
+  if(!Array.isArray(t.areas[area])) t.areas[area] = [];
+  t.areas[area].push(+v);
+  t.locs = areasToLocs(t.areas);           // back-compat mirror, same as countSave()
+  const total = areasTotal(t.areas);
+  t.count = total==null ? '' : total;
+  state.trimark[itemId] = t;
+  persist('trimark');
+  return true;
+}
 
 function areaSubtotal(entries){
   if(!Array.isArray(entries) || !entries.length) return null;
@@ -1038,14 +1056,26 @@ function render(){
   app.innerHTML = topBar() + supBar() + `<div class="content">${tabBody()}</div>` + tabBar();
 }
 
+// Which sub-view is showing inside the Reports hub. View-state only —
+// deliberately not synced, same reasoning as _invPeriodTs: one person
+// browsing Prices on the hub shouldn't yank another device's screen.
+let _reportSubTab = 'reports';
+const REPORT_SUBTABS = [
+  ['history','🕐','History'], ['reports','📊','Reports'],
+  ['cog','💰','COGS'], ['price','🏷️','Prices'],
+];
+function setReportSubTab(key){ _reportSubTab = key; render(); }
+// Cross-navigation from Dashboard's quick actions: jump straight into a
+// specific Reports sub-view, not just the hub's default.
+function goToReportsSubTab(key){ _reportSubTab = key; setTab('report'); }
+
 function topBar(){
   const s = state; const supp = s.catalog[s.activeSupp];
-  const title = s.tab==='order' ? s.activeSupp
+  const reportSubLabel = {history:'History',reports:'Reports',cog:'Cost of Goods',price:`Prices — ${s.activeSupp}`}[_reportSubTab];
+  const title = s.tab==='dashboard' ? 'Dashboard'
+    : s.tab==='order' ? s.activeSupp
     : s.tab==='inventory' ? 'Inventory'
-    : s.tab==='history' ? 'History'
-    : s.tab==='report' ? 'Reports'
-    : s.tab==='cog' ? 'Cost of Goods'
-    : s.tab==='price' ? `Prices — ${s.activeSupp}`
+    : s.tab==='report' ? reportSubLabel
     : s.tab==='help' ? 'Help' : "Bartlett's";
   return `<div class="topbar">
     <div><h1>${esc(title)}</h1><div class="sub">Bartlett's — Austin, TX</div></div>
@@ -1054,7 +1084,8 @@ function topBar(){
 }
 
 function supBar(){
-  if(state.tab!=='order' && state.tab!=='price') return '';
+  const showsSupplierPicker = state.tab==='order' || (state.tab==='report' && _reportSubTab==='price');
+  if(!showsSupplierPicker) return '';
   return `<div class="supbar">${SUP_NAMES.map(sn=>{
     const c = DEFAULT_SUPPLIERS[sn];
     const on = sn===state.activeSupp;
@@ -1065,24 +1096,37 @@ function supBar(){
 
 function tabBar(){
   const tabs = [
-    ['order','📋','Order'],['inventory','📦','Inventory'],
-    ['history','🕐','History'],['report','📊','Reports'],
-    ['cog','💰','COGS'],
-    ['price','🏷️','Prices'],['help','❔','Help']
+    ['dashboard','🏠','Dashboard'],['order','📋','Order'],['inventory','📦','Inventory'],
+    ['report','📊','Reports'],['help','❔','Help']
   ];
   return `<div class="tabbar">${tabs.map(([id,ico,lbl])=>
     `<button class="tab${state.tab===id?' active':''}" onclick="setTab('${id}')">
        <span class="ico">${ico}</span>${lbl}</button>`).join('')}</div>`;
 }
 
+// Reports hub: one tab, four sub-views (History / Reports / COGS / Prices)
+// switched with the same pill pattern used everywhere else in the app,
+// instead of four separate top-level tabs for things that are all
+// fundamentally "look back and analyze" rather than "do the work now".
+function reportsHubView(){
+  const subNav = `<div class="supbar" style="padding:10px 0 4px">${REPORT_SUBTABS.map(([key,ico,lbl])=>{
+    const on = _reportSubTab===key;
+    return `<button class="sup-pill${on?' active':''}" style="${on?'background:var(--accent);color:#04121f':''}"
+      onclick="setReportSubTab('${key}')">${ico} ${lbl}</button>`;
+  }).join('')}</div>`;
+  const body = _reportSubTab==='history' ? historyView()
+    : _reportSubTab==='cog' ? cogView()
+    : _reportSubTab==='price' ? priceView()
+    : reportView();
+  return subNav + body;
+}
+
 function tabBody(){
   switch(state.tab){
+    case 'dashboard': return dashboardView();
     case 'order':     return orderView();
     case 'inventory': return inventoryView();
-    case 'history':   return historyView();
-    case 'report':    return reportView();
-    case 'cog':       return cogView();
-    case 'price':     return priceView();
+    case 'report':    return reportsHubView();
     case 'help':      return helpView();
     default:          return '';
   }
@@ -1197,6 +1241,16 @@ function inventoryPeriodBar(){
   }).join('')}</div>`;
 }
 
+// Which Inventory mode is showing: 'count' (new, area-first fast entry,
+// matching how counting actually happens — walk to one spot, count
+// everything there) or 'review' (the full item list, for checking
+// everything and placing orders once counting is done). View-state only,
+// not synced — same reasoning as the other view-state variables here.
+let _invMode = 'count';
+let _invArea = null;
+function setInvMode(m){ _invMode = m; render(); }
+function setInvArea(a){ _invArea = a; render(); }
+
 function inventoryView(){
   const items = state.catalog['TRIMARK'].items;
   const edit = state.editMode;
@@ -1207,10 +1261,6 @@ function inventoryView(){
     if(!rec){ _invPeriodTs = null; }          // record deleted while open
     else return historicalInventoryView(rec);
   }
-
-  const counted = items.filter(i=>{
-    const t=state.trimark[i.id]||{}; return t.count!=null && t.count!=='';
-  }).length;
 
   const editBar = `<div class="btn-row">
     <button class="btn ghost" onclick="toggleEdit()" style="${edit?'background:var(--accent);color:#04121f':''}">
@@ -1232,6 +1282,107 @@ function inventoryView(){
       or price — or delete it.</div>${editBar}${erows}${editBar}`;
   }
 
+  const modeBar = `<div class="btn-row">
+    <button class="btn${_invMode==='count'?'':' ghost'}" onclick="setInvMode('count')">📍 Count</button>
+    <button class="btn${_invMode==='review'?'':' ghost'}" onclick="setInvMode('review')">📋 Review &amp; order</button>
+  </div>`;
+
+  return `${inventoryPeriodBar()}${modeBar}
+    ${_invMode==='review' ? inventoryReviewView(items, editBar) : areaCountView(items)}`;
+}
+
+/* ── COUNT mode: area-first, matching how the count actually happens —
+   walk to one physical spot, go down one list, count everything there,
+   move to the next spot. Every item is shown for every area (any item
+   could theoretically live anywhere), so a "not here" item just stays
+   blank — exactly like skipping past it on a paper checklist. ── */
+function areaCountView(items){
+  const locs = getLocations();
+  if(!_invArea || !locs.includes(_invArea)) _invArea = locs[0];
+
+  const areaPills = `<div class="supbar" style="padding:10px 0 4px">
+    ${locs.map(loc=>{
+      const on = loc===_invArea;
+      return `<button class="sup-pill${on?' active':''}" style="${on?'background:var(--accent);color:#04121f':''}"
+        onclick="setInvArea('${escJs(loc)}')">${esc(loc)}</button>`;
+    }).join('')}
+    <button class="sup-pill" onclick="editLocations()">⚙</button>
+  </div>`;
+
+  const touched = items.filter(it=>{
+    const t = state.trimark[it.id]||{};
+    return areaSubtotal(t.areas && t.areas[_invArea]) != null;
+  }).length;
+
+  const rows = items.map((it,idx)=>{
+    const t = state.trimark[it.id]||{};
+    const arr = (t.areas && t.areas[_invArea]) || null;
+    const sum = areaSubtotal(arr);
+    const savedHint = arr && arr.length ? (arr.length>1 ? `${arr.join('+')} = ${sum}` : `${sum}`) : null;
+    const otherAreas = locs.filter(l=>l!==_invArea).map(l=>{
+      const v = areaSubtotal(t.areas && t.areas[l]);
+      return v!=null ? `${esc(l)}: ${v}` : null;
+    }).filter(Boolean).join(' · ');
+    return `<div class="item">
+      <div class="item-main">
+        <div class="item-name">${esc(it.name)}</div>
+        ${savedHint ? `<div class="item-meta" style="color:var(--ok)">Already have: ${esc(savedHint)}</div>` : ''}
+        ${otherAreas ? `<div class="item-meta" style="color:var(--purple)">${otherAreas}</div>` : ''}
+      </div>
+      <input class="field" style="width:64px;text-align:center;margin:0" inputmode="numeric"
+        id="area-input-${idx}" value="" placeholder="0"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();commitAreaEntry('${it.id}','${escJs(_invArea)}',${idx},${idx+1});}">
+      <button class="skip-toggle" style="margin-left:6px" onclick="addAreaEntryInline('${it.id}','${escJs(_invArea)}',${idx})">＋</button>
+    </div>`;
+  }).join('');
+
+  return `<div class="sched"><b>${touched}/${items.length}</b> counted in <b>${esc(_invArea)}</b> so far.
+    Type a count and hit Enter (or Go/Done on the keypad) to jump straight to the next item.
+    Found the same item in another spot here too? Tap ＋ to log it and add another —
+    the field clears and stays ready for the next one. Other areas already logged for
+    an item show as a hint below its name.</div>
+    ${areaPills}
+    ${rows}`;
+}
+
+// Update one item's count for one area, keep the item's total/back-compat
+// mirror in sync, and — when advancing from Enter — refocus the next
+// input AFTER the new DOM exists (render() replaces the whole list, so
+// grabbing the next field has to happen on the far side of that, not
+// before it, or it'd be focusing an element that's about to be thrown away).
+// Tap ＋: log whatever's typed as one more entry for this item, then clear
+// the field and refocus it — ready for another spot of the same item,
+// without ever pre-filling (so it can't accidentally resubmit an old value).
+function addAreaEntryInline(itemId, area, idx){
+  const el = $('area-input-'+idx);
+  pushAreaEntry(itemId, area, el ? el.value : '');
+  render();
+  const again = $('area-input-'+idx);
+  if(again){ again.value=''; if(again.focus) again.focus(); }
+}
+
+// Enter / Go / Done: log whatever's typed (if anything) as this item's
+// final entry for this pass, then move to the next item. An empty field
+// just means "nothing more here" and advances without changing anything.
+function commitAreaEntry(itemId, area, idx, focusNextIdx){
+  const el = $('area-input-'+idx);
+  const raw = el ? el.value : '';
+  if(raw.trim()!=='' && isNaN(+raw)) return;   // don't advance past garbage input
+  pushAreaEntry(itemId, area, raw);
+  render();
+  if(focusNextIdx!=null){
+    const next = $('area-input-'+focusNextIdx);
+    if(next && next.focus) next.focus();
+  }
+}
+
+/* ── REVIEW mode: the full item list — Begin/Add/Count/Order, breakage,
+   and the order-and-save actions. Unchanged from before; this is where
+   you check everything once counting is done, and finalize the month. ── */
+function inventoryReviewView(items, editBar){
+  const counted = items.filter(i=>{
+    const t=state.trimark[i.id]||{}; return t.count!=null && t.count!=='';
+  }).length;
   const head = `<div class="inv-head">
     <div>Item</div><div>Begin</div><div>Add</div><div>Count</div><div>Order</div></div>`;
 
@@ -1284,8 +1435,7 @@ function inventoryView(){
       }).join('')
     : '<div class="sched">No items above par — nothing to order yet.</div>';
 
-  return `${inventoryPeriodBar()}
-    <div class="sched"><b>${counted}/${items.length} counted</b> ·
+  return `<div class="sched"><b>${counted}/${items.length} counted</b> ·
       START = Begin + Add · USED = Start − Count · ORDER = Par − Count</div>
     ${breakTotals.value>0 || breakTotals.unpriced>0 ? `<div class="hist-card" style="border-color:var(--crit)">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1419,6 +1569,99 @@ function saveHistoricalCount(ts, itemId){
 }
 
 /* ── HISTORY VIEW ── */
+/* ═══════════════════════════════════════════════════════════════════
+   DASHBOARD — the new landing screen. Every number here is pulled from
+   data the app already tracks and computes elsewhere (stock status math,
+   COGS spend, breakage, history) — nothing new is invented. Deliberately
+   does NOT show a cross-supplier "low stock" figure: state.onHand is read
+   for display elsewhere but is never actually written by anything in this
+   app, so a dashboard built on it would always read empty for four of the
+   five suppliers — quietly wrong, not just incomplete.
+   ═══════════════════════════════════════════════════════════════════ */
+function quickAddExpense(){ goToReportsSubTab('cog'); openExpenseDetail(null); }
+
+function dashboardView(){
+  const now = new Date();
+  const mk = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+
+  // Trimark: real, live signal — items already counted this period that
+  // are below par. Uses the exact same math as everywhere else (case
+  // rounding included), so it never disagrees with Inventory or Order.
+  const triItems = state.catalog.TRIMARK.items;
+  const triCounted = triItems.filter(i=>{ const t=state.trimark[i.id]||{}; return t.count!=null && t.count!==''; });
+  const triNeeded = triItems.map(it=>{
+    const t = state.trimark[it.id]||{};
+    if(t.count==null || t.count==='') return null;
+    const r = trimarkRow(t.begin, t.add, t.count, it.par, it.unitCost);
+    return r.order>0 ? {name:it.name, order:unitsToCases(r.order, it.caseQty), caseQty:it.caseQty} : null;
+  }).filter(Boolean);
+
+  // Draft orders sitting unsent on the Order tab, per supplier — real data
+  // (state.orderQty), not a guess at what "should" be ordered.
+  const draftsBySupplier = SUP_NAMES.map(sn=>{
+    const items = state.catalog[sn].items;
+    const n = items.reduce((c,it)=> c + ((+state.orderQty[it.id]||0)>0?1:0), 0);
+    return {sn, n};
+  }).filter(d=>d.n>0);
+
+  const cog = cogSpendFromOrders(state.history, state.catalog, mk);
+  const otherSpend = expenseTotalForMonth(mk);
+  const monthSpend = cog.total + otherSpend;
+
+  const breakageData = buildReport(state.history, {
+    start: mk+'-01', end: isoDate(now), suppliers:'all', types:'inventory', activeOnly:false, search:''
+  });
+  const breakageTotal = breakageData.rows.reduce((s,r)=> s+(r.breakageValue||0), 0);
+
+  const recent = state.history.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,5);
+
+  return `
+    <div class="btn-row" style="flex-wrap:wrap">
+      <button class="btn" style="flex:1 1 45%" onclick="setTab('inventory')">📦 Start inventory</button>
+      <button class="btn ghost" style="flex:1 1 45%" onclick="setTab('order')">📋 Place an order</button>
+      <button class="btn ghost" style="flex:1 1 45%" onclick="quickAddExpense()">🧾 Add expense</button>
+      <button class="btn ghost" style="flex:1 1 45%" onclick="goToReportsSubTab('price')">🏷️ Update prices</button>
+    </div>
+
+    <div class="hist-card" style="cursor:pointer" onclick="setTab('inventory')">
+      <label class="fl">Inventory this period</label>
+      <div style="font-size:24px;font-weight:800">${triCounted.length}/${triItems.length} <span style="font-size:13px;font-weight:400;color:var(--dim)">counted</span></div>
+      ${triNeeded.length ? `<div class="sched" style="color:var(--crit);padding-top:4px">⚠ ${triNeeded.length} item${triNeeded.length!==1?'s':''} below par so far</div>`
+        : (triCounted.length ? `<div class="sched" style="padding-top:4px">Nothing below par yet.</div>` : '')}
+    </div>
+
+    ${draftsBySupplier.length ? `<div class="hist-card">
+      <label class="fl">Draft orders in progress</label>
+      ${draftsBySupplier.map(d=>`<div style="display:flex;justify-content:space-between;padding:6px 0;cursor:pointer"
+          onclick="setSupp('${d.sn}');setTab('order')">
+        <span>${esc(d.sn)}</span><span style="font-weight:700">${d.n} item${d.n!==1?'s':''} not sent</span>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div style="display:flex;gap:10px">
+      <div class="hist-card" style="flex:1;cursor:pointer" onclick="goToReportsSubTab('cog')">
+        <label class="fl">Spend this month</label>
+        <div style="font-size:22px;font-weight:800">$${monthSpend.toFixed(2)}</div>
+      </div>
+      <div class="hist-card" style="flex:1;cursor:pointer" onclick="goToReportsSubTab('reports')">
+        <label class="fl">Breakage this month</label>
+        <div style="font-size:22px;font-weight:800;color:${breakageTotal>0?'var(--crit)':'var(--txt)'}">$${breakageTotal.toFixed(2)}</div>
+      </div>
+    </div>
+
+    <label class="fl" style="margin-top:16px">Recent activity</label>
+    ${recent.length ? recent.map(h=>`<div class="hist-card" style="padding:12px 16px;cursor:pointer" onclick="goToReportsSubTab('history')">
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-weight:700">${esc(h.supplier)} · ${esc(h.type||'order')}</span>
+          <span style="color:var(--dim);font-size:13px">${esc(h.date)}</span>
+        </div>
+      </div>`).join('') : `<div class="empty">
+        <div style="font-size:34px;margin-bottom:10px;opacity:.5">👋</div>
+        <div style="color:var(--paper);font-weight:600;font-size:15px">Nothing saved yet</div>
+        <div>Place an order or start an inventory count to see activity here.</div>
+      </div>`}`;
+}
+
 function historyView(){
   if(!state.history.length) return `<div class="empty">
     <div style="font-size:34px;margin-bottom:10px;opacity:.5">🕐</div>
@@ -2216,14 +2459,17 @@ function reportView(){
 
     <div class="btn-row">
       <button class="btn${_repMode==='list'?'':' ghost'}" onclick="setReportMode('list')">List</button>
-      <button class="btn${_repMode==='yoy'?'':' ghost'}" onclick="setReportMode('yoy')">Vs. last year</button>
+      <button class="btn${_repMode==='yoy'?'':' ghost'}" onclick="setReportMode('yoy')">Vs. last year (orders)</button>
     </div>
 
     <div class="sched" style="display:flex;justify-content:space-between;margin-top:12px">
       <span><b>${rows.length}</b> item${rows.length!==1?'s':''} · <b>${data.recordCount}</b> record${data.recordCount!==1?'s':''}</span>
       <span><b>${grandQty}</b> total qty${grandCost>0?` · $${grandCost.toFixed(2)}`:''}</span>
     </div>
-    ${_repMode==='yoy' ? `<div class="sched">Comparing to ${esc(data.priorRange.start)} – ${esc(data.priorRange.end)} (${data.priorRecordCount} records)</div>`:''}
+    ${_repMode==='yoy' ? `<div class="sched">Comparing to ${esc(data.priorRange.start)} – ${esc(data.priorRange.end)} (${data.priorRecordCount} records)</div>
+      <div class="sched" style="color:var(--dim);font-style:italic">This compares units <b>ordered</b>, not stock on hand or actual usage.
+        On-hand isn't tracked for these suppliers, so ordering more here could mean you used more, or just that
+        you started more depleted. Trimark's own Count/Used numbers are the real usage picture for that supplier.</div>`:''}
     ${breakageSection}
 
     <label class="fl" style="margin-top:16px">All activity in this range</label>
@@ -2259,7 +2505,7 @@ function exportReportCsv(){
   const data = _repMode==='yoy' ? buildYoyComparison(state.history,_repFilter) : buildReport(state.history,_repFilter);
   if(!data.rows.length){ toast('Nothing to export','warn'); return; }
   const header = _repMode==='yoy'
-    ? ['Item','Supplier','Type','Qty this range','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','Qty same range last year','Change']
+    ? ['Item','Supplier','Type','Units ordered (this range)','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','Units ordered (same range last yr)','Change']
     : ['Item','Supplier','Type','Total qty','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','First date','Last date'];
   const rows = data.rows.map(r=> _repMode==='yoy'
     ? [r.name,r.supplier,r.type,r.totalQty,r.lastCount??'',r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.priorQty??'',r.delta??'']
@@ -2345,11 +2591,12 @@ function exportReportPdf(){
     <h1>Bartlett's — Order &amp; Inventory Report</h1>
     <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} items · ${data.recordCount} records · ${esc(APP_VERSION)}</div>
     <div class="sub" style="font-style:italic">For "order" rows, Qty/Cost is what was ordered. For "inventory" rows, Qty/Cost shows the final count and its value — Broke and Breakage $ show what was lost.</div>
+    ${_repMode==='yoy' ? `<div class="sub" style="font-style:italic">"Last yr" and "Change" compare units ordered, not stock on hand or usage — on-hand isn't tracked except for Trimark.</div>` : ''}
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
     <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
     ${breakageSummaryHtml}
     <table><thead><tr><th>Item</th><th>Supplier</th><th>Type</th><th>Qty / Count</th><th>Cost / Value</th><th>Broke</th><th>Breakage $</th>
-      ${_repMode==='yoy'?'<th>Last yr</th><th>Change</th>':''}</tr></thead>
+      ${_repMode==='yoy'?'<th>Ordered, last yr</th><th>Change</th>':''}</tr></thead>
       <tbody>${rowsHtml}</tbody></table>
     </body></html>`);
   win.document.close();
@@ -2379,7 +2626,7 @@ function priceReportView(f){
   }).join('') : `<div class="empty">
     <div style="font-size:34px;margin-bottom:10px;opacity:.5">🏷️</div>
     <div style="color:var(--paper);font-weight:600;font-size:15px;margin-bottom:6px">No price changes in this range</div>
-    <div>Log a price update in the Prices tab, or widen the date range above.</div>
+    <div>Log a price update in Reports → Prices, or widen the date range above.</div>
   </div>`;
 
   return `
@@ -2773,11 +3020,20 @@ function helpView(){
   ${helpSection('over','📖 Overview',
     `This app does two jobs: ${b('ordering')} from suppliers and monthly ${b('inventory')}.
      Everything saves automatically and syncs across devices.` +
-     li(['<b>Order</b> — build & send supplier orders',
+     li(['<b>Dashboard</b> — what needs attention, right when you open the app',
+         '<b>Order</b> — build & send supplier orders',
          '<b>Inventory</b> — monthly Trimark count',
-         '<b>History</b> — saved orders & counts',
-         '<b>COGS</b> — cost of goods for the month']) +
+         '<b>Reports</b> — History, Reports, COGS, and Prices all live here now, switched with the row of buttons at the top']) +
      note('Auto-save','You never press save to keep data — it saves as you go. The top badge shows sync status.','ok'))}
+
+  ${helpSection('dash','🏠 Dashboard',
+     `The first thing you see when you open the app — what needs attention, without digging through tabs.` +
+     li(['How much of this period\'s Trimark count is done, and what\'s already below par.',
+         'Any supplier where you\'ve started an order but haven\'t sent it yet.',
+         'This month\'s spend and breakage, pulled from the same numbers Reports and COGS already track.',
+         'Your last few saved orders and counts.',
+         'Four quick actions at the top jump straight into starting inventory, placing an order, logging an expense, or updating a price.']) +
+     note('Why no "low stock" for every supplier','Trimark tracks real counts, so its numbers here are real. The other suppliers don\'t track on-hand quantities at all — showing a made-up "low stock" figure for them would look official but not mean anything, so it\'s left out on purpose.','accent'))}
 
   ${helpSection('order','📋 Placing an order',
      li(['Tap a supplier at the top (ABCO, BEK, Amazon, Electrical, Trimark).',
@@ -2796,16 +3052,19 @@ function helpView(){
       "✓ Done reviewing" button appears so you can still clear those marks instead of them sitting there.`)}
 
   ${helpSection('count','📦 Counting inventory',
-     `Each item shows ${b('Begin')}, ${b('Add')}, ${b('Count')}, ${b('Order')}.` +
-     `<br><br>${b('An item in several spots (like silverware in two areas):')} tap its Count button.
-      Counting is organized by area (dock, closet, restaurant…). Within each area you can
-      ${b('add as many entries as you need')} — count the first silverware station, tap ＋ Add,
-      count the second, tap ＋ Add again. Both show under that area and sum in.` +
-     li(['Each entry is listed separately — tap × to remove and re-count just that one.',
-         'Each area shows its subtotal; the item shows the grand total. No calculator.',
-         'A green dot means an area has been counted; grey means not yet.',
-         'The save button stays on screen above the keyboard, and shows the running total.']) +
-     note('Add areas','Tap "⚙ Edit areas" in any count screen to add spots like "bar" or "walk-in". Applies to every item.','accent') +
+     `Inventory has two modes at the top: ${b('Count')} and ${b('Review & order')}.` +
+     `<br><br>${b('Count')} is built around how the count actually happens — you walk to one spot
+      and count everything there, not the other way around.` +
+     li(['Pick the area you\'re standing in (Dock, Closet, Restaurant…) with the row of buttons.',
+         'One field per item — type the count and hit Enter (or Go/Done on the keypad) to jump straight to the next item, no need to close anything or scroll back to find it.',
+         'Same item in more than one spot within this area? Type the count and tap ＋ instead of hitting Enter — it logs that number and clears the field so you can type the next spot right away. Hit Enter once you\'re done with that item. Whatever\'s already logged shows as "Already have: 12+6=18" under the item name.',
+         'If an item already has a count logged in another area, it shows as a small hint right under the name — so you know it\'s split before you second-guess the number in front of you.',
+         'Move to the next area with the same row of buttons when you\'re done with this one. Totals add up across every area automatically.']) +
+     note('Add areas','Tap the ⚙ next to the area buttons to add spots like "bar" or "walk-in". Applies to every item.','accent') +
+     `<br>${b('Review & order')} is where you check the full picture once counting is done — Begin, Add,
+      Count, and Order side by side for every item, plus breakage and the order-and-save buttons.` +
+     li(['Tap any item\'s Count cell here to open its full detail — Begin, Add, and every area\'s breakdown in one place, if you need to dig into a specific item.',
+         'A green dot / filled cell means that item has a count recorded; a dash means it doesn\'t yet.']) +
      `<br>${b('Finish the month:')} count everything, send the order buttons, then "Save month & reset" —
       this files it to History and rolls Count into next month's Begin.` +
      `<br><br>${b('Going back to a previous month:')} the row of buttons at the top of Inventory
@@ -2827,7 +3086,7 @@ function helpView(){
          'Tap an item to change name, pack, par, price, or number.',
          'Tap "＋ Add item" to create one; "Delete item" to remove.',
          'Deleted built-in items stay deleted after syncing.']) +
-     `${b('Bulk prices:')} COGS tab → "Upload price list (CSV)" → paste item#,price lines.`)}
+     `${b('Bulk prices:')} Reports → COGS → "Upload price list (CSV)" → paste item#,price lines.`)}
 
   ${helpSection('report','📊 Reports & looking back',
      `The ${b('Reports')} tab lets you look back at any date range — perfect for checking
@@ -2837,6 +3096,7 @@ function helpView(){
          '"Hide zero-activity items" cuts out noise — items with no real quantity in that range.',
          'Switch to "Vs. last year" to see this range side-by-side with the same dates one year back, with the change highlighted.',
          'Export to CSV for a spreadsheet, or Print/Save PDF for a printable copy.']) +
+     note('What "Vs. last year" actually compares','Units ordered, not stock on hand or real usage. If you started this year more depleted than last year, you could order more without having used more — order volume and usage aren\'t the same thing. Trimark is the one exception: its Count/Used numbers from the monthly inventory are real usage, not just orders.','low') +
      note('Best way to plan a holiday','Set the range to last year\'s holiday week, switch to "Vs. last year" ' +
        'with this year\'s current range — or just read off last year\'s totals as your starting point.','accent'))}
 
@@ -2861,7 +3121,7 @@ function helpView(){
          'Made a typo logging a price? Open the item and tap × next to that entry to remove it — the current price reverts automatically if you deleted the latest one.',
          'Updating a price in ✎ Edit items logs it here too — one history, no matter where you change it.']) +
      note('Reading the trend %','It compares today\'s price to the price from about a year ago (or the earliest one on record if you haven\'t tracked it that long).','accent') +
-     `<br><br>${b('Print or hand off the price list:')} at the bottom of the Prices tab, "🖨 Print price list"
+     `<br><br>${b('Print or hand off the price list:')} at the bottom of Reports → Prices, "🖨 Print price list"
       gives every item across all suppliers on one document — grouped by supplier like the inventory sheet,
       with per-unit and per-case price and when each was last updated. "📄 Export price list CSV" gives the
       same as a spreadsheet. This is different from the price-change report in Reports, which is a log of
@@ -3091,11 +3351,14 @@ function countSave(){
     persist('trimark'); closeModal(); render();
     toast('Count saved','ok');
   };
-  if(!a.allBlank && a.anyBlank){
-    confirmModal(`${a.blank.length} area(s) not counted: ${a.blank.join(', ')}.\nSave anyway? (they'll count as zero)`, doSave, 'Save anyway');
-  } else {
-    doSave();
-  }
+  // Partial-area counts are the NORMAL case — most items live in only one
+  // or two of the storage areas, not all three. Blocking every save with a
+  // confirmation here was pure friction with no real safety benefit (it's
+  // trivially dismissed every time, so it never actually prevented an
+  // error) — up to 45 times per inventory count. The "Not counted yet"
+  // line already shown in the sheet gives the same visibility without
+  // stopping the save.
+  doSave();
 }
 
 /* ── Location management ── */
@@ -3195,12 +3458,18 @@ function finishReview(sn){
 }
 
 function saveInventory(){
-  const counted = state.catalog['TRIMARK'].items.filter(it=>{
-    const t=state.trimark[it.id]||{}; return t.count!=null && t.count!=='';
-  }).length;
-  const totalItems = state.catalog['TRIMARK'].items.length;
-  confirmModal(`Save this month's inventory and reset counts?\n${counted} of ${totalItems} items counted.\nCounts roll into next month's Begin.`, ()=>{
-    const items = state.catalog['TRIMARK'].items.map(it=>{
+  const items = state.catalog['TRIMARK'].items;
+  const missing = items.filter(it=>{
+    const t=state.trimark[it.id]||{}; return t.count==null || t.count==='';
+  });
+  const counted = items.length - missing.length;
+  const totalItems = items.length;
+  const missingNames = missing.slice(0,8).map(it=>it.name).join(', ') + (missing.length>8 ? `, +${missing.length-8} more` : '');
+  const msg = missing.length===0
+    ? `Save this month's inventory and reset counts?\nAll ${totalItems} items counted.\nCounts roll into next month's Begin.`
+    : `Save this month's inventory and reset counts?\n${counted} of ${totalItems} items counted — missing: ${missingNames}.\nCounted items roll into next month's Begin; the ${missing.length} missing item${missing.length!==1?'s keep':' keeps'} its current Begin unchanged, so nothing is lost — just not updated this time.`;
+  confirmModal(msg, ()=>{
+    const historyItems = state.catalog['TRIMARK'].items.map(it=>{
       const t=state.trimark[it.id]||{};
       const r=trimarkRow(t.begin,t.add,t.count,it.par,it.unitCost);
       return {id:it.id,name:it.name,begin:t.begin||0,add:t.add||0,count:r.counted,
@@ -3209,14 +3478,20 @@ function saveInventory(){
     });
     state.history.unshift({
       date:new Date().toLocaleString('en-US',{month:'long',year:'numeric'}),
-      supplier:'TRIMARK', type:'inventory', items, ts:Date.now()
+      supplier:'TRIMARK', type:'inventory', items:historyItems, ts:Date.now()
     });
-    // Roll count -> next begin, clear add/count/areas for the fresh month
+    // Roll count -> next begin, clear add/count/areas for the fresh month.
+    // An item that wasn't counted this period must NOT lose its entry
+    // entirely — that was the actual bug: it left next month's Begin as
+    // undefined instead of carrying forward whatever was already known,
+    // forcing every uncounted item's starting count to be redone by hand.
     const next={};
     for(const it of state.catalog['TRIMARK'].items){
       const t=state.trimark[it.id]||{};
       const r=trimarkRow(t.begin,t.add,t.count,it.par,it.unitCost);
-      if(r.counted!=null) next[it.id]={begin:r.counted,add:'',count:'',areas:{}};
+      next[it.id] = (r.counted!=null)
+        ? {begin:r.counted, add:'', count:'', areas:{}}
+        : {begin:t.begin||0, add:'', count:'', areas:{}};   // not counted — keep the prior Begin, don't lose it
     }
     state.trimark=next;
     persist('history'); persist('trimark'); render(); toast('Month saved · counts rolled forward','ok');
