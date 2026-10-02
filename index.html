@@ -479,7 +479,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v3.1 — build 2026-10-01b';
+const APP_VERSION = 'v3.2 — build 2026-10-02a';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -506,6 +506,7 @@ function defaultState(){
     catalog, deletedIds:{}, locations:['dock','closet','restaurant'],
     orderQty:{}, onHand:{}, trimark:{}, history:[],
     cog:{sales:{}, manual:{}}, learning:{}, skipped:{}, priceHistory:{}, expenses:[],
+    countLog:[],   // append-only trail of trimark count entries — see logCountEntry()
   };
 }
 
@@ -568,6 +569,38 @@ function pushRemote(path, val){
   }catch(e){ console.warn('push fail', path, e); }
 }
 
+/* ── Append-only count log (Layer 3, part 1 of the sync-bulletproofing plan) ──
+   A ground-truth trail of every trimark count entry, kept separate from the
+   persist()/SYNC_KEYS system on purpose: persist() does a whole-object
+   overwrite, which is correct for "current state" but wrong for a log — two
+   devices logging around the same time must never be able to clobber each
+   other's entries. Firebase push() solves that: every call gets its own
+   unique, time-ordered key, so appends from different devices can never
+   collide no matter the order they arrive in.
+   Scope for this ship: trimark only, the field involved in the 2026-10-01
+   incident — not yet the other ~11 synced fields. Same pattern extends to
+   them when their turn in the rollout comes.
+   Pure addition: nothing here is read by any other code yet, so this cannot
+   change existing behavior. It exists so Layer 1's rebuild of trimark has a
+   real recovery trail to build its sanity check against. */
+function getDeviceId(){
+  let id = lsGet('deviceId');
+  if(!id){ id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); lsSet('deviceId', id); }
+  return id;
+}
+function logCountEntry(itemId, row){
+  const entry = {
+    itemId, ts: Date.now(), device: getDeviceId(),
+    count: row.count, begin: row.begin, add: row.add, areas: row.areas,
+  };
+  state.countLog.push(entry);
+  lsSet('countLog', state.countLog);
+  if(fbDb){
+    try{ fbDb.ref('countLog').push(entry).catch(e=>console.warn('countLog push fail', e)); }
+    catch(e){ console.warn('countLog push fail', e); }
+  }
+}
+
 /* ── Load everything from localStorage on boot ── */
 function loadLocal(){
   const del = lsGet(SYNC_KEYS.deletedIds); if(del) state.deletedIds = del;
@@ -582,6 +615,7 @@ function loadLocal(){
   const sk  = lsGet(SYNC_KEYS.skipped);   if(sk)  state.skipped  = sk;
   const ph  = lsGet(SYNC_KEYS.priceHistory); if(ph) state.priceHistory = ph;
   const ex  = lsGet(SYNC_KEYS.expenses);   if(ex)  state.expenses = ex;
+  const cl  = lsGet('countLog');           if(Array.isArray(cl)) state.countLog = cl;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -777,6 +811,7 @@ function pushAreaEntry(itemId, area, rawValue){
   t.count = total==null ? '' : total;
   state.trimark[itemId] = t;
   persist('trimark');
+  logCountEntry(itemId, t);
   return true;
 }
 
@@ -3353,7 +3388,9 @@ function countSave(){
     t.add   = (+_countAdd||0)||'';
     t.begin = (+_countBegin||0)||'';
     state.trimark[id]=t;
-    persist('trimark'); closeModal(); render();
+    persist('trimark');
+    logCountEntry(id, t);
+    closeModal(); render();
     toast('Count saved','ok');
   };
   // Partial-area counts are the NORMAL case — most items live in only one
