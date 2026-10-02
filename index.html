@@ -479,7 +479,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v3.0 — build 2026-08-11a';
+const APP_VERSION = 'v3.1 — build 2026-10-01b';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -547,6 +547,11 @@ function mergeCatalog(stored){
 function persist(key){
   const val = state[key];
   lsSet(SYNC_KEYS[key], val);
+  // Persisted (survives reload) record of when THIS device last touched this
+  // key — used only to settle the boot-time reconcile check below in favor of
+  // whichever side was actually edited more recently, not just whichever
+  // happens to be sitting in localStorage.
+  lsSet(SYNC_KEYS[key] + '__editTs', Date.now());
   markLocalWrite(SYNC_KEYS[key]);
   pushRemote(SYNC_KEYS[key], val);
 }
@@ -3903,11 +3908,42 @@ function startListeners(){
   // Don't claim 'synced' yet — wait for the real .info/connected signal below.
   setSync('syncing', 'Authenticated, waiting for connection…');
   maybeMigrate();
+  // Paths holding whatever Oscar just counted/entered: if a write from right
+  // before the app closed or reloaded hadn't reached Firebase yet, the very
+  // FIRST snapshot each listener gets on a fresh page load can still be the
+  // old pre-edit value — isEchoing() can't catch this because _echoUntil is a
+  // brand-new, empty object on this boot, so it offers no protection for an
+  // edit made in a PREVIOUS session. Guarded here so a reload (iOS backgrounding
+  // the PWA long enough to evict it, a force-quit, a low-battery relaunch —
+  // all routine during a long walk-the-restaurant count) can't silently revert
+  // a count back to old data the moment the app reconnects.
+  const _reconcileOnBoot = new Set(['trimark','onHand','orderQty']);
+  const _firstSnapshotSeen = {};
+  // How long this device's own last edit is trusted over a conflicting first
+  // snapshot. Generous enough to cover a whole offline overnight count, short
+  // enough that a second device that's just sat open for days (e.g. a laptop
+  // used only to glance at History) can't win a real conflict with it — that
+  // device's local copy is simply old, not an unsynced edit, so it should
+  // defer to whatever Firebase actually has.
+  const RECONCILE_WINDOW_MS = 24*60*60*1000;
   const bind=(path, apply)=>{
     fbDb.ref(path).on('value', snap=>{
       _lastSyncEvidence=Date.now();          // receiving data = sync works
       if(isEchoing(path)) return;
-      const val=snap.val(); if(val==null) return;
+      const val=snap.val();
+      if(_reconcileOnBoot.has(path) && !_firstSnapshotSeen[path]){
+        _firstSnapshotSeen[path]=true;
+        const local=state[path];
+        const localNonEmpty = local && typeof local==='object' && Object.keys(local).length>0;
+        const editTs = lsGet(path+'__editTs') || 0;
+        const editedRecently = (Date.now()-editTs) < RECONCILE_WINDOW_MS;
+        if(localNonEmpty && editedRecently && JSON.stringify(val)!==JSON.stringify(local)){
+          console.warn('[sync] first snapshot for', path, 'differs from a recent local edit — keeping local, re-pushing');
+          pushRemote(path, local);
+          return;
+        }
+      }
+      if(val==null) return;
       apply(val); lsSet(path, val); render();
     }, err=>{ console.warn('listener error', path, err); setSync('error', `Read denied on "${path}": ${err.message||err}`); });
   };
