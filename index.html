@@ -479,7 +479,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v3.2 — build 2026-10-02a';
+const APP_VERSION = 'v3.3 — build 2026-10-07a';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -546,6 +546,7 @@ function mergeCatalog(stored){
 
 /* ── Save one key locally + push to Firebase ── */
 function persist(key){
+  if(key==='trimark') return persistTrimark();   // per-item storage — see below
   const val = state[key];
   lsSet(SYNC_KEYS[key], val);
   // Persisted (survives reload) record of when THIS device last touched this
@@ -589,16 +590,182 @@ function getDeviceId(){
   return id;
 }
 function logCountEntry(itemId, row){
-  const entry = {
-    itemId, ts: Date.now(), device: getDeviceId(),
+  // JSON round-trip drops undefined fields: Firebase rejects the whole write if
+  // any field is undefined (a brand-new item has no begin/add yet).
+  const entry = JSON.parse(JSON.stringify({
+    itemId, ts: nowTs(), device: getDeviceId(),
     count: row.count, begin: row.begin, add: row.add, areas: row.areas,
-  };
+  }));
   state.countLog.push(entry);
   lsSet('countLog', state.countLog);
   if(fbDb){
-    try{ fbDb.ref('countLog').push(entry).catch(e=>console.warn('countLog push fail', e)); }
-    catch(e){ console.warn('countLog push fail', e); }
+    try{
+      fbDb.ref('countLog').push(entry).catch(e=>{
+        console.warn('countLog push fail', e);
+        setSync('error','Write denied on "countLog": '+(e.message||e));
+      });
+    }catch(e){ console.warn('countLog push fail', e); }
   }
+}
+
+/* ── Per-item trimark storage (Layer 1 of the sync-bulletproofing plan) ──
+   Replaces whole-object sync of `trimark`. In Firebase each item is its own
+   entry:  trimarkItems/{itemId} = {v: row, ts, dev}   (v absent = deleted; the
+   tombstone stops a stale device from resurrecting a deleted item).
+   Writes carry ONLY the items that changed, each stamped with the time and
+   device; merging is per item, newest stamp wins. So two devices editing
+   different items can't overwrite each other, and a stale device can't
+   overwrite a newer value — the whole 2026-10-01 incident class, settled by
+   one rule instead of the old 24h recency patch (retired for trimark).
+   In memory nothing changes: state.trimark is still {itemId: row}, so every
+   screen that reads it is untouched. persist('trimark') still works: it diffs
+   state.trimark against what was last saved/applied and writes the
+   difference, so no call site can forget to say which item it changed.
+   The old whole-blob at Firebase path `trimark` is never read after migration
+   and never written or deleted by this code — it stays as an inert backup. */
+const TRI_PATH = 'trimarkItems';
+const TRI_DAY = 24*60*60*1000;
+let _srvOffset = +lsGet('srvOffset') || 0;   // Firebase server clock minus this device's clock
+let _triMeta = {};                           // {itemId:{ts,dev}} last-write stamp per item
+let _triBase = {};                           // {itemId: JSON of row as last saved/applied}
+let _triMigrating = false;
+function nowTs(){ return Date.now() + _srvOffset; }
+function triClean(row){ return JSON.parse(JSON.stringify(row)); }
+function triEnvelope(row, ts, dev){ return row==null ? {ts, dev} : {v: triClean(row), ts, dev}; }
+// Is stamp a strictly newer than stamp b? Equal time: higher device id wins, so
+// every device settles on the same answer instead of each keeping its own.
+function triNewer(a, b){
+  const at = +(a&&a.ts)||0, bt = +(b&&b.ts)||0;
+  return at!==bt ? at>bt : String((a&&a.dev)||'')>String((b&&b.dev)||'');
+}
+// Order-independent form with empty containers dropped — how Firebase hands a row back.
+function triCanon(v){
+  if(v==null) return '';
+  if(Array.isArray(v)) return v.length ? '['+v.map(triCanon).join(',')+']' : '';
+  if(typeof v==='object'){
+    const parts = Object.keys(v).sort().map(k=>{ const c=triCanon(v[k]); return c==='' ? '' : JSON.stringify(k)+':'+c; }).filter(Boolean);
+    return parts.length ? '{'+parts.join(',')+'}' : '';
+  }
+  return JSON.stringify(v);
+}
+function triInitBase(){
+  _triMeta = lsGet('trimarkMeta') || {};
+  _triBase = {};
+  for(const id of Object.keys(state.trimark)) _triBase[id] = JSON.stringify(state.trimark[id]);
+}
+function triSaveLocal(){ lsSet(SYNC_KEYS.trimark, state.trimark); lsSet('trimarkMeta', _triMeta); }
+function pushTriItems(changed){
+  if(!fbDb) return;
+  try{
+    fbDb.ref(TRI_PATH).update(changed)
+      .then(()=>{ _lastSyncEvidence=Date.now(); setSync('synced'); })
+      .catch(e=>{ console.warn('push fail', TRI_PATH, e); setSync('error','Write denied on "'+TRI_PATH+'": '+(e.message||e)); });
+  }catch(e){ console.warn('push fail', TRI_PATH, e); }
+}
+function persistTrimark(){
+  const ts = nowTs(), dev = getDeviceId(), changed = {};
+  for(const id of new Set([...Object.keys(state.trimark), ...Object.keys(_triMeta)])){
+    const row = state.trimark[id];
+    const json = row==null ? null : JSON.stringify(row);
+    if(json === (_triBase[id] ?? null)) continue;          // untouched since last save
+    // Always strictly later than this item's previous stamp, so a clock that
+    // stalls or steps backwards can never make a new edit look older than the
+    // one before it (which would let the older value win and overwrite it).
+    const t = Math.max(ts, (+(_triMeta[id] && _triMeta[id].ts) || 0) + 1);
+    _triMeta[id] = {ts:t, dev};
+    _triBase[id] = json;
+    changed[id] = triEnvelope(row, t, dev);
+  }
+  triSaveLocal();
+  // Until this device has joined per-item storage (see triMigrate/triFirstSync)
+  // nothing is pushed — those edits ride along in the migration instead, so a
+  // half-filled trimarkItems can never look like "already migrated".
+  if(Object.keys(changed).length){
+    if(lsGet('trimarkMigrated')) pushTriItems(changed);
+    else if(fbDb) triMigrate();       // nothing existed to migrate before — this first edit starts it
+  }
+}
+// Merge Firebase's per-item entries into this device, newest stamp wins.
+function triReconcile(remote){
+  const toPush = {}; let applied = false;
+  for(const id of new Set([...Object.keys(remote), ...Object.keys(_triMeta)])){
+    const r = remote[id], l = _triMeta[id];
+    if(r && triNewer(r, l)){                               // theirs is newer: take it
+      if(r.v != null) state.trimark[id] = r.v; else delete state.trimark[id];
+      _triMeta[id] = {ts:+r.ts||0, dev:r.dev||''};
+      _triBase[id] = r.v != null ? JSON.stringify(r.v) : null;
+      applied = true;
+    } else if(l && triNewer(l, r)){                        // ours is newer, or they never had it: send ours
+      toPush[id] = triEnvelope(state.trimark[id], l.ts, l.dev);
+    }
+  }
+  if(applied){ triSaveLocal(); render(); }
+  if(Object.keys(toPush).length) pushTriItems(toPush);
+}
+// First contact for a device that already has old-format data when per-item
+// data exists in Firebase. A recent local edit that Firebase doesn't have is
+// kept (stamped now, so it wins and gets sent); anything older is just a stale
+// copy and yields to Firebase.
+function triFirstSync(remote){
+  const recent = (Date.now() - (lsGet('trimark__editTs')||0)) < TRI_DAY;
+  const ts = nowTs(), dev = getDeviceId();
+  for(const id of Object.keys(state.trimark)){
+    const r = remote[id], row = state.trimark[id];
+    // Firebase has no entry: keep ours and send it — never silently drop a row
+    // (if it belongs to a deleted item it is invisible and the next month
+    // rollover clears it). Firebase has a LIVE entry that differs: ours wins only
+    // if it is a recent edit. A tombstone, or an older copy, yields to Firebase.
+    const mine = recent || id in _triMeta;
+    const same = r && r.v!=null && triCanon(r.v)===triCanon(row);
+    if(!r || (mine && r.v!=null && !same)) _triMeta[id] = {ts:Math.max(ts, (+(r&&r.ts)||0)+1), dev};   // must outrank what Firebase holds
+  }
+  triSaveLocal();
+}
+// One-time move of the old whole-blob into per-item entries. Runs on the first
+// device that finds trimarkItems empty; the transaction makes "only if empty"
+// atomic, so two devices starting together can't both seed it. A device's own
+// recent edits win over the blob (they were never synced); everything else
+// comes from the blob. The old blob itself is only read.
+function triMigrate(){
+  if(_triMigrating || lsGet('trimarkMigrated')) return;
+  _triMigrating = true;
+  const fail = e=>{ _triMigrating=false; console.warn('trimark migration failed', e); setSync('error','Inventory storage upgrade failed: '+(e.message||e)); };
+  fbDb.ref('trimark').once('value').then(snap=>{
+    const old = snap.val() || {};
+    const recent = (Date.now() - (lsGet('trimark__editTs')||0)) < TRI_DAY;
+    let seed = {}, ts = 0, dev = '';
+    return fbDb.ref(TRI_PATH).transaction(cur=>{
+      if(cur) return;                                      // already migrated elsewhere — abort
+      seed = {}; ts = nowTs(); dev = getDeviceId();
+      const items = {};
+      for(const id of new Set([...Object.keys(old), ...Object.keys(state.trimark)])){
+        const local = state.trimark[id];
+        seed[id] = (local!=null && (old[id]==null || id in _triMeta || recent)) ? local : old[id];
+        items[id] = triEnvelope(seed[id], ts, dev);
+      }
+      return Object.keys(items).length ? items : undefined;
+    }, undefined, false).then(res=>{
+      _triMigrating = false;
+      if(!res.committed) return;                           // nothing to move, or someone else did it
+      state.trimark = seed; _triMeta = {}; _triBase = {};
+      for(const id of Object.keys(seed)){ _triMeta[id] = {ts, dev}; _triBase[id] = JSON.stringify(seed[id]); }
+      triSaveLocal(); lsSet('trimarkMigrated', true);
+      fbDb.ref('meta/trimarkMigration').set({at:ts, by:dev, items:Object.keys(seed).length}).catch(()=>{});
+      render(); toast('Inventory storage upgraded','ok');
+    });
+  }).catch(fail);
+}
+function bindTrimarkItems(){
+  fbDb.ref('.info/serverTimeOffset').on('value', s=>{ _srvOffset = +s.val()||0; lsSet('srvOffset', _srvOffset); });
+  fbDb.ref(TRI_PATH).on('value', snap=>{
+    _lastSyncEvidence = Date.now();
+    const remote = snap.val();
+    if(remote){
+      if(!lsGet('trimarkMigrated')){ triFirstSync(remote); lsSet('trimarkMigrated', true); }
+      triReconcile(remote);
+    } else if(lsGet('trimarkMigrated')) triReconcile({});  // node was emptied: re-send what we hold
+    else triMigrate();
+  }, err=>{ console.warn('listener error', TRI_PATH, err); setSync('error', `Read denied on "${TRI_PATH}": ${err.message||err}`); });
 }
 
 /* ── Load everything from localStorage on boot ── */
@@ -609,6 +776,7 @@ function loadLocal(){
   const oq  = lsGet(SYNC_KEYS.orderQty);  if(oq)  state.orderQty = oq;
   const oh  = lsGet(SYNC_KEYS.onHand);    if(oh)  state.onHand   = oh;
   const tm  = lsGet(SYNC_KEYS.trimark);   if(tm)  state.trimark  = tm;
+  triInitBase();
   const h   = lsGet(SYNC_KEYS.history);   if(Array.isArray(h)) state.history = h;
   const cog = lsGet(SYNC_KEYS.cog);       if(cog) state.cog = {sales:{},manual:{},...cog};
   const lrn = lsGet(SYNC_KEYS.learning);  if(lrn) state.learning = lrn;
@@ -2359,6 +2527,67 @@ let _repMode = 'list';   // 'list' | 'yoy'
 let _repBreakageExpanded = false;
 function toggleReportBreakageExpanded(){ _repBreakageExpanded = !_repBreakageExpanded; render(); }
 
+/* ── Select-to-print: tick rows, then Print/CSV use only those rows.
+      Nothing ticked = everything in view (button says "all"). Ticks are kept
+      by row key, so they survive filter changes; only rows currently in view
+      are ever counted or printed. ── */
+const _sel = {orders:new Set(), price:new Set()};
+const _selKeys = {orders:[], price:[]};          // row index on screen → key
+const SEL_KEY = {
+  orders: r=> r.supplier+'|'+r.type+'|'+r.name,
+  price:  r=> r.supplier+'|'+r.name+'|'+r.ts+'|'+r.price,
+};
+function pickSelected(kind, rows){
+  const set = _sel[kind];
+  if(!set.size) return {rows, picked:false};
+  return {rows: rows.filter(r=> set.has(SEL_KEY[kind](r))), picked:true};
+}
+function selCount(kind){ return _selKeys[kind].filter(k=>_sel[kind].has(k)).length; }
+function selLabel(kind, verb){
+  const n = selCount(kind);
+  return n ? verb+' selected ('+n+')' : verb+' all ('+_selKeys[kind].length+')';
+}
+function selInfo(kind){
+  const n = selCount(kind);
+  return n ? n+' of '+_selKeys[kind].length+' selected' : 'Tick items to print only those';
+}
+function selRefresh(kind){
+  const set = (id,t)=>{ const el=document.getElementById(id+kind); if(el) el.textContent=t; };
+  set('sel-info-', selInfo(kind));
+  set('btn-pdf-', '🖨 '+selLabel(kind,'Print'));
+  set('btn-csv-', '📄 '+selLabel(kind,'CSV'));
+}
+function selToggle(kind, i, on){
+  const k = _selKeys[kind][i]; if(k==null) return;
+  if(on) _sel[kind].add(k); else _sel[kind].delete(k);
+  selRefresh(kind);
+}
+function selAll(kind, on){
+  _selKeys[kind].forEach(k=>{ if(on) _sel[kind].add(k); else _sel[kind].delete(k); });
+  document.querySelectorAll('.selbox-'+kind).forEach(b=>{ b.checked = on; });
+  selRefresh(kind);
+}
+function selCell(kind, key, i){
+  _selKeys[kind][i] = key;
+  return `<label style="display:flex;align-items:center;padding:6px 8px 6px 0;margin:-6px 0 -6px -4px">
+    <input type="checkbox" class="selbox-${kind}" style="width:20px;height:20px" ${_sel[kind].has(key)?'checked':''}
+      onchange="selToggle('${kind}',${i},this.checked)"></label>`;
+}
+function selBar(kind){
+  return `<div class="sched" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">
+      <span id="sel-info-${kind}">${selInfo(kind)}</span>
+      <span><button class="btn ghost" style="padding:6px 10px;width:auto;display:inline-block;margin:0 0 0 6px" onclick="selAll('${kind}',true)">Select all</button>
+      <button class="btn ghost" style="padding:6px 10px;width:auto;display:inline-block;margin:0 0 0 6px" onclick="selAll('${kind}',false)">Clear</button></span></div>`;
+}
+/* Summary figures for exactly the rows being printed. */
+function breakageOf(rows){
+  return {
+    total: +rows.reduce((s,r)=> s+(r.breakageValue||0), 0).toFixed(2),
+    known: rows.filter(r=>r.breakageQty>0 && r.breakageValue!=null).length,
+    unpriced: rows.filter(r=>r.breakageQty>0 && r.breakageValue==null).length,
+  };
+}
+
 // Shared by both the order/inventory report and the price-change report —
 // date range, supplier filter, type filter, and item-name search all work
 // identically regardless of which type of report is showing.
@@ -2452,7 +2681,8 @@ function reportView(){
           : ''}
     </div>`;
 
-  const rowsHtml = rows.length ? rows.map(r=>{
+  _selKeys.orders = [];
+  const rowsHtml = rows.length ? rows.map((r,i)=>{
     const deltaHtml = (_repMode==='yoy')
       ? (r.priorQty==null
           ? `<span style="color:var(--dim);font-size:12px">new item</span>`
@@ -2470,6 +2700,7 @@ function reportView(){
       ? (r.breakageQty>0 ? ` · broke ${r.breakageQty}${r.breakageValue!=null?' ($'+r.breakageValue.toFixed(2)+')':' (no price set)'}` : ' · no breakage')
       : (r.totalCost!=null?` · $${r.totalCost.toFixed(2)}`:'');
     return `<div class="item">
+      ${selCell('orders', SEL_KEY.orders(r), i)}
       <div class="item-main">
         <div class="item-name">${esc(r.name)}</div>
         <div class="item-meta">${esc(r.supplier)} · ${r.type} · ${r.occurrences}×${metaExtra}</div>
@@ -2513,11 +2744,12 @@ function reportView(){
     ${breakageSection}
 
     <label class="fl" style="margin-top:16px">All activity in this range</label>
+    ${rows.length ? selBar('orders') : ''}
     ${rowsHtml}
 
     <div class="btn-row" style="margin-top:14px">
-      <button class="btn ghost" onclick="exportReportCsv()">📄 Export CSV</button>
-      <button class="btn ghost" onclick="exportReportPdf()">🖨 Print / Save PDF</button>
+      <button class="btn ghost" id="btn-csv-orders" onclick="exportReportCsv()">📄 ${selLabel('orders','CSV')}</button>
+      <button class="btn ghost" id="btn-pdf-orders" onclick="exportReportPdf()">🖨 ${selLabel('orders','Print')}</button>
     </div>`;
 }
 
@@ -2543,11 +2775,12 @@ function applyReportPreset(key){
 /* ── Export: CSV ── */
 function exportReportCsv(){
   const data = _repMode==='yoy' ? buildYoyComparison(state.history,_repFilter) : buildReport(state.history,_repFilter);
-  if(!data.rows.length){ toast('Nothing to export','warn'); return; }
+  const outRows = pickSelected('orders', data.rows).rows;
+  if(!outRows.length){ toast('Nothing to export','warn'); return; }
   const header = _repMode==='yoy'
     ? ['Item','Supplier','Type','Units ordered (this range)','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','Units ordered (same range last yr)','Change']
     : ['Item','Supplier','Type','Total qty','Final count','Occurrences','Unit cost','Total cost','Breakage qty','Breakage $','First date','Last date'];
-  const rows = data.rows.map(r=> _repMode==='yoy'
+  const rows = outRows.map(r=> _repMode==='yoy'
     ? [r.name,r.supplier,r.type,r.totalQty,r.lastCount??'',r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.priorQty??'',r.delta??'']
     : [r.name,r.supplier,r.type,r.totalQty,r.lastCount??'',r.occurrences,r.unitCost??'',r.totalCost??'',r.breakageQty||'',r.breakageValue??'',r.firstDate,r.lastDate]);
   const csv = [header, ...rows].map(row=>row.map(v=>{
@@ -2579,7 +2812,9 @@ function exportReportPdf(){
 
   // Now do the (slower) work, writing into the tab we already have open.
   const data = _repMode==='yoy' ? buildYoyComparison(state.history,_repFilter) : buildReport(state.history,_repFilter);
-  if(!data.rows.length){
+  const pick = pickSelected('orders', data.rows);
+  const outRows = pick.rows;
+  if(!outRows.length){
     win.document.open();
     win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Report</title></head>'+
       '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Nothing to print for this range/filters.</body></html>');
@@ -2587,7 +2822,7 @@ function exportReportPdf(){
     toast('Nothing to print','warn');
     return;
   }
-  const rowsHtml = data.rows.map(r=>{
+  const rowsHtml = outRows.map(r=>{
     const isInventory = r.type==='inventory';
     const qtyCell = isInventory ? (r.lastCount!=null?r.lastCount:'—') : r.totalQty;
     const costCell = isInventory
@@ -2605,18 +2840,19 @@ function exportReportPdf(){
       <td style="text-align:right">${r.delta==null?'—':(r.delta>0?'+':'')+r.delta}</td>`:''}
   </tr>`;
   }).join('');
-  const breakageSummaryHtml = (data.breakageTotal>0 || data.breakageUnpricedCount>0) ? `
+  const bk = breakageOf(outRows);   // totals for exactly the rows printed
+  const breakageSummaryHtml = (bk.total>0 || bk.unpriced>0) ? `
     <div style="display:flex;gap:12px;margin:14px 0">
       <div style="flex:1;border:1px solid #e5b5b0;background:#fdf1f0;border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:#c0392b">$${data.breakageTotal.toFixed(2)}</div>
+        <div style="font-size:20px;font-weight:800;color:#c0392b">$${bk.total.toFixed(2)}</div>
         <div style="font-size:10px;color:#888">TOTAL BREAKAGE</div>
       </div>
       <div style="flex:1;border:1px solid #ddd;border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800">${data.breakageKnownCount}</div>
+        <div style="font-size:20px;font-weight:800">${bk.known}</div>
         <div style="font-size:10px;color:#888">ITEMS PRICED</div>
       </div>
-      ${data.breakageUnpricedCount>0?`<div style="flex:1;border:1px solid #f0d488;background:#fdf9ec;border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:#b8860b">${data.breakageUnpricedCount}</div>
+      ${bk.unpriced>0?`<div style="flex:1;border:1px solid #f0d488;background:#fdf9ec;border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:20px;font-weight:800;color:#b8860b">${bk.unpriced}</div>
         <div style="font-size:10px;color:#888">UNPRICED</div>
       </div>`:''}
     </div>` : '';
@@ -2629,7 +2865,7 @@ function exportReportPdf(){
     th{background:#f3f3f3}
     @media print{ .no-print{display:none} }</style></head><body>
     <h1>Bartlett's — Order &amp; Inventory Report</h1>
-    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} items · ${data.recordCount} records · ${esc(APP_VERSION)}</div>
+    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${outRows.length} ${pick.picked?'selected ':''}items${pick.picked?` (of ${data.rows.length})`:''} · ${data.recordCount} records · ${esc(APP_VERSION)}</div>
     <div class="sub" style="font-style:italic">For "order" rows, Qty/Cost is what was ordered. For "inventory" rows, Qty/Cost shows the final count and its value — Broke and Breakage $ show what was lost.</div>
     ${_repMode==='yoy' ? `<div class="sub" style="font-style:italic">"Last yr" and "Change" compare units ordered, not stock on hand or usage — on-hand isn't tracked except for Trimark.</div>` : ''}
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
@@ -2648,10 +2884,12 @@ function priceReportView(f){
   const data = buildPriceReport(state.priceHistory, state.catalog, f);
   const rows = data.rows;
 
-  const rowsHtml = rows.length ? rows.map(r=>{
+  _selKeys.price = [];
+  const rowsHtml = rows.length ? rows.map((r,i)=>{
     const deltaColor = r.delta==null ? 'var(--dim)' : r.delta>0?'var(--crit)':r.delta<0?'var(--ok)':'var(--dim)';
     const deltaSymbol = r.delta==null ? '' : r.delta>0?'▲ ':r.delta<0?'▼ ':'— ';
     return `<div class="item">
+      ${selCell('price', SEL_KEY.price(r), i)}
       <div class="item-main">
         <div class="item-name">${esc(r.name)}</div>
         <div class="item-meta">${esc(r.supplier)} · ${esc(r.date)} ·
@@ -2679,19 +2917,21 @@ function priceReportView(f){
     </div>
 
     <label class="fl" style="margin-top:16px">Price changes in this range</label>
+    ${rows.length ? selBar('price') : ''}
     ${rowsHtml}
 
     <div class="btn-row" style="margin-top:14px">
-      <button class="btn ghost" onclick="exportPriceReportCsv()">📄 Export CSV</button>
-      <button class="btn ghost" onclick="exportPriceReportPdf()">🖨 Print / Save PDF</button>
+      <button class="btn ghost" id="btn-csv-price" onclick="exportPriceReportCsv()">📄 ${selLabel('price','CSV')}</button>
+      <button class="btn ghost" id="btn-pdf-price" onclick="exportPriceReportPdf()">🖨 ${selLabel('price','Print')}</button>
     </div>`;
 }
 
 function exportPriceReportCsv(){
   const data = buildPriceReport(state.priceHistory, state.catalog, _repFilter);
-  if(!data.rows.length){ toast('Nothing to export','warn'); return; }
+  const outRows = pickSelected('price', data.rows).rows;
+  if(!outRows.length){ toast('Nothing to export','warn'); return; }
   const header = ['Item','Supplier','Item #','Date','Previous price','New price','Change $','Change %'];
-  const rows = data.rows.map(r=>[r.name,r.supplier,r.itemNum||'',r.date,
+  const rows = outRows.map(r=>[r.name,r.supplier,r.itemNum||'',r.date,
     r.prevPrice??'',r.price,r.delta??'',r.deltaPct??'']);
   const csv = [header, ...rows].map(row=>row.map(v=>{
     const s=String(v); return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
@@ -2717,7 +2957,9 @@ function exportPriceReportPdf(){
     '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Preparing report…</body></html>');
 
   const data = buildPriceReport(state.priceHistory, state.catalog, _repFilter);
-  if(!data.rows.length){
+  const pick = pickSelected('price', data.rows);
+  const outRows = pick.rows;
+  if(!outRows.length){
     win.document.open();
     win.document.write('<!DOCTYPE html><html><head><title>Bartlett\'s Price Report</title></head>'+
       '<body style="font-family:-apple-system,sans-serif;padding:24px;color:#111">Nothing to print for this range/filters.</body></html>');
@@ -2725,7 +2967,7 @@ function exportPriceReportPdf(){
     toast('Nothing to print','warn');
     return;
   }
-  const rowsHtml = data.rows.map(r=>`<tr>
+  const rowsHtml = outRows.map(r=>`<tr>
     <td>${esc(r.name)}</td><td>${esc(r.supplier)}</td><td>${esc(r.date)}</td>
     <td style="text-align:right">${r.prevPrice!=null?'$'+r.prevPrice.toFixed(2):'—'}</td>
     <td style="text-align:right">$${r.price.toFixed(2)}</td>
@@ -2743,8 +2985,8 @@ function exportPriceReportPdf(){
     th{background:#f3f3f3}
     @media print{ .no-print{display:none} }</style></head><body>
     <h1>Bartlett's — Price Change Report</h1>
-    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${data.rows.length} changes ·
-      ${data.increasesCount} up · ${data.decreasesCount} down · ${esc(APP_VERSION)}</div>
+    <div class="sub">${esc(_repFilter.start)} to ${esc(_repFilter.end)} · ${outRows.length} ${pick.picked?'selected ':''}changes${pick.picked?` (of ${data.rows.length})`:''} ·
+      ${outRows.filter(r=>r.delta>0).length} up · ${outRows.filter(r=>r.delta<0).length} down · ${esc(APP_VERSION)}</div>
     <button class="no-print" onclick="window.print()" style="margin-bottom:14px;padding:8px 16px;font-size:14px">🖨 Print / Save as PDF</button>
     <button class="no-print" onclick="window.close()" style="margin-bottom:14px;margin-left:8px;padding:8px 16px;font-size:14px">× Close</button>
     <table><thead><tr><th>Item</th><th>Supplier</th><th>Date</th><th>Previous</th><th>New</th><th>Change $</th><th>Change %</th></tr></thead>
@@ -3954,7 +4196,9 @@ function startListeners(){
   // the PWA long enough to evict it, a force-quit, a low-battery relaunch —
   // all routine during a long walk-the-restaurant count) can't silently revert
   // a count back to old data the moment the app reconnects.
-  const _reconcileOnBoot = new Set(['trimark','onHand','orderQty']);
+  // (trimark no longer needs this: it syncs per item with real stamps — see
+  // bindTrimarkItems. The 24h window below stays for the two fields not yet converted.)
+  const _reconcileOnBoot = new Set(['onHand','orderQty']);
   const _firstSnapshotSeen = {};
   // How long this device's own last edit is trusted over a conflicting first
   // snapshot. Generous enough to cover a whole offline overnight count, short
@@ -3989,7 +4233,7 @@ function startListeners(){
   bind('catalog',  v=>mergeCatalog(v));
   bind('orderQty', v=>{ state.orderQty=v; });
   bind('onHand',   v=>{ state.onHand=v; });
-  bind('trimark',  v=>{ state.trimark=v; });
+  bindTrimarkItems();
   bind('cog',      v=>{ state.cog={sales:{},manual:{},...v}; });
   bind('learning', v=>{ state.learning=v; });
   bind('skipped',  v=>{ state.skipped=v; });
