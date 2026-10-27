@@ -479,7 +479,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v3.3 — build 2026-10-07a';
+const APP_VERSION = 'v3.3 — build 2026-10-25g';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -561,10 +561,12 @@ function persist(key){
 /* Firebase handle set later; no-op until connected. */
 let fbDb = null;
 let _lastSyncEvidence = 0;   // last server ack or snapshot — proof sync works
+let _fbConnected = false;
+let _syncBootTs = Date.now();  // when this page started: "offline" is only declared 15 s after the later of this and the last proof of sync
 function pushRemote(path, val){
   if(!fbDb) return;
   try{
-    fbDb.ref(path).set(val)
+    trackWrite(fbDb.ref(path).set(val), path)
       .then(()=>{ _lastSyncEvidence=Date.now(); setSync('synced'); })
       .catch(e=>{ console.warn('push fail', path, e); setSync('error','Write denied on "'+path+'": '+(e.message||e)); });
   }catch(e){ console.warn('push fail', path, e); }
@@ -600,7 +602,7 @@ function logCountEntry(itemId, row){
   lsSet('countLog', state.countLog);
   if(fbDb){
     try{
-      fbDb.ref('countLog').push(entry).catch(e=>{
+      trackWrite(fbDb.ref('countLog').push(entry), 'countLog').catch(e=>{
         console.warn('countLog push fail', e);
         setSync('error','Write denied on "countLog": '+(e.message||e));
       });
@@ -657,7 +659,7 @@ function triSaveLocal(){ lsSet(SYNC_KEYS.trimark, state.trimark); lsSet('trimark
 function pushTriItems(changed){
   if(!fbDb) return;
   try{
-    fbDb.ref(TRI_PATH).update(changed)
+    trackWrite(fbDb.ref(TRI_PATH).update(changed), TRI_PATH)
       .then(()=>{ _lastSyncEvidence=Date.now(); setSync('synced'); })
       .catch(e=>{ console.warn('push fail', TRI_PATH, e); setSync('error','Write denied on "'+TRI_PATH+'": '+(e.message||e)); });
   }catch(e){ console.warn('push fail', TRI_PATH, e); }
@@ -766,6 +768,135 @@ function bindTrimarkItems(){
     } else if(lsGet('trimarkMigrated')) triReconcile({});  // node was emptied: re-send what we hold
     else triMigrate();
   }, err=>{ console.warn('listener error', TRI_PATH, err); setSync('error', `Read denied on "${TRI_PATH}": ${err.message||err}`); });
+}
+
+/* ── Checkpoint (Layer 2 of the sync-bulletproofing plan) ──
+   A deliberate "I'm about to switch devices" button for the Trimark counts.
+   Firebase applies one connection's writes in the order they were sent, so
+   when a probe write sent AFTER everything else is acknowledged, everything
+   before it has reached the server too. The server's copy of every Trimark
+   item is then read back and compared with this device's (this mostly
+   re-confirms the acknowledgements, but it also catches a refused or
+   reverted write). Only after all of that is the public "checkpoint" marker
+   written, so no device ever shows a checkpoint that was not fully proven.
+   Anything unconfirmed is reported instead of claiming safety. A checkpoint
+   never edits counts; the only thing it may send again is an item the
+   server lacks, with that item's ORIGINAL stamp (idempotent).
+   Scope: Trimark counts. Other fields are only watched through the
+   in-flight / refused-write counters. */
+let _inflight = 0;          // writes sent but not yet acknowledged
+let _failedPaths = {};      // {path: reason} while that path's most recent write was refused (a later success clears it)
+let _logFailed = 0;         // count-log entries the server refused (a backup trail, not live data — reported, never blocking)
+let _ckptLogBase = 0;       // _logFailed as of the last good checkpoint
+let _ckptWaitMs = 10000;
+let _ckptRunning = false;
+let _ckptAll = {};          // {deviceId: {ts, device, build}} confirmed checkpoints from meta/checkpoints
+let _ckptOwn = null;        // {ts} this device's last FULLY proven checkpoint (the server copy of it can echo before it is acknowledged)
+let _ckptReadErr = false;
+function trackWrite(p, label){
+  _inflight++;
+  return p.then(v=>{ _inflight--; delete _failedPaths[label]; return v; },
+                e=>{ _inflight--; if(label==='countLog') _logFailed++; else _failedPaths[label] = String((e && e.message) || e); throw e; });
+}
+function ckptTimeout(ms){ return new Promise(res=>setTimeout(()=>res('timeout'), ms)); }
+async function runCheckpoint(){
+  const out = {ok:false, problems:[], items:0, logLost:0};
+  const bad = t=>{ out.problems.push(t); return out; };
+  const plural = (n, w)=> n+' '+w+(n===1?'':'s');
+  const waiting = ()=> plural(_inflight,'change')+' still uploading. Stay on wifi and try again.';
+  if(!fbDb) return bad('This device is not connected to the server.');
+  if(!lsGet('trimarkMigrated'))
+    return bad('This device has not finished joining the shared inventory yet. Stay on wifi with the app open for a minute, then try again.');
+  persistTrimark();                              // flush anything not yet sent (sends only what changed)
+  const dev = getDeviceId();
+  // 1. Probe: acknowledged only after every earlier write on this connection.
+  const probe = fbDb.ref('meta/checkpointProbes/'+dev).set({ts: nowTs()}).then(()=>'ok', e=>'refused:'+(e.message||e));
+  const res = await Promise.race([probe, ckptTimeout(_ckptWaitMs)]);
+  if(res==='timeout')
+    return bad(plural(_inflight,'change')+' still waiting to upload. This usually means weak or no wifi. Stay on wifi and try again.');
+  if(res!=='ok') return bad('The server refused a save ('+res.slice(8)+'). Tell Oscar before you switch devices.');
+  if(_inflight>0) return bad(waiting());
+  // 2. Read the server's copy back and compare, item by item.
+  const triRef = fbDb.ref(TRI_PATH);
+  const snap = await Promise.race([(triRef.get ? triRef.get() : triRef.once('value')).catch(()=>'timeout'), ckptTimeout(_ckptWaitMs)]);
+  if(snap==='timeout') return bad('Could not read the server back to confirm. Stay on wifi and try again.');
+  if(_inflight>0) return bad(waiting());           // something was sent while we were reading back
+  const remote = snap.val() || {};
+  let behind = 0, count = 0;
+  const resend = {};   // items the server lacks or holds older: sent again with their ORIGINAL stamps (idempotent)
+  for(const id of new Set([...Object.keys(state.trimark), ...Object.keys(_triMeta)])){
+    const m = _triMeta[id], r = remote[id];
+    if(state.trimark[id]!=null) count++;
+    const missing = !r && state.trimark[id]!=null, older = !!(r && m && triNewer(m, r));
+    if(missing || older){ behind++; if(m) resend[id] = triEnvelope(state.trimark[id], m.ts, m.dev); }
+  }
+  if(behind){
+    const refused = _failedPaths[TRI_PATH];
+    if(Object.keys(resend).length) pushTriItems(resend);
+    return bad(refused
+      ? 'The server refused the save of '+plural(behind,'item')+' ('+refused+'). Tell Oscar before you switch devices.'
+      : plural(behind,'item')+' on this device '+(behind===1?'was':'were')+' newer than what the server had. They were sent again just now — tap "Check again".');
+  }
+  delete _failedPaths[TRI_PATH];                   // the server holds everything we hold: an old refusal no longer matters
+  // 3. Any other field whose latest save was refused is still unconfirmed.
+  const failed = Object.keys(_failedPaths);
+  if(failed.length)
+    return bad('The server refused the latest save of '+failed.map(f=>'"'+f+'" ('+_failedPaths[f]+')').join(', ')+'. Tell Oscar before you switch devices.');
+  // 4. Only now publish the checkpoint, and wait for it to be acknowledged too.
+  const ts = nowTs();
+  const fin = fbDb.ref('meta/checkpoints/'+dev).set({ts, device:dev, build:APP_VERSION}).then(()=>'ok', e=>'refused:'+(e.message||e));
+  const res2 = await Promise.race([fin, ckptTimeout(_ckptWaitMs)]);
+  if(res2==='timeout') return bad('Could not finish recording the checkpoint. Stay on wifi and try again.');
+  if(res2!=='ok') return bad('The server refused a save ('+res2.slice(8)+'). Tell Oscar before you switch devices.');
+  if(_inflight>0) return bad(waiting());
+  out.logLost = _logFailed - _ckptLogBase; _ckptLogBase = _logFailed;
+  _ckptOwn = {ts};
+  out.ok = true; out.items = count;
+  return out;
+}
+function ckptLatest(){
+  let best = _ckptOwn ? {ts:_ckptOwn.ts, key:getDeviceId()} : null;
+  for(const k of Object.keys(_ckptAll||{})){
+    if(k===getDeviceId()) continue;                // our own entry comes from _ckptOwn only (the server echo can precede its acknowledgement)
+    const v = _ckptAll[k]; if(v && v.ts && (!best || v.ts>best.ts)) best = {...v, key:k};
+  }
+  return best;
+}
+function ckptLabel(){
+  if(_ckptReadErr) return 'Checkpoint history unavailable (database settings)';
+  const b = ckptLatest();
+  if(!b) return 'No checkpoint yet';
+  const mins = Math.max(0, Math.round((nowTs()-b.ts)/60000));
+  const ago = mins<1 ? 'just now' : mins<60 ? mins+' min ago' : mins<1440 ? Math.round(mins/60)+' h ago' : Math.round(mins/1440)+' d ago';
+  return 'Last checkpoint: '+ago+' · '+(b.key===getDeviceId() ? 'this device' : 'another device');
+}
+function ckptRefreshLabel(){ const el = $('ckpt-last'); if(el) el.textContent = ckptLabel(); }
+setInterval(ckptRefreshLabel, 30000);   // keeps "2 min ago" honest while the screen stays open
+async function checkpointTap(){
+  if(_ckptRunning) return;
+  _ckptRunning = true;
+  const token = 'ckpt-'+Date.now();
+  modal(`<h2 data-ckpt="${token}">Checkpoint</h2><div class="sched">Checking that everything on this device has reached the server… keep this screen open and stay on wifi.</div>`);
+  let r;
+  try{ r = await runCheckpoint(); }
+  catch(e){ r = {ok:false, problems:['Something went wrong while checking ('+(e.message||e)+'). Tell Oscar before you switch devices.']}; }
+  _ckptRunning = false;
+  ckptRefreshLabel();
+  // If the person closed the "Checking…" box and opened something else (a count sheet, say), never replace it.
+  if(!document.querySelector('[data-ckpt="'+token+'"]')){
+    toast(r.ok ? '✓ Checkpoint confirmed — safe to switch devices' : '⚠ Checkpoint did not confirm — open Checkpoint to see why', r.ok ? 'ok' : 'warn');
+    return;
+  }
+  modal(r.ok
+    ? `<h2 style="color:var(--ok)">✓ Safe to switch devices</h2>
+       <div class="sched">All Trimark counts on this device are confirmed on the server — ${r.items} item${r.items===1?'':'s'} checked against the server's copy.</div>
+       ${r.logLost>0 ? `<div class="sched" style="color:var(--low)">Note: ${r.logLost} count-log entr${r.logLost===1?'y':'ies'} could not be saved to the backup trail. Your counts are fine — tell Oscar.</div>` : ''}
+       <button class="btn" onclick="closeModal()">Done</button>`
+    : `<h2 style="color:var(--crit)">⚠ Don't switch devices yet</h2>
+       <div class="sched">${r.problems.map(esc).join('<br><br>')}</div>
+       <div class="sched">Your work is still saved on this device. Nothing is lost.</div>
+       <button class="btn" onclick="checkpointTap()">↻ Check again</button>
+       <button class="btn ghost" onclick="closeModal()">Close</button>`);
 }
 
 /* ── Load everything from localStorage on boot ── */
@@ -1285,9 +1416,13 @@ function topBar(){
     : s.tab==='inventory' ? 'Inventory'
     : s.tab==='report' ? reportSubLabel
     : s.tab==='help' ? 'Help' : "Bartlett's";
+  const onInv = s.tab==='inventory';
   return `<div class="topbar">
-    <div><h1>${esc(title)}</h1><div class="sub">Bartlett's — Austin, TX</div></div>
-    <button id="sync" class="sync-badge ${_syncStatus}" onclick="showSyncDetail()"><span class="sync-dot"></span><span>${_syncStatus}</span></button>
+    <div><h1>${esc(title)}</h1><div class="sub">${onInv ? '<span id="ckpt-last">'+esc(ckptLabel())+'</span>' : "Bartlett's — Austin, TX"}</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      ${onInv ? `<button class="sync-badge synced" style="white-space:nowrap" onclick="checkpointTap()">✓ Checkpoint</button>` : ''}
+      <button id="sync" class="sync-badge ${_syncStatus}" onclick="showSyncDetail()"><span class="sync-dot"></span><span>${_syncStatus}</span></button>
+    </div>
   </div>`;
 }
 
@@ -1410,9 +1545,7 @@ function orderView(){
       <button class="btn" onclick="sendOrder('${sn}')">${sendLabel} <span class="pill-count">${orderCount}</span></button>
     </div>
     <button class="btn ghost" onclick="saveOrder('${sn}')">💾 Log order without sending</button>
-    ${skippedCount>0 ? `<button class="btn ghost" onclick="finishReview('${sn}')">
-      ✓ Done reviewing — clear ${skippedCount} skipped</button>` : ''}
-    <button class="btn ghost" onclick="clearOrder('${sn}')">Clear order</button>
+    <button class="btn ghost" onclick="clearOrder('${sn}')">Clear order${skippedCount>0?' &amp; '+skippedCount+' skipped':''}</button>
     ${editBar}`;
 }
 
@@ -3320,9 +3453,9 @@ function helpView(){
   ${helpSection('order','📋 Placing an order',
      li(['Tap a supplier at the top (ABCO, BEK, Amazon, Electrical, Trimark).',
          'Set quantities with − / + or type in the box.',
-         'Low items are amber, out-of-stock red.',
+         'Nothing on this screen is highlighted for low stock — these suppliers don\'t have on-hand counts in the app, so you decide each quantity yourself. Each item shows its par under the name as a guide.',
          'Already checked an item and don\'t need to order it? Tap the ✓ next to it — it dims and shows "Skipped" so you don\'t have to re-decide next time you pass through.',
-         'Typing a quantity on a skipped item un-skips it automatically. Tap "✓ Skipped" again to undo by hand.',
+         'A skipped item has no quantity box. To order it after all, tap "✓ Skipped — tap to recheck" and it comes back.',
          'Tap the send button at the bottom — the number shows how many items are on the order.',
          'That\'s it — sending files it to History automatically (this feeds COGS). You don\'t need a separate save step.']) +
      `${b('How each sends:')} ABCO texts Hal · BEK downloads a CSV · Trimark/Amazon/Electrical open an email.` +
@@ -3330,8 +3463,8 @@ function helpView(){
       anyway? Enter the quantities and tap "💾 Log order without sending" instead of the send button.` +
      `<br><br>${b('When "Skipped" clears:')} the moment you send or log that supplier's order — Going back
       and forth beforehand — closing the app, checking other suppliers, coming back — never resets it early.
-      If you review everything and decide nothing's needed at all (nothing to send or log), a
-      "✓ Done reviewing" button appears so you can still clear those marks instead of them sitting there.`)}
+      If you review everything and decide nothing's needed at all, tap the "Clear order" button — it also clears the
+      Skipped marks.`)}
 
   ${helpSection('count','📦 Counting inventory',
      `Inventory has two modes at the top: ${b('Count')} and ${b('Review & order')}.` +
@@ -3346,7 +3479,7 @@ function helpView(){
      `<br>${b('Review & order')} is where you check the full picture once counting is done — Begin, Add,
       Count, and Order side by side for every item, plus breakage and the order-and-save buttons.` +
      li(['Tap any item\'s Count cell here to open its full detail — Begin, Add, and every area\'s breakdown in one place, if you need to dig into a specific item.',
-         'A green dot / filled cell means that item has a count recorded; a dash means it doesn\'t yet.']) +
+         'A number in the Count cell means that item has a count recorded (0 included); a dash means it doesn\'t yet.']) +
      `<br>${b('Finish the month:')} count everything, send the order buttons, then "Save month & reset" —
       this files it to History and rolls Count into next month's Begin.` +
      `<br><br>${b('Going back to a previous month:')} the row of buttons at the top of Inventory
@@ -3355,6 +3488,14 @@ function helpView(){
          'Tap any count in a saved month to correct it — used, order and breakage all recalculate.',
          'If you correct the most recent month, the app offers to update this month\'s Begin to match, so the two never disagree.',
          'You can also reach a month from History → tap the record → "Open & edit counts".']))}
+
+  ${helpSection('checkpoint','✅ Checkpoint — before you switch devices',
+     `On the Inventory tab, next to the sync badge, tap ${b('✓ Checkpoint')} whenever you are about to leave a device — to continue on another one, take a break, or if the battery is low.` +
+     li(['It checks that everything counted on this device has reached the server, and reads the server\'s copy back to make sure it matches.',
+         '<b>"✓ Safe to switch devices"</b> means it is confirmed. You can pick up on any other device.',
+         '<b>"⚠ Don\'t switch devices yet"</b> says what is still waiting (usually weak wifi). Stay on wifi and tap "Check again". Your work is still saved on this device either way.',
+         'The top of the Inventory screen shows "Last checkpoint: 2 min ago", and whether it was this device or another one.']) +
+     note('What it does not do','A checkpoint only checks and confirms — it never changes your counts. It also cannot help if a device dies mid-count; that is what the automatic saving and the count log are for.','accent'))}
 
   ${helpSection('special','⭐ The four special items',
      `You count these in inventory but don't order them from James — the app routes each automatically:` +
@@ -3377,7 +3518,8 @@ function helpView(){
          'Narrow with Supplier, Type, or a name search so you only see what matters.',
          '"Hide zero-activity items" cuts out noise — items with no real quantity in that range.',
          'Switch to "Vs. last year" to see this range side-by-side with the same dates one year back, with the change highlighted.',
-         'Export to CSV for a spreadsheet, or Print/Save PDF for a printable copy.']) +
+         'Export to CSV for a spreadsheet, or Print/Save PDF for a printable copy.',
+         'Don\'t want every item on paper? Tick the box beside the items you want (or "Select all" / "Clear"). The buttons change from "Print all" to "Print selected (N)", and the CSV and printout then contain only those items, with the totals on the printout recalculated for just them. This works on the Order & Inventory report and on the price-change report. Nothing ticked prints everything in view.']) +
      note('What "Vs. last year" actually compares','Units ordered, not stock on hand or real usage. If you started this year more depleted than last year, you could order more without having used more — order volume and usage aren\'t the same thing. Trimark is the one exception: its Count/Used numbers from the monthly inventory are real usage, not just orders.','low') +
      note('Best way to plan a holiday','Set the range to last year\'s holiday week, switch to "Vs. last year" ' +
        'with this year\'s current range — or just read off last year\'s totals as your starting point.','accent'))}
@@ -3732,14 +3874,6 @@ function saveOrder(sn){
   render(); toast('Saved to history','ok');
 }
 
-// Closes out a review pass where the outcome was "nothing needed this
-// time" — every item checked and skipped, no real quantity anywhere. Send
-// and Save both require a real quantity to do anything, so without this,
-// an all-skipped supplier had no way to clear its marks at all: the exact
-// gap that was leaving stale "Skipped" tags sitting around indefinitely.
-function finishReview(sn){
-  if(clearSkipsForSupplier(sn)){ render(); toast('Review cleared — nothing needed this time','ok'); }
-}
 
 function saveInventory(){
   const items = state.catalog['TRIMARK'].items;
@@ -4089,7 +4223,8 @@ let _lastSyncError = '';
 let _syncStatus = 'offline';   // survives render() — the badge is drawn from this
 function setSync(status, detail){
   _syncStatus = status;
-  if(detail) _lastSyncError = detail;
+  if(status==='synced') _lastSyncError = '';   // a healthy connection must not keep showing an old problem
+  else if(detail) _lastSyncError = detail;
   const el=$('sync'); if(!el) return;
   el.className='sync-badge '+status;
   el.querySelector('span:last-child').textContent=status;
@@ -4102,11 +4237,17 @@ function showSyncDetail(){
     lines.push(`Last confirmed sync: ${ago<60?ago+'s':Math.round(ago/60)+'m'} ago`);
   }
   if(_lastSyncError) lines.push(`Detail: ${_lastSyncError}`);
+  // 'error' is NOT the same as 'offline': the connection can be fine while one
+  // save or read is refused (rules, sign-in, a failed upgrade). Say which.
+  const refused = /denied|permission/i.test(_lastSyncError);
   lines.push('', status==='synced'
     ? 'Connected. Changes save instantly and sync across devices.'
     : status==='syncing'
       ? 'Connecting…'
-      : 'Not connected. Your work is still saved on this device — it will sync automatically once connected. If this persists, check wifi, or that Firebase rules allow this app to read/write.');
+      : status==='error'
+        ? 'This is a problem with a save, read or sign-in — not necessarily your wifi or connection. The Detail line above says what. Your work is saved on this device and nothing is lost.'
+          + (refused ? ' "Denied" means the database settings (Firebase rules) refused it: that needs a settings fix, so tell Oscar the Detail line.' : '')
+        : 'Not connected. Your work is still saved on this device — it will sync automatically once connected. If this persists, check wifi.');
   modal(`<h2>Sync status</h2><div class="sched" style="white-space:pre-line;font-size:14px">${esc(lines.join('\n'))}</div>
     ${status!=='synced' && lsGet('accountAuth') ? `<button class="btn" onclick="openLoginSheet()">Sign in</button>` : ''}
     ${status!=='synced' ? `<button class="btn${lsGet('accountAuth')?' ghost':''}" onclick="retryConnection()">↻ Retry connection</button>` : ''}
@@ -4234,6 +4375,8 @@ function startListeners(){
   bind('orderQty', v=>{ state.orderQty=v; });
   bind('onHand',   v=>{ state.onHand=v; });
   bindTrimarkItems();
+  fbDb.ref('meta/checkpoints').on('value', snap=>{ _ckptAll = snap.val() || {}; _ckptReadErr = false; ckptRefreshLabel(); },
+    err=>{ console.warn('listener error meta/checkpoints', err); _ckptReadErr = true; ckptRefreshLabel(); });
   bind('cog',      v=>{ state.cog={sales:{},manual:{},...v}; });
   bind('learning', v=>{ state.learning=v; });
   bind('skipped',  v=>{ state.skipped=v; });
@@ -4241,11 +4384,16 @@ function startListeners(){
   bind('expenses', v=>{ state.expenses = Array.isArray(v) ? v : []; });
   bind('history',  v=>{ if(Array.isArray(v)) state.history=v;
                         else if(v&&typeof v==='object') state.history=Object.values(v); });
+  setTimeout(()=>{    // opened with no connection at all: the socket never reports again, so look once after the grace period
+    if(!_fbConnected && Date.now()-Math.max(_lastSyncEvidence, _syncBootTs) > 15000)
+      setSync('offline','Realtime connection dropped or never established.');
+  }, 15500);
   fbDb.ref('.info/connected').on('value', s=>{
+    _fbConnected = !!s.val();
     if(s.val()){ _lastSyncEvidence=Date.now(); setSync('synced'); return; }
     // Socket reports down — but if writes/reads succeeded very recently, the
     // socket is just flapping while data still flows. Don't cry wolf.
-    if(Date.now()-_lastSyncEvidence > 15000)
+    if(Date.now()-Math.max(_lastSyncEvidence, _syncBootTs) > 15000)
       setSync('offline','Realtime connection dropped or never established.');
   });
 }
