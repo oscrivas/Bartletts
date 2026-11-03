@@ -165,10 +165,13 @@ h1,h2,h3{font-family:'Fjalla One','Arial Narrow',-apple-system,sans-serif;
 /* ── Modals ── */
 .overlay{position:fixed;inset:0;z-index:100;background:rgba(6,5,6,.72);
   backdrop-filter:blur(2px);
-  display:flex;align-items:flex-end;justify-content:center;padding:0}
+  display:flex;align-items:flex-end;justify-content:center;padding:0;
+  overscroll-behavior:contain;touch-action:none}
+html.modal-open,body.modal-open{overflow:hidden}
 .sheet{background:var(--panel);width:100%;max-width:520px;max-height:92vh;
   overflow-y:auto;border-radius:20px 20px 0 0;padding:22px 18px 30px;
-  border:1px solid var(--line);box-shadow:var(--shadow-pop);position:relative}
+  border:1px solid var(--line);box-shadow:var(--shadow-pop);position:relative;
+  overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 .sheet h2{margin:0 0 4px;font-size:21px;color:var(--paper)}
 .sheet .close{position:sticky;top:0;float:right;font-size:22px;color:var(--txt);
   width:36px;height:36px;display:flex;align-items:center;justify-content:center;
@@ -479,7 +482,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v3.3 — build 2026-11-02c';
+const APP_VERSION = 'v3.3 — build 2026-11-02f';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -547,7 +550,6 @@ function mergeCatalog(stored){
 /* ── Save one key locally + push to Firebase ── */
 function persist(key){
   if(key==='trimark') return persistTrimark();   // per-item storage — see below
-  if(FM_FIELDS[key]) return persistFlat(key);    // other converted fields — see fmInit
   const val = state[key];
   lsSet(SYNC_KEYS[key], val);
   // Persisted (survives reload) record of when THIS device last touched this
@@ -688,124 +690,6 @@ function persistTrimark(){
     else if(fbDb) triMigrate();       // nothing existed to migrate before — this first edit starts it
   }
 }
-/* ── Per-item storage for flat {itemId: value} fields (same Layer 1 rules as Trimark) ──
-   FM_FIELDS lists the fields converted so far (one at a time, each watched before the
-   next). In Firebase each item is its own entry  <path>/{itemId} = {v, ts, dev}  (v absent
-   = removed; the tombstone stops a stale device from bringing it back). A save writes only
-   the items that changed; merging is per item, newest stamp wins (equal stamp: higher
-   device id wins), stamps use Firebase server time and are always later than that item's
-   previous stamp. The old whole-blob at the field's old path is read once for migration
-   and is never written or deleted afterwards. Replaces, for these fields, the whole-object
-   overwrite + 24-hour "recent edit" patch. Trimark keeps its own (proven) code above. */
-const FM_FIELDS = { orderQty: 'orderQtyItems' };
-const _fm = {};       // field -> {meta:{id:{ts,dev}}, base:{id:json|null}, migrating:bool}
-function fmInit(key){
-  const f = _fm[key] = {meta: lsGet(key+'Meta') || {}, base: {}, migrating: false};
-  for(const id of Object.keys(state[key])) f.base[id] = JSON.stringify(state[key][id]);
-}
-function fmSaveLocal(key){ lsSet(SYNC_KEYS[key], state[key]); lsSet(key+'Meta', _fm[key].meta); }
-function fmPush(key, changed){
-  if(!fbDb) return;
-  const path = FM_FIELDS[key];
-  try{
-    trackWrite(fbDb.ref(path).update(changed), path)
-      .then(()=>{ _lastSyncEvidence=Date.now(); setSync('synced'); })
-      .catch(e=>{ console.warn('push fail', path, e); setSync('error','Write denied on "'+path+'": '+(e.message||e)); });
-  }catch(e){ console.warn('push fail', path, e); }
-}
-function fmEnvelope(v, ts, dev){ return v==null ? {ts, dev} : {v, ts, dev}; }
-function persistFlat(key){
-  const f = _fm[key], ts = nowTs(), dev = getDeviceId(), changed = {};
-  for(const id of new Set([...Object.keys(state[key]), ...Object.keys(f.meta)])){
-    const v = state[key][id];
-    const json = v==null ? null : JSON.stringify(v);
-    if(json === (f.base[id] ?? null)) continue;               // untouched since last save
-    const t = Math.max(ts, (+(f.meta[id] && f.meta[id].ts) || 0) + 1);
-    f.meta[id] = {ts:t, dev}; f.base[id] = json;
-    changed[id] = fmEnvelope(v, t, dev);
-  }
-  lsSet(SYNC_KEYS[key]+'__editTs', Date.now());
-  fmSaveLocal(key);
-  if(Object.keys(changed).length){
-    if(lsGet(key+'Migrated')) fmPush(key, changed);
-    else if(fbDb) fmMigrate(key);        // first edit on a system with nothing to migrate starts it
-  }
-}
-function fmReconcile(key, remote){
-  const f = _fm[key], toPush = {}; let applied = false;
-  for(const id of new Set([...Object.keys(remote), ...Object.keys(f.meta)])){
-    const r = remote[id], l = f.meta[id];
-    if(r && triNewer(r, l)){
-      if(r.v != null) state[key][id] = r.v; else delete state[key][id];
-      f.meta[id] = {ts:+r.ts||0, dev:r.dev||''};
-      f.base[id] = r.v != null ? JSON.stringify(r.v) : null;
-      applied = true;
-    } else if(l && triNewer(l, r)){
-      toPush[id] = fmEnvelope(state[key][id], l.ts, l.dev);
-    }
-  }
-  if(applied){ fmSaveLocal(key); render(); }
-  if(Object.keys(toPush).length) fmPush(key, toPush);
-}
-// First contact for a device that already holds old-format data when per-item data exists:
-// a recent local edit Firebase lacks is kept (stamped now, so it wins and is sent); older copies yield.
-function fmFirstSync(key, remote){
-  const f = _fm[key];
-  const recent = (Date.now() - (lsGet(SYNC_KEYS[key]+'__editTs')||0)) < TRI_DAY;
-  const ts = nowTs(), dev = getDeviceId();
-  for(const id of Object.keys(state[key])){
-    const r = remote[id], v = state[key][id];
-    const mine = recent || id in f.meta;
-    const same = r && r.v!=null && JSON.stringify(r.v)===JSON.stringify(v);
-    if(!r || (mine && r.v!=null && !same)) f.meta[id] = {ts:Math.max(ts, (+(r&&r.ts)||0)+1), dev};
-  }
-  fmSaveLocal(key);
-}
-// One-time move of the old whole-blob into per-item entries (first device to find the new path
-// empty; the transaction makes "only if empty" atomic). Own recent edits win over the blob.
-function fmMigrate(key){
-  const f = _fm[key], path = FM_FIELDS[key];
-  if(f.migrating || lsGet(key+'Migrated')) return;
-  f.migrating = true;
-  const fail = e=>{ f.migrating=false; console.warn(key+' migration failed', e); setSync('error','Storage upgrade failed ('+key+'): '+(e.message||e)); };
-  fbDb.ref(key).once('value').then(snap=>{
-    const old = snap.val() || {};
-    const recent = (Date.now() - (lsGet(SYNC_KEYS[key]+'__editTs')||0)) < TRI_DAY;
-    let seed = {}, ts = 0, dev = '';
-    return fbDb.ref(path).transaction(cur=>{
-      if(cur) return;                                          // already migrated elsewhere — abort
-      seed = {}; ts = nowTs(); dev = getDeviceId();
-      const items = {};
-      for(const id of new Set([...Object.keys(old), ...Object.keys(state[key])])){
-        const local = state[key][id];
-        const v = (local!=null && (old[id]==null || id in f.meta || recent)) ? local : old[id];
-        if(v==null) continue;
-        seed[id] = v; items[id] = fmEnvelope(v, ts, dev);
-      }
-      return Object.keys(items).length ? items : undefined;
-    }, undefined, false).then(res=>{
-      f.migrating = false;
-      if(!res.committed) return;                               // nothing to move, or someone else did it
-      state[key] = seed; f.meta = {}; f.base = {};
-      for(const id of Object.keys(seed)){ f.meta[id] = {ts, dev}; f.base[id] = JSON.stringify(seed[id]); }
-      fmSaveLocal(key); lsSet(key+'Migrated', true);
-      fbDb.ref('meta/'+key+'Migration').set({at:ts, by:dev, items:Object.keys(seed).length}).catch(()=>{});
-      render();
-    });
-  }).catch(fail);
-}
-function bindFlat(key){
-  fbDb.ref(FM_FIELDS[key]).on('value', snap=>{
-    _lastSyncEvidence = Date.now();
-    const remote = snap.val();
-    if(remote){
-      if(!lsGet(key+'Migrated')){ fmFirstSync(key, remote); lsSet(key+'Migrated', true); }
-      fmReconcile(key, remote);
-    } else if(lsGet(key+'Migrated')) fmReconcile(key, {});    // node was emptied: re-send what we hold
-    else fmMigrate(key);
-  }, err=>{ console.warn('listener error', FM_FIELDS[key], err); setSync('error', `Read denied on "${FM_FIELDS[key]}": ${err.message||err}`); });
-}
-
 /* ── Pre-apply sanity check (Layer 3 part 2) ──
    Before a synced item replaces what this device holds, it is checked against
    this device's append-only count log (never overwritten, so it cannot be
@@ -899,7 +783,7 @@ function triShowHeld(){
         <button class="btn ghost" onclick="triPick('${j}','theirs')">Use ${esc(inc)} (other device)</button></div></div>`;
   }).join('');
   modal(`<div data-triheld="1"><h2>Double check ${ids.length===1?'this item':ids.length+' items'} before this saves</h2>
-    ${blocks}<div class="sched">Picking either is fine — it is saved either way so Oscar can see it happened.</div></div>`);
+    ${blocks}<div class="sched">Picking either is fine — it is saved either way so it can be reviewed later.</div></div>`);
 }
 // A person's answer for one held item. Whatever is chosen becomes the applied
 // value, and (for a kept/recorded value) a fresh log entry, so the decision is itself on record.
@@ -1148,7 +1032,6 @@ function loadLocal(){
   const oh  = lsGet(SYNC_KEYS.onHand);    if(oh)  state.onHand   = oh;
   const tm  = lsGet(SYNC_KEYS.trimark);   if(tm)  state.trimark  = tm;
   triInitBase();
-  for(const k of Object.keys(FM_FIELDS)) fmInit(k);
   const h   = lsGet(SYNC_KEYS.history);   if(Array.isArray(h)) state.history = h;
   const cog = lsGet(SYNC_KEYS.cog);       if(cog) state.cog = {sales:{},manual:{},...cog};
   const lrn = lsGet(SYNC_KEYS.learning);  if(lrn) state.learning = lrn;
@@ -3723,9 +3606,11 @@ function helpView(){
      `<br>${b('Review & order')} is where you check the full picture once counting is done — Begin, Add,
       Count, and Order side by side for every item, plus breakage and the order-and-save buttons.` +
      li(['Tap any item\'s Count cell here to open its full detail — Begin, Add, and every area\'s breakdown in one place, if you need to dig into a specific item.',
-         'A number in the Count cell means that item has a count recorded (0 included); a dash means it doesn\'t yet.']) +
+         'A number in the Count cell means that item has a count recorded (0 included); a dash means it doesn\'t yet.',
+         '<b>Deliveries:</b> type what arrived under Add in that item\'s detail, then tap "✓ Save count". Only add goods that have physically arrived. Anything still on the way when you save the month is added next month, when it shows up.',
+         '<b>Two people counting:</b> split by area so you are not both typing the same item. If two devices do count the same item within a minute, the app asks which number is right (see "Double check" below).']) +
      `<br>${b('Finish the month:')} count everything, send the order buttons, then "Save month & reset" —
-      this files it to History and rolls Count into next month's Begin.` +
+      this files it to History and rolls Count into next month's Begin. Items you did not count keep their current Begin, so nothing is lost.` +
      `<br><br>${b('Going back to a previous month:')} the row of buttons at the top of Inventory
       switches between ${b('Current')} and every saved month.` +
      li(['Tap a month to see exactly what was counted, item by item, with that month\'s breakage.',
@@ -3741,9 +3626,15 @@ function helpView(){
          'The top of the Inventory screen shows "Last checkpoint: 2 min ago", and whether it was this device or another one.']) +
      note('What it does not do','A checkpoint only checks and confirms — it never changes your counts. It also cannot help if a device dies mid-count; that is what the automatic saving and the count log are for.','accent'))}
 
+  ${helpSection('trimarkorder','🚚 Ordering from Trimark — two places',
+     `There are two ways to order from Trimark. They do different things, so pick one for each order.` +
+     li(['<b>Inventory → Review & order</b> (after a count): the buttons send what the count says to order (Par − Count). This only sends the message or file. It does <b>not</b> save an order to History; the month is filed when you tap "Save month & reset".',
+         '<b>Order tab → Trimark</b> (any time, for example mid-month): you type the quantities yourself after walking the storage. Tapping send opens the email and files the order in History, like every other supplier.',
+         'Neither one adds anything to the Add column. Add only changes when you type what was actually delivered (see Counting inventory).']))}
+
   ${helpSection('doublecheck','🛡 "Double check this item before this saves"',
      `Before a count from another device replaces what is on your screen, the app compares it with the record of what was typed on this device. If they disagree, or two devices counted the same item within a minute of each other, it stops and asks instead of guessing.` +
-     li(['The question names the item, shows both numbers and where each came from, and gives you one button for each. Picking either is fine — the answer and both numbers are saved so Oscar can see it happened.',
+     li(['The question names the item, shows both numbers and where each came from, and gives you one button for each. Picking either is fine — the answer and both numbers are saved so it can be reviewed later.',
          'Nothing changes until you answer. If you close the app first, the question comes back next time and your screen keeps the number it had.',
          '"Save month & reset" and "✓ Checkpoint" wait until every question is answered, so a wrong number can\'t be rolled into next month.',
          'Sync status (tap the sync badge) shows how many of these questions came up on this device in the last 7 days. Normal counting should show 0.']))}
@@ -3824,6 +3715,8 @@ function helpView(){
          '<b>Devices differ:</b> wait a few seconds; both must be online.',
          '<b>Item missing:</b> Edit items → ＋ Add item.',
          '<b>COGS looks low:</b> set prices and save your orders.',
+         '<b>"Double check this item" appeared:</b> read both numbers, pick the right one. Nothing is lost either way. See "Double check" above.',
+         '<b>"Inventory storage upgraded" appeared:</b> one-time message after an update. Nothing to do; update every device so they all match.',
          '<b>Firewood/uniform asks for info:</b> that\'s the one-time setup.',
          '<b>History shows raw dates or looks wrong:</b> tap "Repair History" below.']) +
      `<button class="btn ghost" style="margin-top:10px;color:var(--crit)" onclick="repairFromBackup()">⚠ Repair History from backup</button>
@@ -4438,6 +4331,9 @@ function modal(html){
     <div class="sheet"><button class="close" onclick="closeModal()">×</button>${html}</div></div>`;
 }
 function closeModal(){ $('modal-root').innerHTML=''; }
+// Page behind a sheet must not scroll: lock body while any modal is mounted.
+(function(){ const r=$('modal-root'); if(!r) return;
+  new MutationObserver(()=>[document.documentElement,document.body].forEach(e=>e.classList.toggle('modal-open', r.childElementCount>0))).observe(r,{childList:true}); })();
 
 // In-app confirmation (iOS PWAs can silently block native confirm()).
 let _confirmCb=null;
@@ -4593,8 +4489,8 @@ function startListeners(){
   // all routine during a long walk-the-restaurant count) can't silently revert
   // a count back to old data the moment the app reconnects.
   // (trimark no longer needs this: it syncs per item with real stamps — see
-  // bindTrimarkItems; orderQty likewise — see bindFlat. The 24h window below stays for onHand.)
-  const _reconcileOnBoot = new Set(['onHand']);
+  // bindTrimarkItems. The 24h window below stays for the two fields not yet converted.)
+  const _reconcileOnBoot = new Set(['onHand','orderQty']);
   const _firstSnapshotSeen = {};
   // How long this device's own last edit is trusted over a conflicting first
   // snapshot. Generous enough to cover a whole offline overnight count, short
@@ -4627,7 +4523,7 @@ function startListeners(){
   bind('deletedIds', v=>{ state.deletedIds=v; });
   bind('locations', v=>{ if(Array.isArray(v)&&v.length) state.locations=v; });
   bind('catalog',  v=>mergeCatalog(v));
-  bindFlat('orderQty');
+  bind('orderQty', v=>{ state.orderQty=v; });
   bind('onHand',   v=>{ state.onHand=v; });
   bindTrimarkItems();
   fbDb.ref('meta/checkpoints').on('value', snap=>{ _ckptAll = snap.val() || {}; _ckptReadErr = false; ckptRefreshLabel(); },
