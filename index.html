@@ -482,7 +482,7 @@ const SUP_NAMES = Object.keys(DEFAULT_SUPPLIERS);
 const LS_PREFIX = 'bartletts-v2-';
 
 // The keys we persist + sync. Each is independent — no cross-key coupling.
-const APP_VERSION = 'v3.3 — build 2026-11-02f';
+const APP_VERSION = 'v3.3 — build 2026-11-19c';
 const SYNC_KEYS = {
   catalog:   'catalog',    // per-supplier item list (par edits, custom items)
   deletedIds:'deletedIds', // tombstones: default items the user removed (per supplier)
@@ -550,6 +550,7 @@ function mergeCatalog(stored){
 /* ── Save one key locally + push to Firebase ── */
 function persist(key){
   if(key==='trimark') return persistTrimark();   // per-item storage — see below
+  if(FM_FIELDS[key]) return persistFlat(key);    // other converted fields — see fmInit
   const val = state[key];
   lsSet(SYNC_KEYS[key], val);
   // Persisted (survives reload) record of when THIS device last touched this
@@ -690,6 +691,124 @@ function persistTrimark(){
     else if(fbDb) triMigrate();       // nothing existed to migrate before — this first edit starts it
   }
 }
+/* ── Per-item storage for flat {itemId: value} fields (same Layer 1 rules as Trimark) ──
+   FM_FIELDS lists the fields converted so far (one at a time, each watched before the
+   next). In Firebase each item is its own entry  <path>/{itemId} = {v, ts, dev}  (v absent
+   = removed; the tombstone stops a stale device from bringing it back). A save writes only
+   the items that changed; merging is per item, newest stamp wins (equal stamp: higher
+   device id wins), stamps use Firebase server time and are always later than that item's
+   previous stamp. The old whole-blob at the field's old path is read once for migration
+   and is never written or deleted afterwards. Replaces, for these fields, the whole-object
+   overwrite + 24-hour "recent edit" patch. Trimark keeps its own (proven) code above. */
+const FM_FIELDS = { orderQty: 'orderQtyItems' };
+const _fm = {};       // field -> {meta:{id:{ts,dev}}, base:{id:json|null}, migrating:bool}
+function fmInit(key){
+  const f = _fm[key] = {meta: lsGet(key+'Meta') || {}, base: {}, migrating: false};
+  for(const id of Object.keys(state[key])) f.base[id] = JSON.stringify(state[key][id]);
+}
+function fmSaveLocal(key){ lsSet(SYNC_KEYS[key], state[key]); lsSet(key+'Meta', _fm[key].meta); }
+function fmPush(key, changed){
+  if(!fbDb) return;
+  const path = FM_FIELDS[key];
+  try{
+    trackWrite(fbDb.ref(path).update(changed), path)
+      .then(()=>{ _lastSyncEvidence=Date.now(); setSync('synced'); })
+      .catch(e=>{ console.warn('push fail', path, e); setSync('error','Write denied on "'+path+'": '+(e.message||e)); });
+  }catch(e){ console.warn('push fail', path, e); }
+}
+function fmEnvelope(v, ts, dev){ return v==null ? {ts, dev} : {v, ts, dev}; }
+function persistFlat(key){
+  const f = _fm[key], ts = nowTs(), dev = getDeviceId(), changed = {};
+  for(const id of new Set([...Object.keys(state[key]), ...Object.keys(f.meta)])){
+    const v = state[key][id];
+    const json = v==null ? null : JSON.stringify(v);
+    if(json === (f.base[id] ?? null)) continue;               // untouched since last save
+    const t = Math.max(ts, (+(f.meta[id] && f.meta[id].ts) || 0) + 1);
+    f.meta[id] = {ts:t, dev}; f.base[id] = json;
+    changed[id] = fmEnvelope(v, t, dev);
+  }
+  lsSet(SYNC_KEYS[key]+'__editTs', Date.now());
+  fmSaveLocal(key);
+  if(Object.keys(changed).length){
+    if(lsGet(key+'Migrated')) fmPush(key, changed);
+    else if(fbDb) fmMigrate(key);        // first edit on a system with nothing to migrate starts it
+  }
+}
+function fmReconcile(key, remote){
+  const f = _fm[key], toPush = {}; let applied = false;
+  for(const id of new Set([...Object.keys(remote), ...Object.keys(f.meta)])){
+    const r = remote[id], l = f.meta[id];
+    if(r && triNewer(r, l)){
+      if(r.v != null) state[key][id] = r.v; else delete state[key][id];
+      f.meta[id] = {ts:+r.ts||0, dev:r.dev||''};
+      f.base[id] = r.v != null ? JSON.stringify(r.v) : null;
+      applied = true;
+    } else if(l && triNewer(l, r)){
+      toPush[id] = fmEnvelope(state[key][id], l.ts, l.dev);
+    }
+  }
+  if(applied){ fmSaveLocal(key); render(); }
+  if(Object.keys(toPush).length) fmPush(key, toPush);
+}
+// First contact for a device that already holds old-format data when per-item data exists:
+// a recent local edit Firebase lacks is kept (stamped now, so it wins and is sent); older copies yield.
+function fmFirstSync(key, remote){
+  const f = _fm[key];
+  const recent = (Date.now() - (lsGet(SYNC_KEYS[key]+'__editTs')||0)) < TRI_DAY;
+  const ts = nowTs(), dev = getDeviceId();
+  for(const id of Object.keys(state[key])){
+    const r = remote[id], v = state[key][id];
+    const mine = recent || id in f.meta;
+    const same = r && r.v!=null && JSON.stringify(r.v)===JSON.stringify(v);
+    if(!r || (mine && r.v!=null && !same)) f.meta[id] = {ts:Math.max(ts, (+(r&&r.ts)||0)+1), dev};
+  }
+  fmSaveLocal(key);
+}
+// One-time move of the old whole-blob into per-item entries (first device to find the new path
+// empty; the transaction makes "only if empty" atomic). Own recent edits win over the blob.
+function fmMigrate(key){
+  const f = _fm[key], path = FM_FIELDS[key];
+  if(f.migrating || lsGet(key+'Migrated')) return;
+  f.migrating = true;
+  const fail = e=>{ f.migrating=false; console.warn(key+' migration failed', e); setSync('error','Storage upgrade failed ('+key+'): '+(e.message||e)); };
+  fbDb.ref(key).once('value').then(snap=>{
+    const old = snap.val() || {};
+    const recent = (Date.now() - (lsGet(SYNC_KEYS[key]+'__editTs')||0)) < TRI_DAY;
+    let seed = {}, ts = 0, dev = '';
+    return fbDb.ref(path).transaction(cur=>{
+      if(cur) return;                                          // already migrated elsewhere — abort
+      seed = {}; ts = nowTs(); dev = getDeviceId();
+      const items = {};
+      for(const id of new Set([...Object.keys(old), ...Object.keys(state[key])])){
+        const local = state[key][id];
+        const v = (local!=null && (old[id]==null || id in f.meta || recent)) ? local : old[id];
+        if(v==null) continue;
+        seed[id] = v; items[id] = fmEnvelope(v, ts, dev);
+      }
+      return Object.keys(items).length ? items : undefined;
+    }, undefined, false).then(res=>{
+      f.migrating = false;
+      if(!res.committed) return;                               // nothing to move, or someone else did it
+      state[key] = seed; f.meta = {}; f.base = {};
+      for(const id of Object.keys(seed)){ f.meta[id] = {ts, dev}; f.base[id] = JSON.stringify(seed[id]); }
+      fmSaveLocal(key); lsSet(key+'Migrated', true);
+      fbDb.ref('meta/'+key+'Migration').set({at:ts, by:dev, items:Object.keys(seed).length}).catch(()=>{});
+      render();
+    });
+  }).catch(fail);
+}
+function bindFlat(key){
+  fbDb.ref(FM_FIELDS[key]).on('value', snap=>{
+    _lastSyncEvidence = Date.now();
+    const remote = snap.val();
+    if(remote){
+      if(!lsGet(key+'Migrated')){ fmFirstSync(key, remote); lsSet(key+'Migrated', true); }
+      fmReconcile(key, remote);
+    } else if(lsGet(key+'Migrated')) fmReconcile(key, {});    // node was emptied: re-send what we hold
+    else fmMigrate(key);
+  }, err=>{ console.warn('listener error', FM_FIELDS[key], err); setSync('error', `Read denied on "${FM_FIELDS[key]}": ${err.message||err}`); });
+}
+
 /* ── Pre-apply sanity check (Layer 3 part 2) ──
    Before a synced item replaces what this device holds, it is checked against
    this device's append-only count log (never overwritten, so it cannot be
@@ -1032,6 +1151,7 @@ function loadLocal(){
   const oh  = lsGet(SYNC_KEYS.onHand);    if(oh)  state.onHand   = oh;
   const tm  = lsGet(SYNC_KEYS.trimark);   if(tm)  state.trimark  = tm;
   triInitBase();
+  for(const k of Object.keys(FM_FIELDS)) fmInit(k);
   const h   = lsGet(SYNC_KEYS.history);   if(Array.isArray(h)) state.history = h;
   const cog = lsGet(SYNC_KEYS.cog);       if(cog) state.cog = {sales:{},manual:{},...cog};
   const lrn = lsGet(SYNC_KEYS.learning);  if(lrn) state.learning = lrn;
@@ -1608,7 +1728,7 @@ function orderView(){
   const skippedCount = items.reduce((n,i)=> n + (state.skipped[i.id]?1:0), 0);
   const edit = state.editMode;
 
-  const rows = items.map(it=>{
+  const rowOf = (it)=>{
     const qty = +state.orderQty[it.id]||0;
     const oh  = state.onHand[it.id];
     const st  = stockStatus(oh, it.par);
@@ -1620,7 +1740,8 @@ function orderView(){
       it.itemNum?`<span class="num">#${esc(it.itemNum)}</span>`:'',
       it.pack?esc(it.pack):'',
       it.par!=null?`par ${it.par}`:'',
-      (edit && it.unitCost!=null)?`$${it.unitCost}`:''
+      (edit && it.unitCost!=null)?`$${it.unitCost}`:'',
+      it.backupOf?`<span style="color:var(--accent)">backup · main: ${esc(it.backupOf)}</span>`:''
     ].filter(Boolean).join(' · ');
 
     const right = edit
@@ -1642,7 +1763,12 @@ function orderView(){
       </div>
       ${right}
     </div>`;
-  }).join('');
+  };
+  // Items marked as a backup of another vendor sit in their own group at the bottom.
+  const mainItems = items.filter(i=>!i.backupOf), backupItems = items.filter(i=>i.backupOf);
+  const rows = mainItems.map(rowOf).join('') + (backupItems.length
+    ? `<div class="sched" style="margin-top:14px"><b>Backups</b> — normally ordered from another vendor; use these when the main vendor is out.</div>` + backupItems.map(rowOf).join('')
+    : '');
 
   const sendLabel = sn==='ABCO'?'📱 Text order to Hal'
     : sn==='BEK'?'📄 Download BEK CSV'
@@ -3427,6 +3553,8 @@ function editItem(sn, id){
     <input class="field" id="e-caseqty" inputmode="decimal" value="${it.caseQty!=null?esc(it.caseQty):''}" placeholder="e.g. 12">
     ${(isBek||it.itemNum!=null)?`<label class="fl">${isBek?'BEK ':''}Item #</label>
       <input class="field" id="e-num" value="${esc(it.itemNum||'')}" placeholder="optional">`:''}
+    ${sn==='TRIMARK'?'':`<label class="fl">Backup for another vendor? <span style="color:var(--dim);font-weight:400">(same product, second source)</span></label>
+    <select class="field" id="e-backup"><option value="">No, this is a main item</option>${SUP_NAMES.filter(x=>x!==sn).map(x=>`<option value="${x}"${it.backupOf===x?' selected':''}>Backup for ${x}</option>`).join('')}</select>`}
     <button class="btn" onclick="saveItem('${sn}','${id}')">Save changes</button>
     <button class="btn ghost" onclick="deleteItem('${sn}','${id}')" style="color:var(--crit)">🗑 Delete item</button>`);
 }
@@ -3445,6 +3573,7 @@ function saveItem(sn, id){
   const caseQtyStr=$('e-caseqty').value;
   it.caseQty = caseQtyStr==='' ? null : (+caseQtyStr||null);
   const numEl=$('e-num'); if(numEl) it.itemNum = (numEl.value||'').trim();
+  const bkEl=$('e-backup'); if(bkEl){ if(bkEl.value) it.backupOf = bkEl.value; else delete it.backupOf; }
   persist('catalog'); closeModal(); render(); toast('Item updated','ok');
 }
 
@@ -3478,6 +3607,8 @@ function addItem(sn){
     <input class="field" id="a-cost" inputmode="decimal" placeholder="0.00">
     ${isBek?`<label class="fl">BEK Item #</label>
       <input class="field" id="a-num" placeholder="for CSV ordering">`:''}
+    ${sn==='TRIMARK'?'':`<label class="fl">Backup for another vendor? <span style="color:var(--dim);font-weight:400">(same product, second source)</span></label>
+    <select class="field" id="a-backup"><option value="">No, this is a main item</option>${SUP_NAMES.filter(x=>x!==sn).map(x=>`<option value="${x}">Backup for ${x}</option>`).join('')}</select>`}
     <button class="btn" onclick="confirmAddItem('${sn}')">Add item</button>`);
 }
 
@@ -3494,6 +3625,7 @@ function confirmAddItem(sn){
     unitCost: cost===''?null:(+cost||0),
   };
   if(numEl && numEl.value.trim()) item.itemNum = numEl.value.trim();
+  const bkEl=$('a-backup'); if(bkEl && bkEl.value) item.backupOf = bkEl.value;
   state.catalog[sn].items.push(item);
   persist('catalog'); closeModal(); render(); toast('Item added','ok');
 }
@@ -3585,7 +3717,18 @@ function helpView(){
          'A skipped item has no quantity box. To order it after all, tap "✓ Skipped — tap to recheck" and it comes back.',
          'Tap the send button at the bottom — the number shows how many items are on the order.',
          'That\'s it — sending files it to History automatically (this feeds COGS). You don\'t need a separate save step.']) +
-     `${b('How each sends:')} ABCO texts Hal · BEK downloads a CSV · Trimark/Amazon/Electrical open an email.` +
+     `${b('How each sends:')} ABCO texts Hal · BEK shows an "order ready" screen (below) · Trimark/Amazon/Electrical open an email.` +
+     `<br><br>${b('Sending the BEK order:')} the screen shows the steps for the device you are on. iPad:` +
+     li(['Tap the BEK send button. The "BEK order ready" screen lists what is in the file.',
+         'Tap "Save file to this iPad", then choose Save to Files → On This iPad → Save.',
+         'Open BekEntree in Safari and turn the iPad sideways.',
+         'Tap Import → Browse → On This iPad, pick today\'s file, tap Upload.',
+         'Tick "Skip first line", then tap Create order.',
+         'The order is already saved in History when you tap send; nothing else to log.']) +
+     `<b>On a computer:</b>` +
+     li(['Click the BEK send button, then "Download file". It goes to your Downloads folder.',
+         'Open BekEntree in your browser, click Import → Browse, pick today\'s file from Downloads, click Upload.',
+         'Tick "Skip first line", then click Create order.']) +
      `<br><br>${b('Placed an order outside the app')} — called it in, ordered in person — and want it in History
       anyway? Enter the quantities and tap "💾 Log order without sending" instead of the send button.` +
      `<br><br>${b('When "Skipped" clears:')} the moment you send or log that supplier's order — Going back
@@ -3650,6 +3793,7 @@ function helpView(){
      li(['Tap "✎ Edit items" on any tab.',
          'Tap an item to change name, pack, par, price, or number.',
          'Tap "＋ Add item" to create one; "Delete item" to remove.',
+         '<b>Backup items:</b> if an item is a second source for something another vendor normally supplies, open it and set "Backup for another vendor?". It gets a "backup · main: …" tag and moves to a Backups group at the bottom of that vendor\'s list. Orders and reports count it normally under the vendor you order from.',
          'Deleted built-in items stay deleted after syncing.']) +
      `${b('Bulk prices:')} Reports → COGS → "Upload price list (CSV)" → paste item#,price lines.`)}
 
@@ -4237,20 +4381,50 @@ function sendAbcoSms(items){
   window.location.href=`sms:5128015422&body=${encodeURIComponent(body)}`;
 }
 
+let _bekFile=null;
+const isIOSDevice=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+// BEK orders are a CSV the person uploads in BekEntree. Instead of a silent download
+// (on iPad that just opens the raw file), show the order and the exact next steps.
 function downloadBekCsv(items){
-  const rows=['Item#,Each,Quantity']; const missing=[];
+  const rows=['Item#,Each,Quantity'], lines=[], missing=[];
   items.forEach(i=>{
     const num=getBekItemNum(i); const q=+i.orderQty||0;
-    if(num && q>0) rows.push(`${num},Each,${q}`); else if(q>0) missing.push(i.name);
+    if(num && q>0){ rows.push(`${num},Each,${q}`); lines.push({num,q,name:i.name}); }
+    else if(q>0) missing.push(i.name);
   });
-  if(missing.length) toast(`⚠ ${missing.length} missing BEK#: ${missing.join(', ')}`,'warn');
-  const blob=new Blob([rows.join('\n')],{type:'text/csv'});
-  const url=URL.createObjectURL(blob);
   const d=new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}).replace(/\//g,'-');
-  const a=document.createElement('a'); a.href=url; a.download=`BEK-order-${d}.csv`;
+  _bekFile={name:`BEK-order-${d}.csv`, text:rows.join('\n')};
+  const list=lines.map(l=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
+      <span>${esc(l.name)} <span style="color:var(--dim)">#${esc(l.num)}</span></span><b>${l.q}</b></div>`).join('');
+  const warn=missing.length?`<div class="sched" style="color:var(--crit)">⚠ Not in the file (no BEK item number): ${missing.map(esc).join(', ')}. Add their numbers in ✎ Edit items.</div>`:'';
+  const ios=isIOSDevice();
+  modal(`<h2>BEK order ready</h2>
+    <div class="sched">${lines.length} item${lines.length!==1?'s':''} · file: ${esc(_bekFile.name)}</div>
+    ${warn}
+    <button class="btn" onclick="bekSaveFile()">${ios?'💾 Save file to this iPad':'💾 Download file'}</button>
+    <div style="margin-top:12px;font-weight:700">Then, in BekEntree${ios?' (Safari)':''}</div>
+    <ol style="margin:6px 0 0;padding-left:20px;font-size:14px;line-height:1.5">${ios?`
+      <li>Tap "Save file to this iPad", choose <b>Save to Files</b> → <b>On This iPad</b> → <b>Save</b>.</li>
+      <li>Open BekEntree in Safari and turn the iPad sideways (landscape).</li>
+      <li>Tap <b>Import</b> → <b>Browse</b> → <b>On This iPad</b> → pick today's file (${esc(_bekFile.name)}) → <b>Upload</b>.</li>`:`
+      <li>Click "Download file". It goes to your Downloads folder as ${esc(_bekFile.name)}.</li>
+      <li>Open BekEntree in your browser and click <b>Import</b> → <b>Browse</b>.</li>
+      <li>Pick today's file (${esc(_bekFile.name)}) from Downloads → <b>Upload</b>.</li>`}
+      <li>Tick <b>Skip first line</b>, then ${ios?'tap':'click'} <b>Create order</b>.</li>
+    </ol>
+    <div style="margin-top:12px;font-weight:700">What is in the file</div>${list||'<div class="sched">Nothing to send.</div>'}
+    <div class="sched" style="margin-top:8px">If the upload fails, you can type these into BekEntree by hand.</div>`);
+}
+async function bekSaveFile(){
+  if(!_bekFile) return;
+  try{
+    const f=new File([_bekFile.text],_bekFile.name,{type:'text/csv'});
+    if(isIOSDevice() && navigator.canShare && navigator.canShare({files:[f]})){ await navigator.share({files:[f]}); return; }
+  }catch(e){ if(e && e.name==='AbortError') return; }      // person closed the share sheet
+  const url=URL.createObjectURL(new Blob([_bekFile.text],{type:'text/csv'}));   // computers and browsers without file sharing: plain download
+  const a=document.createElement('a'); a.href=url; a.download=_bekFile.name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
-  toast('BEK CSV downloaded','ok');
 }
 function getBekItemNum(item){
   if(item.itemNum) return item.itemNum;
@@ -4489,8 +4663,8 @@ function startListeners(){
   // all routine during a long walk-the-restaurant count) can't silently revert
   // a count back to old data the moment the app reconnects.
   // (trimark no longer needs this: it syncs per item with real stamps — see
-  // bindTrimarkItems. The 24h window below stays for the two fields not yet converted.)
-  const _reconcileOnBoot = new Set(['onHand','orderQty']);
+  // bindTrimarkItems; orderQty likewise — see bindFlat. The 24h window below stays for onHand.)
+  const _reconcileOnBoot = new Set(['onHand']);
   const _firstSnapshotSeen = {};
   // How long this device's own last edit is trusted over a conflicting first
   // snapshot. Generous enough to cover a whole offline overnight count, short
@@ -4523,7 +4697,7 @@ function startListeners(){
   bind('deletedIds', v=>{ state.deletedIds=v; });
   bind('locations', v=>{ if(Array.isArray(v)&&v.length) state.locations=v; });
   bind('catalog',  v=>mergeCatalog(v));
-  bind('orderQty', v=>{ state.orderQty=v; });
+  bindFlat('orderQty');
   bind('onHand',   v=>{ state.onHand=v; });
   bindTrimarkItems();
   fbDb.ref('meta/checkpoints').on('value', snap=>{ _ckptAll = snap.val() || {}; _ckptReadErr = false; ckptRefreshLabel(); },
